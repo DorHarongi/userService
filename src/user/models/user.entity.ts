@@ -1,32 +1,22 @@
-import { BuildingsLevels } from "./buildingsLevels";
-import { ResourcesAmounts } from "./resourcesAmounts";
-import { ResourcesWorkers } from "./resourcesWorkers";
-import { TroopsAmounts } from "./troopsAmounts";
-import { userFromClientDTO } from "./userFromClientDTO";
+import { ObjectId } from "mongodb";
+import { IUser } from "./IUser.interface";
+import { userFromClientDTO } from "../dtos/userFromClientDTO";
+import { Village } from "./village.entity";
 
-export class User
+export class User implements IUser
 {
+    _id: ObjectId;
     username: string;
-    password: string; 
+    password: string;
     joinDate: Date;
-    clanName: string; 
-    resourcesAmounts: ResourcesAmounts;
-    buildingsLevels: BuildingsLevels;
-    population: number;
-    resourcesWorkers: ResourcesWorkers;
-    troops: TroopsAmounts; 
-    clanTroops: TroopsAmounts
+    clanName: string;
+    villages: Village[];
     constructor(userFromClientDTO: userFromClientDTO)
     {
         this.username = userFromClientDTO.username;
         this.password = userFromClientDTO.password;
         this.joinDate = new Date();
         this.clanName = "";
-        this.resourcesAmounts = new ResourcesAmounts(0, 0, 0);
-        this.buildingsLevels = new BuildingsLevels(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1);
-        this.population = 0;
-        this.resourcesWorkers = new ResourcesWorkers(0, 0, 0);
-        this.troops = new TroopsAmounts(0, 0, 0, 0, 0, 0, 0);
-        this.clanTroops = new TroopsAmounts(0, 0, 0, 0, 0, 0, 0);
+        this.villages = [new Village()];
     }
 }
