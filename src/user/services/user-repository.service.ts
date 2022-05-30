@@ -6,7 +6,7 @@ import { userFromClientDTO } from '../dtos/userFromClientDTO';
 import * as crypto from 'crypto';
 import { UserDTO } from '../dtos/userDTO';
 import { VillageDTO } from '../dtos/villageDTO';
-
+import { singleWorkerProductionSpeedPerSecond, factoriesProductionLevelByLevel } from 'utils';
 
 @Injectable()
 export class UserRepositoryService {
@@ -35,9 +35,9 @@ export class UserRepositoryService {
 
         for(let village of userDTO.villages)
         {
-            village.woodProductionPerSecond = village.buildingsLevels.woodFactoryLevel + village.resourcesWorkers.woodWorkers * 0.05;
-            village.stoneProductionPerSecond = village.buildingsLevels.stoneMineLevel + village.resourcesWorkers.stoneWorkers * 0.05;
-            village.cropProductionPerSecond = village.buildingsLevels.cropFarmLevel + village.resourcesWorkers.cropWorkers * 0.05;
+            village.woodProductionPerSecond =  factoriesProductionLevelByLevel[village.buildingsLevels.woodFactoryLevel] + village.resourcesWorkers.woodWorkers * singleWorkerProductionSpeedPerSecond ;
+            village.stoneProductionPerSecond = factoriesProductionLevelByLevel[village.buildingsLevels.stoneMineLevel] + village.resourcesWorkers.stoneWorkers * singleWorkerProductionSpeedPerSecond;
+            village.cropProductionPerSecond = factoriesProductionLevelByLevel[village.buildingsLevels.cropFarmLevel] + village.resourcesWorkers.cropWorkers * singleWorkerProductionSpeedPerSecond;
         }
         return userDTO;
     }
