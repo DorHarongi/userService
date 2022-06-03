@@ -45,7 +45,7 @@ export class BuildingsUpgradingService {
         return new UserDTO(user);
     }
 
-    buildUserBuildingsLevelsDictionary(userVillage: Village): {[name: string] : BuildingGetterSetter }
+    buildUserBuildingsLevelsDictionary(userVillage: Village): {[name: string] : BuildingGetterSetter}
     {
         const userBuildingsLevelsDictionary: {[name: string] : BuildingGetterSetter } = {
             ["arsenal"]: {getter: () => {return userVillage.buildingsLevels.arsenalLevel }, setter: (newLevel) => {userVillage.buildingsLevels.arsenalLevel = newLevel}},
@@ -63,7 +63,7 @@ export class BuildingsUpgradingService {
         return userBuildingsLevelsDictionary;
     }
 
-    doesUserHaveEnoughMaterialsForLevelUp(userMaterials: ResourcesAmounts, materialsCost: MaterialsCost)
+    doesUserHaveEnoughMaterialsForLevelUp(userMaterials: ResourcesAmounts, materialsCost: MaterialsCost): boolean
     {
         if(userMaterials.cropAmount < materialsCost.crop)
             return false;
