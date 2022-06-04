@@ -26,6 +26,8 @@ export class TroopsTrainingService {
         const village: Village = user.villages[trainDTO.villageIndex];
         if(!village)
             throw new HttpException("Village doesnt exist", HttpStatus.NOT_FOUND);
+        if(this.foundNegativeNumbersInDTO(trainDTO))
+            throw new HttpException("Cannot train negative troops", HttpStatus.BAD_REQUEST);
 
         //check if user have enough materials for training this amount of troops, and that he is not training troops he cant by his level
 
@@ -36,7 +38,7 @@ export class TroopsTrainingService {
         if(!this.canUserTrainAllTroopsHeTriedTo(village.buildingsLevels.arsenalLevel, trainDTO.troopsAmount))
             throw new HttpException("You still cant train some of the troops you tried to", HttpStatus.FORBIDDEN);
 
-        // everything good -> level up his building and decrease resources
+        // everything good -> train troops and decrease resources
 
         village.resourcesAmounts.cropAmount -= materialsCost.crop;
         village.resourcesAmounts.stonesAmount -= materialsCost.stones;
@@ -46,6 +48,25 @@ export class TroopsTrainingService {
 
         const updateResult: UpdateResult = await this.dbAccessorService.collection.updateOne({username: trainDTO.username}, {$set: user});
         return new UserDTO(user);
+    }
+
+    foundNegativeNumbersInDTO(trainDTO: TrainDTO)
+    {
+        if(trainDTO.troopsAmount.archers < 0)
+            return true;
+        if(trainDTO.troopsAmount.axeFighters < 0)
+            return true;
+        if(trainDTO.troopsAmount.catapults < 0)
+            return true;
+        if(trainDTO.troopsAmount.horsemen < 0)
+            return true;
+        if(trainDTO.troopsAmount.magicians < 0)
+            return true;
+        if(trainDTO.troopsAmount.spearFighters < 0)
+            return true;
+        if(trainDTO.troopsAmount.swordFighters < 0)
+            return true;
+        return false;
     }
 
     calculateMaterialsCostForTraining(troopsAmounts: TroopsAmounts): MaterialsCost
@@ -121,5 +142,4 @@ export class TroopsTrainingService {
         userTroopsAmount.horsemen += troopsAmount.horsemen;
         userTroopsAmount.catapults += troopsAmount.catapults;
     }
-    
 }
