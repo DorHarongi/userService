@@ -29,7 +29,7 @@ export class WorkersService {
 
         let freePopulation: number = this.calculateFreePopulationInVillage(village);
         if(!this.checkIfVillageHasEnoughFreePopulation(freePopulation, workersDTO.resourcesWorkers))
-        throw new HttpException("You tried to hire too many workers", HttpStatus.FORBIDDEN);    
+            throw new HttpException("You tried to hire too many workers", HttpStatus.FORBIDDEN);    
     
         // everything good -> changeWorkers workers
 
