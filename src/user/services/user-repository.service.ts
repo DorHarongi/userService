@@ -41,7 +41,7 @@ export class UserRepositoryService {
                  "numberOfVillages": { $sum: 1}
                   
             }},
-            { "$sort" : { "totalPopulation" : -1 } },
+            { "$sort" : { "totalPopulation" : -1, "username" : 1 } },
             {"$skip": MAX_USERS_IN_EACH_STATISTICS_PAGE * page},
             {"$limit": MAX_USERS_IN_EACH_STATISTICS_PAGE}
         ])
