@@ -2,7 +2,7 @@ import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { DbAccessorService } from '../../../database/services/db-accessor.service';
 import { User } from '../../../user/models/user.entity';
 import { upgradeDTO } from '../../dtos/upgradeDTO';
-import { buildingLevelUpMaterialCostsByName, MaterialsCost } from 'utils';
+import { buildingLevelUpMaterialCostsByName, MaterialsCost, quartersPopulationByLevel } from 'utils';
 import { ResourcesAmounts } from '../../../user/models/resourcesAmounts';
 import { Village } from '../../../user/models/village.entity';
 import { UpdateResult } from 'mongodb';
@@ -53,7 +53,10 @@ export class BuildingsUpgradingService {
             ["cropFarm"]: {getter: () => {return userVillage.buildingsLevels.cropFarmLevel }, setter: (newLevel) => {userVillage.buildingsLevels.cropFarmLevel = newLevel}},
             ["cropWarehouse"]: {getter: () => {return userVillage.buildingsLevels.cropWarehouseLevel }, setter: (newLevel) => {userVillage.buildingsLevels.cropWarehouseLevel = newLevel}},
             ["embassy"]: {getter: () => {return userVillage.buildingsLevels.embassyLevel }, setter: (newLevel) => {userVillage.buildingsLevels.embassyLevel = newLevel}},
-            ["quarters"]: {getter: () => {return userVillage.buildingsLevels.quartersLevel }, setter: (newLevel) => {userVillage.buildingsLevels.quartersLevel = newLevel}},
+            ["quarters"]: {getter: () => {return userVillage.buildingsLevels.quartersLevel }, setter: (newLevel) => {
+                userVillage.buildingsLevels.quartersLevel = newLevel
+                userVillage.population = quartersPopulationByLevel[newLevel];
+            }},
             ["stoneMine"]: {getter: () => {return userVillage.buildingsLevels.stoneMineLevel }, setter: (newLevel) => {userVillage.buildingsLevels.stoneMineLevel = newLevel}},
             ["stoneWarehouse"]: {getter: () => {return userVillage.buildingsLevels.stoneWarehouseLevel }, setter: (newLevel) => {userVillage.buildingsLevels.stoneWarehouseLevel = newLevel}},
             ["wall"]: {getter: () => {return userVillage.buildingsLevels.wallLevel }, setter: (newLevel) => {userVillage.buildingsLevels.wallLevel = newLevel}},

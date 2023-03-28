@@ -5,6 +5,9 @@ import { User } from '../models/user.entity';
 import { userFromClientDTO } from '../dtos/userFromClientDTO';
 import * as crypto from 'crypto';
 import { UserDTO } from '../dtos/userDTO';
+import { UserStatisticDTO } from '../dtos/userStatisticDTO';
+
+const MAX_USERS_IN_EACH_STATISTICS_PAGE = 10;
 
 @Injectable()
 export class UserRepositoryService {
@@ -24,5 +27,38 @@ export class UserRepositoryService {
         if(!result)
             throw new HttpException("Username or password doesnt exist", HttpStatus.NOT_FOUND);
         return new UserDTO(result);
+    }
+
+    async getUserStatistics(page: number): Promise<Array<UserStatisticDTO>>
+    {
+        let result = this.dbAccessorService.collection.aggregate([
+            { "$unwind" : "$villages" },
+            { "$group" : {
+                "_id" : "$_id",
+                 "totalPopulation": { $sum: "$villages.population" },
+                 "username": { $first: "$username" },
+                 "clanName": { $first: "$clanName" },
+                 "numberOfVillages": { $sum: 1}
+                  
+            }},
+            { "$sort" : { "totalPopulation" : -1 } },
+            {"$skip": MAX_USERS_IN_EACH_STATISTICS_PAGE * page},
+            {"$limit": MAX_USERS_IN_EACH_STATISTICS_PAGE}
+        ])
+
+        if(!result)
+            throw new HttpException("No users were found", HttpStatus.NOT_FOUND);
+        
+        let usersWithMongoId: any =  await result.toArray();
+        let users: UserStatisticDTO[] = usersWithMongoId.map(userWithMongoId =>{
+            return {
+                'username': userWithMongoId.username,
+                'population': userWithMongoId.totalPopulation,
+                'clanName': userWithMongoId.clanName,
+                'numberOfVillages': userWithMongoId.numberOfVillages
+            }
+        })
+
+        return users;
     }
 }
