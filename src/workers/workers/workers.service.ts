@@ -62,7 +62,7 @@ export class WorkersService {
         return totalWorkersToHire <= freePopulation;
     }
 
-    calculateFreePopulationInVillage(village: Village, ): number
+    calculateFreePopulationInVillage(village: Village): number
     {
         let maximumPopulation: number = quartersPopulationByLevel[village.buildingsLevels.quartersLevel];
         let usedPopulation: number = this.calculateTotalTroops(village) + this.calculateTotalWorkers(village);

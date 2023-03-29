@@ -9,7 +9,8 @@ import { ResourcesAmounts } from '../../../../user/models/resourcesAmounts';
 import { TroopsAmounts } from 'src/user/models/troopsAmounts';
 import { spearFighterMinimumArsenalLevel, swordFighterMinimumArsenalLevel, axeFighterMinimumArsenalLevel,
     archerMinimumArsenalLevel, magicianMinimumArsenalLevel, horsemenMinimumArsenalLevel, catapultsMinimumArsenalLevel, MaterialsCost,
-    swordFighterMaterialsCost, spearFighterMaterialsCost, axeFighterMaterialsCost, archerMaterialsCost, magicianMaterialsCost, horsemenMaterialsCost, catapultsMaterialsCost,}
+    swordFighterMaterialsCost, spearFighterMaterialsCost, axeFighterMaterialsCost, archerMaterialsCost, magicianMaterialsCost, horsemenMaterialsCost, catapultsMaterialsCost,
+    quartersPopulationByLevel}
     from 'utils'
 
 @Injectable()
@@ -37,7 +38,10 @@ export class TroopsTrainingService {
             throw new HttpException("Village does not have enough materials for this training", HttpStatus.FORBIDDEN);
         if(!this.canUserTrainAllTroopsHeTriedTo(village.buildingsLevels.arsenalLevel, trainDTO.troopsAmount))
             throw new HttpException("You still cant train some of the troops you tried to", HttpStatus.FORBIDDEN);
-
+        let freePopulation: number = this.calculateFreePopulationInVillage(village);
+        if(!this.checkIfVillageHasEnoughFreePopulation(freePopulation, trainDTO.troopsAmount))
+            throw new HttpException("You tried to train too many troops", HttpStatus.FORBIDDEN);    
+    
         // everything good -> train troops and decrease resources
 
         village.resourcesAmounts.cropAmount -= materialsCost.crop;
@@ -130,6 +134,31 @@ export class TroopsTrainingService {
         if(troopsAmount.catapults != 0 && arsenalLevel < catapultsMinimumArsenalLevel)
             return false;
         return true;
+    }
+
+    checkIfVillageHasEnoughFreePopulation(freePopulation: number, troopsAmount: TroopsAmounts): boolean
+    {
+        let totalTroopsToTrain = troopsAmount.spearFighters + troopsAmount.swordFighters + troopsAmount.axeFighters +
+        troopsAmount.archers + troopsAmount.magicians + troopsAmount.horsemen + troopsAmount.catapults;
+        return totalTroopsToTrain <= freePopulation;
+    }
+
+    calculateFreePopulationInVillage(village: Village): number
+    {
+        let maximumPopulation: number = quartersPopulationByLevel[village.buildingsLevels.quartersLevel];
+        let usedPopulation: number = this.calculateTotalTroops(village) + this.calculateTotalWorkers(village);
+        return maximumPopulation - usedPopulation;
+    }
+
+    calculateTotalWorkers(village: Village): number
+    {
+        return village.resourcesWorkers.cropWorkers + village.resourcesWorkers.stoneWorkers + village.resourcesWorkers.woodWorkers;
+    }
+
+    calculateTotalTroops(village: Village): number
+    {
+        return village.troops.archers + village.troops.axeFighters + village.troops.catapults + village.troops.horsemen + village.troops.magicians + village.troops.spearFighters 
+        + village.troops.swordFighters; 
     }
 
     addTroopsToUser(userTroopsAmount: TroopsAmounts, troopsAmount: TroopsAmounts)
