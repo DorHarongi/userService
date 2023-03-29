@@ -21,6 +21,8 @@ export class AttackingService {
     }
 
     async attack(attackDTO: AttackDTO): Promise<any>{
+        if(attackDTO.attackerName == attackDTO.defenderName)
+            throw new HttpException("You cant attack yourself", HttpStatus.BAD_REQUEST) 
         let attacker: User = (await this.dbAccessorService.collection.findOne({username: attackDTO.attackerName})) as User;
         let defender: User = (await this.dbAccessorService.collection.findOne({username: attackDTO.defenderName})) as User;
         if(!attacker || !defender)
