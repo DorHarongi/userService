@@ -7,7 +7,8 @@ import * as crypto from 'crypto';
 import { UserDTO } from '../dtos/userDTO';
 import { UserStatisticDTO } from '../dtos/userStatisticDTO';
 import { Village } from '../models/village.entity';
-import { UserResourcesDTO } from '../dtos/userResourcesDTO';
+import { UserVillageRequestDTO } from '../dtos/userVillageRequestDTO';
+import { VillageDTO } from '../dtos/villageDTO';
 
 const MAX_USERS_IN_EACH_STATISTICS_PAGE = 10;
 
@@ -64,14 +65,15 @@ export class UserRepositoryService {
         return users;
     }
 
-    async getUserResourcesInVillage(userResourcesDTO: UserResourcesDTO)
+    async getUserVillage(userVillageRequestDTO: UserVillageRequestDTO): Promise<VillageDTO>
     {
-        let user: User = (await this.dbAccessorService.collection.findOne({username: userResourcesDTO.username})) as User;
+        let user: User = (await this.dbAccessorService.collection.findOne({username: userVillageRequestDTO.username})) as User;
         if(!user)
             throw new HttpException("User does not exist", HttpStatus.NOT_FOUND);
-        let userVillage: Village = user.villages[userResourcesDTO.villageIndex];
+        let userVillage: Village = user.villages[userVillageRequestDTO.villageIndex];
         if(!userVillage)
             throw new HttpException("User village doesnt exist", HttpStatus.NOT_FOUND)
-        return userVillage.resourcesAmounts; 
+
+        return new VillageDTO(userVillage); 
     }
 }

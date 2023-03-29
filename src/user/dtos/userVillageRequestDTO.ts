@@ -1,4 +1,4 @@
-export interface UserResourcesDTO{
+export interface UserVillageRequestDTO{
     username: string;
     villageIndex: number;
 }

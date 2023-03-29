@@ -4,8 +4,8 @@ import * as crypto from 'crypto';
 import { UserRepositoryService } from '../services/user-repository.service';
 import { UserDTO } from '../dtos/userDTO';
 import { UserStatisticDTO } from '../dtos/userStatisticDTO';
-import { ResourcesAmounts } from '../models/resourcesAmounts';
-import { UserResourcesDTO } from '../dtos/userResourcesDTO';
+import { UserVillageRequestDTO } from '../dtos/userVillageRequestDTO';
+import { VillageDTO } from '../dtos/villageDTO';
 
 
 @Controller('users')
@@ -36,10 +36,10 @@ export class UserController {
         return await this.userRepositorService.getUserStatistics(page);
     }
 
-    @Post('villageResources')
-    async getVillageResources(@Body() userResourcesDtO: UserResourcesDTO): Promise<ResourcesAmounts>
+    @Post('village')
+    async getVillage(@Body() userVillageRequestDTO: UserVillageRequestDTO): Promise<VillageDTO>
     {
-        return await this.userRepositorService.getUserResourcesInVillage(userResourcesDtO);
+        return await this.userRepositorService.getUserVillage(userVillageRequestDTO);
     }
 
 
