@@ -11,6 +11,7 @@ import { User } from '../../../user/models/user.entity';
 import { Village } from '../../../user/models/village.entity';
 import { ResourcesAmounts } from '../../../user/models/resourcesAmounts';
 import { UpdateResult } from 'mongodb';
+import { UserDTO } from '../../../user/dtos/userDTO';
 
 @Injectable()
 export class AttackingService {
@@ -76,7 +77,7 @@ export class AttackingService {
 
         //send report to defender
 
-        return attackerVillage.troops;
+        return new UserDTO(attacker);
     }
 
     doesAttackerActuallyHaveThoseTroops(attackingTroops: TroopsAmounts, existingAttackerTroops: TroopsAmounts): boolean
