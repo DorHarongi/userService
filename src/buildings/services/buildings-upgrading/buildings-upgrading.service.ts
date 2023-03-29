@@ -32,6 +32,12 @@ export class BuildingsUpgradingService {
         const materialsCost: MaterialsCost = buildingLevelUpMaterialCostsByLevel[buildingNextLevel];
         if(!this.doesUserHaveEnoughMaterialsForLevelUp(village.resourcesAmounts, materialsCost))
             throw new HttpException("Village does not have enough materials for this upgrade", HttpStatus.FORBIDDEN);
+        if(upgradeDTO.buildingName != "centerBuilding") // if we upgrade the center building, there is no need to check the center building level
+        {
+            const centerBuildingLevel: number = buildingsLevelsDictionary["centerBuilding"].getter();
+            if(!this.isUserCenterBuildingLevelHighEnough(centerBuildingLevel, buildingNextLevel))
+                throw new HttpException("Village center building level is not high enough", HttpStatus.FORBIDDEN);
+        }
 
         // everything good -> level up his building and decrease resources
 
@@ -64,6 +70,11 @@ export class BuildingsUpgradingService {
             ["woodWarehouse"]: {getter: () => {return userVillage.buildingsLevels.woodWarehouseLevel }, setter: (newLevel) => {userVillage.buildingsLevels.woodWarehouseLevel = newLevel}},
         };
         return userBuildingsLevelsDictionary;
+    }
+
+    isUserCenterBuildingLevelHighEnough(centerBuildingLevel: number, buildingNewLevel: number)
+    {
+        return buildingNewLevel <= centerBuildingLevel;
     }
 
     doesUserHaveEnoughMaterialsForLevelUp(userMaterials: ResourcesAmounts, materialsCost: MaterialsCost): boolean
