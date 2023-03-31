@@ -49,7 +49,7 @@ export class AttackingService {
         let killedDefenderTroops: TroopsAmounts;
         let killedSupportTroops: TroopsAmounts;
 
-        if(attackToDefenceRatio < 1) // LOSE
+        if(attackToDefenceRatio <= 1) // LOSE
         {
             killedAttackerTroops = this.calculateKilledTroopsByRatio(attackerTroops, 1); // kill all attackers
             killedDefenderTroops = this.calculateKilledTroopsByRatio(defenceTroops, attackToDefenceRatio); // kill some of the defence
@@ -131,7 +131,7 @@ export class AttackingService {
     }
 
     calculateKilledTroopsByRatio(troops: TroopsAmounts, ratio: number): TroopsAmounts 
-    // receives 0 < ratio < 1. Received 0.7 -> kill 70% of those troops
+    // receives 0 < ratio <= 1. Received 0.7 -> kill 70% of those troops
     {
         if(ratio > 1 || ratio < 0)
             return;
