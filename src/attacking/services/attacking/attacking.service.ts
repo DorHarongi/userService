@@ -49,27 +49,34 @@ export class AttackingService {
         let killedDefenderTroops: TroopsAmounts;
         let killedSupportTroops: TroopsAmounts;
 
+        let attackWon: boolean;
+
         if(attackToDefenceRatio <= 1) // LOSE
         {
+            attackWon = false;
             killedAttackerTroops = this.calculateKilledTroopsByRatio(attackerTroops, 1); // kill all attackers
             killedDefenderTroops = this.calculateKilledTroopsByRatio(defenceTroops, attackToDefenceRatio); // kill some of the defence
             killedSupportTroops = this.calculateKilledTroopsByRatio(supportTroops, attackToDefenceRatio); // kill some of the clan defence
         }
         else // WIN
         {
+            attackWon = true;
             killedDefenderTroops = this.calculateKilledTroopsByRatio(defenceTroops, 1); // kill all defence
             killedSupportTroops = this.calculateKilledTroopsByRatio(supportTroops, 1); // kill all clan defence
             killedAttackerTroops = this.calculateKilledTroopsByRatio(attackerTroops, defenceToAttackRatio); // kill some of attacker troops
-
-            // loot resources - increase to attacker, decrease to defender
-            let loot: ResourcesAmounts = this.calculateLoot(attackerTroops, defenderVillage.resourcesAmounts);
-            this.addLootToAttacker(loot, attackerVillage);
-            this.decreaseLootFromDefender(loot, defenderVillage);
         }
 
         this.updateRemainingTroopsInVillage(attackerVillage.troops, killedAttackerTroops);
         this.updateRemainingTroopsInVillage(defenceTroops, killedDefenderTroops);
         this.updateRemainingTroopsInVillage(supportTroops, killedSupportTroops);
+
+        // loot resources - increase to attacker, decrease to defender
+        if(attackWon)
+        {
+            let loot: ResourcesAmounts = this.calculateLoot(attackerTroops, defenderVillage.resourcesAmounts);
+            this.addLootToAttacker(loot, attackerVillage);
+            this.decreaseLootFromDefender(loot, defenderVillage);
+        }
 
         //update attacker village
         const attackerUpdateResult: UpdateResult = await this.dbAccessorService.collection.updateOne({username: attackDTO.attackerName}, {$set: attacker});
@@ -137,13 +144,13 @@ export class AttackingService {
             return;
 
         let killedTroops: TroopsAmounts = new TroopsAmounts(0, 0, 0, 0, 0, 0, 0);
-        killedTroops.spearFighters = Math.round(ratio * troops.spearFighters); 
-        killedTroops.swordFighters = Math.round(ratio * troops.swordFighters);
-        killedTroops.axeFighters = Math.round(ratio * troops.axeFighters);
-        killedTroops.archers = Math.round(ratio * troops.archers);
-        killedTroops.magicians = Math.round(ratio * troops.magicians);
-        killedTroops.horsemen = Math.round(ratio * troops.horsemen);
-        killedTroops.catapults = Math.round(ratio * troops.catapults);
+        killedTroops.spearFighters = Math.floor(ratio * troops.spearFighters); 
+        killedTroops.swordFighters = Math.floor(ratio * troops.swordFighters);
+        killedTroops.axeFighters = Math.floor(ratio * troops.axeFighters);
+        killedTroops.archers = Math.floor(ratio * troops.archers);
+        killedTroops.magicians = Math.floor(ratio * troops.magicians);
+        killedTroops.horsemen = Math.floor(ratio * troops.horsemen);
+        killedTroops.catapults = Math.floor(ratio * troops.catapults);
 
         return killedTroops;
     }
