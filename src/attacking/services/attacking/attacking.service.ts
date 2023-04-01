@@ -12,19 +12,23 @@ import { Village } from '../../../user/models/village.entity';
 import { ResourcesAmounts } from '../../../user/models/resourcesAmounts';
 import { UpdateResult } from 'mongodb';
 import { UserDTO } from '../../../user/dtos/userDTO';
+import { AttackReport } from '../../../reports/models/attackReport.entity';
+import { AttackReportsService } from '../../../reports/services/attack-reports/attack-reports.service';
+
+const USER_COLLECTIONS = "users";
 
 @Injectable()
 export class AttackingService {
 
-    constructor(private dbAccessorService: DbAccessorService){
+    constructor(private dbAccessorService: DbAccessorService, private attackReportsService: AttackReportsService){
 
     }
 
     async attack(attackDTO: AttackDTO): Promise<any>{
         if(attackDTO.attackerName == attackDTO.defenderName)
             throw new HttpException("You cant attack yourself", HttpStatus.BAD_REQUEST) 
-        let attacker: User = (await this.dbAccessorService.collection.findOne({username: attackDTO.attackerName})) as User;
-        let defender: User = (await this.dbAccessorService.collection.findOne({username: attackDTO.defenderName})) as User;
+        let attacker: User = (await this.dbAccessorService.getCollection(USER_COLLECTIONS).findOne({username: attackDTO.attackerName})) as User;
+        let defender: User = (await this.dbAccessorService.getCollection(USER_COLLECTIONS).findOne({username: attackDTO.defenderName})) as User;
         if(!attacker || !defender)
             throw new HttpException("Attacker or defender doesnt exist", HttpStatus.NOT_FOUND);
         const attackerVillage: Village = attacker.villages[attackDTO.attackerVillageIndex];
@@ -71,20 +75,26 @@ export class AttackingService {
         this.updateRemainingTroopsInVillage(supportTroops, killedSupportTroops);
 
         // loot resources - increase to attacker, decrease to defender
+        let loot = new ResourcesAmounts(0, 0, 0);
         if(attackWon)
         {
-            let loot: ResourcesAmounts = this.calculateLoot(attackerTroops, defenderVillage.resourcesAmounts);
+            loot = this.calculateLoot(attackerTroops, defenderVillage.resourcesAmounts);
             this.addLootToAttacker(loot, attackerVillage);
             this.decreaseLootFromDefender(loot, defenderVillage);
         }
 
         //update attacker village
-        const attackerUpdateResult: UpdateResult = await this.dbAccessorService.collection.updateOne({username: attackDTO.attackerName}, {$set: attacker});
+        const attackerUpdateResult: UpdateResult = await this.dbAccessorService.getCollection(USER_COLLECTIONS).updateOne({username: attackDTO.attackerName}, {$set: attacker});
         //update villager village
-        const DefenderUpdateResult: UpdateResult = await this.dbAccessorService.collection.updateOne({username: attackDTO.defenderName}, {$set: defender});
-        //send report to attacker
+        const DefenderUpdateResult: UpdateResult = await this.dbAccessorService.getCollection(USER_COLLECTIONS).updateOne({username: attackDTO.defenderName}, {$set: defender});
 
-        //send report to defender
+        const attackReport = new AttackReport(attackDTO.attackerName, attackerVillage.villageName, attackDTO.defenderName,
+            defenderVillage.villageName, new Date(), attackWon, loot, attackingPower, villageDefence, 
+            this.calculateTroopsDefence(defenceTroops), this.calculateAttackingPower(supportTroops),
+            wallDefenseByLevel[wallLevel], attackerTroops, killedAttackerTroops,
+            defenceTroops, killedDefenderTroops, supportTroops, killedDefenderTroops);
+            
+        await this.attackReportsService.saveReport(attackReport);
 
         return new UserDTO(attacker);
     }
@@ -210,4 +220,5 @@ export class AttackingService {
 
         return totalRemainingTroops * lootingAbilityOfTroops;
     }
+
 }

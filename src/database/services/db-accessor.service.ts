@@ -4,9 +4,18 @@ import { DbConnectorService } from './db-connector.service';
 
 @Injectable()
 export class DbAccessorService {
-    collection: mongo.Collection;
+    private readonly collections: { [name: string]: mongo.Collection } = {};
+
     constructor(private dbConnectorService: DbConnectorService)
     {
-        this.collection = this.dbConnectorService.connection.collection('users');
+    }
+
+    getCollection(name: string): mongo.Collection {
+        if (this.collections[name]) {
+          return this.collections[name];
+        }
+        const collection: mongo.Collection = this.dbConnectorService.connection.collection(name);
+        this.collections[name] = collection;
+        return collection;
     }
 }

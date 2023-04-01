@@ -8,6 +8,8 @@ import { WorkersDTO } from '../dtos/workersDTO';
 import { quartersPopulationByLevel} from 'utils';
 import { ResourcesWorkers } from '../../user/models/resourcesWorkers';
 
+const USER_COLLECTIONS = "users";
+
 @Injectable()
 export class WorkersService {
     
@@ -17,7 +19,7 @@ export class WorkersService {
     }
     
     async hireWorkers(workersDTO: WorkersDTO): Promise<UserDTO>{
-        const user: User = (await this.dbAccessorService.collection.findOne({username: workersDTO.username})) as User;
+        const user: User = (await this.dbAccessorService.getCollection(USER_COLLECTIONS).findOne({username: workersDTO.username})) as User;
         if(!user)
             throw new HttpException("Username doesnt exist", HttpStatus.NOT_FOUND);
         const village: Village = user.villages[workersDTO.villageIndex];
@@ -34,7 +36,7 @@ export class WorkersService {
         // everything good -> changeWorkers workers
 
         this.addWorkersToVillage(village, workersDTO.resourcesWorkers);
-        const updateResult: UpdateResult = await this.dbAccessorService.collection.updateOne({username: workersDTO.username}, {$set: user});
+        const updateResult: UpdateResult = await this.dbAccessorService.getCollection(USER_COLLECTIONS).updateOne({username: workersDTO.username}, {$set: user});
         return new UserDTO(user);
     }
 

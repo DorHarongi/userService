@@ -9,6 +9,8 @@ import { UpdateResult } from 'mongodb';
 import { BuildingGetterSetter } from '../../classes/buildingGetterSetter';
 import { UserDTO } from '../../../user/dtos/userDTO';
 
+const USER_COLLECTIONS = "users";
+
 @Injectable()
 export class BuildingsUpgradingService {
     constructor(private dbAccessorService: DbAccessorService)
@@ -17,7 +19,7 @@ export class BuildingsUpgradingService {
     }
 
     async upgradeBuilding(upgradeDTO: upgradeDTO): Promise<UserDTO>{
-        const user: User = (await this.dbAccessorService.collection.findOne({username: upgradeDTO.username})) as User;
+        const user: User = (await this.dbAccessorService.getCollection(USER_COLLECTIONS).findOne({username: upgradeDTO.username})) as User;
         if(!user)
             throw new HttpException("Username doesnt exist", HttpStatus.NOT_FOUND);
         const village: Village = user.villages[upgradeDTO.villageIndex];
@@ -47,7 +49,7 @@ export class BuildingsUpgradingService {
         village.resourcesAmounts.stonesAmount -= materialsCost.stones;
         village.resourcesAmounts.woodAmount -= materialsCost.wood;
 
-        const updateResult: UpdateResult = await this.dbAccessorService.collection.updateOne({username: upgradeDTO.username}, {$set: user});
+        const updateResult: UpdateResult = await this.dbAccessorService.getCollection(USER_COLLECTIONS).updateOne({username: upgradeDTO.username}, {$set: user});
         return new UserDTO(user);
     }
 

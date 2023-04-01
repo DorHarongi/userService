@@ -13,6 +13,8 @@ import { spearFighterMinimumArsenalLevel, swordFighterMinimumArsenalLevel, axeFi
     quartersPopulationByLevel}
     from 'utils'
 
+    const USER_COLLECTIONS = "users";
+
 @Injectable()
 export class TroopsTrainingService {
     constructor(private dbAccessorService: DbAccessorService)
@@ -21,7 +23,7 @@ export class TroopsTrainingService {
     }
 
     async trainTroops(trainDTO: TrainDTO): Promise<UserDTO>{
-        const user: User = (await this.dbAccessorService.collection.findOne({username: trainDTO.username})) as User;
+        const user: User = (await this.dbAccessorService.getCollection(USER_COLLECTIONS).findOne({username: trainDTO.username})) as User;
         if(!user)
             throw new HttpException("Username doesnt exist", HttpStatus.NOT_FOUND);
         const village: Village = user.villages[trainDTO.villageIndex];
@@ -50,7 +52,7 @@ export class TroopsTrainingService {
 
         this.addTroopsToUser(village.troops, trainDTO.troopsAmount);
 
-        const updateResult: UpdateResult = await this.dbAccessorService.collection.updateOne({username: trainDTO.username}, {$set: user});
+        const updateResult: UpdateResult = await this.dbAccessorService.getCollection(USER_COLLECTIONS).updateOne({username: trainDTO.username}, {$set: user});
         return new UserDTO(user);
     }
 

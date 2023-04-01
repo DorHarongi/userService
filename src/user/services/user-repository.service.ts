@@ -1,5 +1,5 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { InsertOneResult, WithId, Document } from 'mongodb';
+import { InsertOneResult } from 'mongodb';
 import { DbAccessorService } from '../../database/services/db-accessor.service';
 import { User } from '../models/user.entity';
 import { userFromClientDTO } from '../dtos/userFromClientDTO';
@@ -11,6 +11,7 @@ import { UserVillageRequestDTO } from '../dtos/userVillageRequestDTO';
 import { VillageDTO } from '../dtos/villageDTO';
 
 const MAX_USERS_IN_EACH_STATISTICS_PAGE = 10;
+const COLLECTION_NAME = "users";
 
 @Injectable()
 export class UserRepositoryService {
@@ -20,13 +21,13 @@ export class UserRepositoryService {
     }
     async create(userFromClient: userFromClientDTO): Promise<boolean> {
         const user:User = new User(userFromClient);
-        let result: InsertOneResult = await this.dbAccessorService.collection.insertOne(user);
+        let result: InsertOneResult = await this.dbAccessorService.getCollection(COLLECTION_NAME).insertOne(user);
         return result.acknowledged;
     }  
 
     async login(userFromClient: userFromClientDTO): Promise<UserDTO>{
         userFromClient.password = crypto.createHash("shake256").update(userFromClient.password).digest("hex");
-        let result: User = (await this.dbAccessorService.collection.findOne({username: userFromClient.username, password: userFromClient.password})) as User;
+        let result: User = (await this.dbAccessorService.getCollection(COLLECTION_NAME).findOne({username: userFromClient.username, password: userFromClient.password})) as User;
         if(!result)
             throw new HttpException("Username or password doesnt exist", HttpStatus.NOT_FOUND);
         return new UserDTO(result);
@@ -34,7 +35,7 @@ export class UserRepositoryService {
 
     async getUserStatistics(page: number): Promise<Array<UserStatisticDTO>>
     {
-        let result = this.dbAccessorService.collection.aggregate([
+        let result = this.dbAccessorService.getCollection(COLLECTION_NAME).aggregate([
             { "$unwind" : "$villages" },
             { "$group" : {
                 "_id" : "$_id",
@@ -67,7 +68,7 @@ export class UserRepositoryService {
 
     async getUserVillage(userVillageRequestDTO: UserVillageRequestDTO): Promise<VillageDTO>
     {
-        let user: User = (await this.dbAccessorService.collection.findOne({username: userVillageRequestDTO.username})) as User;
+        let user: User = (await this.dbAccessorService.getCollection(COLLECTION_NAME).findOne({username: userVillageRequestDTO.username})) as User;
         if(!user)
             throw new HttpException("User does not exist", HttpStatus.NOT_FOUND);
         let userVillage: Village = user.villages[userVillageRequestDTO.villageIndex];
