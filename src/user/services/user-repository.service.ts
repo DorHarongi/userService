@@ -46,7 +46,7 @@ export class UserRepositoryService {
                   
             }},
             { "$sort" : { "totalPopulation" : -1, "username" : 1 } },
-            {"$skip": MAX_USERS_IN_EACH_STATISTICS_PAGE * page},
+            {"$skip": MAX_USERS_IN_EACH_STATISTICS_PAGE * (page - 1)},
             {"$limit": MAX_USERS_IN_EACH_STATISTICS_PAGE}
         ])
 

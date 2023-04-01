@@ -13,14 +13,14 @@ import { ResourcesAmounts } from '../../../user/models/resourcesAmounts';
 import { UpdateResult } from 'mongodb';
 import { UserDTO } from '../../../user/dtos/userDTO';
 import { AttackReport } from '../../../reports/models/attackReport.entity';
-import { AttackReportsService } from '../../../reports/services/attack-reports/attack-reports.service';
+import { ReportsService } from '../../../reports/services/reports/reports.service';
 
 const USER_COLLECTIONS = "users";
 
 @Injectable()
 export class AttackingService {
 
-    constructor(private dbAccessorService: DbAccessorService, private attackReportsService: AttackReportsService){
+    constructor(private dbAccessorService: DbAccessorService, private reportsService: ReportsService){
 
     }
 
@@ -70,10 +70,6 @@ export class AttackingService {
             killedAttackerTroops = this.calculateKilledTroopsByRatio(attackerTroops, defenceToAttackRatio); // kill some of attacker troops
         }
 
-        this.updateRemainingTroopsInVillage(attackerVillage.troops, killedAttackerTroops);
-        this.updateRemainingTroopsInVillage(defenceTroops, killedDefenderTroops);
-        this.updateRemainingTroopsInVillage(supportTroops, killedSupportTroops);
-
         // loot resources - increase to attacker, decrease to defender
         let loot = new ResourcesAmounts(0, 0, 0);
         if(attackWon)
@@ -83,18 +79,22 @@ export class AttackingService {
             this.decreaseLootFromDefender(loot, defenderVillage);
         }
 
-        //update attacker village
-        const attackerUpdateResult: UpdateResult = await this.dbAccessorService.getCollection(USER_COLLECTIONS).updateOne({username: attackDTO.attackerName}, {$set: attacker});
-        //update villager village
-        const DefenderUpdateResult: UpdateResult = await this.dbAccessorService.getCollection(USER_COLLECTIONS).updateOne({username: attackDTO.defenderName}, {$set: defender});
-
         const attackReport = new AttackReport(attackDTO.attackerName, attackerVillage.villageName, attackDTO.defenderName,
             defenderVillage.villageName, new Date(), attackWon, loot, attackingPower, villageDefence, 
             this.calculateTroopsDefence(defenceTroops), this.calculateAttackingPower(supportTroops),
             wallDefenseByLevel[wallLevel], attackerTroops, killedAttackerTroops,
-            defenceTroops, killedDefenderTroops, supportTroops, killedDefenderTroops);
+            defenceTroops, killedDefenderTroops, supportTroops, killedSupportTroops);
             
-        await this.attackReportsService.saveReport(attackReport);
+        await this.reportsService.saveAttackReport(attackReport);
+
+        this.updateRemainingTroopsInVillage(attackerVillage.troops, killedAttackerTroops);
+        this.updateRemainingTroopsInVillage(defenceTroops, killedDefenderTroops);
+        this.updateRemainingTroopsInVillage(supportTroops, killedSupportTroops);
+
+        //update attacker village
+        const attackerUpdateResult: UpdateResult = await this.dbAccessorService.getCollection(USER_COLLECTIONS).updateOne({username: attackDTO.attackerName}, {$set: attacker});
+        //update villager village
+        const DefenderUpdateResult: UpdateResult = await this.dbAccessorService.getCollection(USER_COLLECTIONS).updateOne({username: attackDTO.defenderName}, {$set: defender});
 
         return new UserDTO(attacker);
     }
