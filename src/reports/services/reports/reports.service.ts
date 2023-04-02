@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InsertOneResult } from 'mongodb';
-import { DbAccessorService } from '../../../database/services/db-accessor.service';
 import { AttackReport } from '../../models/attackReport.entity';
+import { DbAccessorService } from '../../../database/services/db-accessor.service';
+import { AttackReportToClientDTO } from '../../models/attackReportToClientDTO';
 
 const MAX_ATTACK_REPORTS_IN_EACH_PAGE = 10;
 const COLLECTION_NAME = "reports";
@@ -17,16 +18,32 @@ export class ReportsService {
         return result.acknowledged;
     }
 
-    async getAttackReportsOfUser(username: string, page: number): Promise<AttackReport[]>
+    async getAttackReportsOfUser(username: string, page: number): Promise<AttackReportToClientDTO[]>
     {
         const skip = MAX_ATTACK_REPORTS_IN_EACH_PAGE * (page - 1);
         const limit = MAX_ATTACK_REPORTS_IN_EACH_PAGE;
 
-      return (await this.dbAccessorService.getCollection(COLLECTION_NAME).find({
+      let reportsInPage: AttackReport[] = (await this.dbAccessorService.getCollection(COLLECTION_NAME).find({
         $or: [
           { attackerName: username },
           { defenderName: username }
         ]
-      }).skip(skip).limit(limit).toArray()) as AttackReport[];
+      }).sort({ date: -1 }).skip(skip).limit(limit).toArray()) as AttackReport[];
+
+      return reportsInPage.map((attackReport: AttackReport)=>{
+        // if user attacked and lost the fight, he shouldnt know anything because his army didnt return.
+        if(attackReport.attackerName == username && !attackReport.attackerWon)
+        {
+          attackReport.defenderTotalArmyDefence = 0;
+          attackReport.defenderTotalDefence = 0;
+          attackReport.defenderTotalSupportArmyDefence = 0
+          attackReport.wallDefence = 0;
+          attackReport.defenderTotalTroops = undefined;
+          attackReport.defenderTotalLostTroops = undefined;
+          attackReport.supportTotalTroops = undefined;
+          attackReport.supportTotalLostTroops = undefined;
+        }
+        return new AttackReportToClientDTO(attackReport); // removes mongoId
+      })
     }
 }
