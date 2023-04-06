@@ -7,12 +7,14 @@ export class UserDTO
     joinDate: Date;
     clanName: string;
     villages: VillageDTO[];
+    energy: number;
 
     constructor(user: User)
     {
         this.username = user.username;
         this.joinDate = user.joinDate;
         this.clanName = user.clanName;
+        this.energy = user.energy;
         this.villages = [];
         for(let village of user.villages)
         {

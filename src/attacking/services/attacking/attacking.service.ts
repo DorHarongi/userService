@@ -39,6 +39,10 @@ export class AttackingService {
         if(!this.doesAttackerActuallyHaveThoseTroops(attackDTO.attackingTroops, attackerVillage.troops))
             throw new HttpException("You chose more troops than you have", HttpStatus.BAD_REQUEST) 
 
+        if(!this.doesAttackerHaveEnoughEnergy(attacker.energy))
+            throw new HttpException("You have no energy.", HttpStatus.BAD_REQUEST)
+
+
         // everything good -> attack
         let attackerTroops: TroopsAmounts = attackDTO.attackingTroops;
         let defenceTroops: TroopsAmounts = defenderVillage.troops;
@@ -90,6 +94,7 @@ export class AttackingService {
         this.updateRemainingTroopsInVillage(attackerVillage.troops, killedAttackerTroops);
         this.updateRemainingTroopsInVillage(defenceTroops, killedDefenderTroops);
         this.updateRemainingTroopsInVillage(supportTroops, killedSupportTroops);
+        this.decreaseEnergy(attacker);
 
         //update attacker village
         const attackerUpdateResult: UpdateResult = await this.dbAccessorService.getCollection(USER_COLLECTIONS).updateOne({username: attackDTO.attackerName}, {$set: attacker});
@@ -118,6 +123,15 @@ export class AttackingService {
         
         return true;
 
+    }
+
+    doesAttackerHaveEnoughEnergy(energy: number): boolean{
+        return energy > 1;
+    }
+
+    decreaseEnergy(attacker: User)
+    {
+        attacker.energy -= 1;
     }
 
     calculateAttackingPower(attackingTroops: TroopsAmounts): number
