@@ -42,5 +42,11 @@ export class UserController {
         return await this.userRepositorService.getUserVillage(userVillageRequestDTO);
     }
 
+    @Get(':username')
+    async getUser(@Param('username') username: string): Promise<UserDTO>
+    {
+        return await this.userRepositorService.getUser(username);
+    }
+
 
 }

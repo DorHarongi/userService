@@ -77,4 +77,13 @@ export class UserRepositoryService {
 
         return new VillageDTO(userVillage); 
     }
+
+    // used by client every 10 seconds and after re-opening the game tab.
+    async getUser(username: string): Promise<UserDTO>
+    {
+        let result: User = (await this.dbAccessorService.getCollection(COLLECTION_NAME).findOne({username: username})) as User;
+        if(!result)
+            throw new HttpException("User doesnt exist", HttpStatus.NOT_FOUND);
+        return new UserDTO(result);
+    }
 }
