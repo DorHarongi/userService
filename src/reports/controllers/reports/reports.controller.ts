@@ -7,6 +7,12 @@ export class ReportsController {
 
     constructor(private reportsService: ReportsService){ }
 
+    @Get('attackReports/:username')
+    async getNumberOfAttackReportPages(@Param('username') username: string): Promise<number>
+    {
+        return await this.reportsService.getNumberOfAttackReportPages(username);
+    }
+
     @Get('attackReports/:username/:page')
     async getAttackReports(@Param('username') username: string, @Param('page') page: number): Promise<AttackReportToClientDTO[]>
     {

@@ -18,10 +18,22 @@ export class ReportsService {
         return result.acknowledged;
     }
 
+    async getNumberOfAttackReportPages(username: string): Promise<number> {
+      const numberOfAttackReports: number = await this.dbAccessorService
+      .getCollection(COLLECTION_NAME)
+      .countDocuments({
+        $or: [
+          { attackerName: username },
+          { defenderName: username }
+        ]
+      });
+      return Math.ceil(numberOfAttackReports / MAX_ATTACK_REPORTS_IN_EACH_PAGE);
+    }
+
     async getAttackReportsOfUser(username: string, page: number): Promise<AttackReportToClientDTO[]>
     {
-        const skip = MAX_ATTACK_REPORTS_IN_EACH_PAGE * (page - 1);
-        const limit = MAX_ATTACK_REPORTS_IN_EACH_PAGE;
+      const skip = MAX_ATTACK_REPORTS_IN_EACH_PAGE * (page - 1);
+      const limit = MAX_ATTACK_REPORTS_IN_EACH_PAGE;
 
       let reportsInPage: AttackReport[] = (await this.dbAccessorService.getCollection(COLLECTION_NAME).find({
         $or: [
