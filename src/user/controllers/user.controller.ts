@@ -30,6 +30,12 @@ export class UserController {
         return await this.userRepositorService.login(userFromClient);
     }
 
+    @Get('statistics')
+    async getNumberOfUserStatisticsPages(): Promise<number>
+    {
+        return await this.userRepositorService.getNumberOfUserStatisticsPages();
+    }
+
     @Get('statistics/:page')
     async getUserStatistics(@Param('page') page: number): Promise<UserStatisticDTO[]>
     {

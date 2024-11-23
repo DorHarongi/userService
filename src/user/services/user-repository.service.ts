@@ -33,6 +33,12 @@ export class UserRepositoryService {
         return new UserDTO(result);
     }
 
+    async getNumberOfUserStatisticsPages(): Promise<number>
+    {
+        const numberOfUsers: number = (await this.dbAccessorService.getCollection(COLLECTION_NAME).estimatedDocumentCount());
+        return Math.ceil(numberOfUsers / MAX_USERS_IN_EACH_STATISTICS_PAGE);
+    }
+
     async getUserStatistics(page: number): Promise<Array<UserStatisticDTO>>
     {
         let result = this.dbAccessorService.getCollection(COLLECTION_NAME).aggregate([
