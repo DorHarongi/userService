@@ -16,12 +16,29 @@ import { AttackReport } from '../../../reports/models/attackReport.entity';
 import { ReportsService } from '../../../reports/services/reports/reports.service';
 
 const USER_COLLECTIONS = "users";
+const BEGINNER_SHIELD_HOURS = 24;
 
 @Injectable()
 export class AttackingService {
 
     constructor(private dbAccessorService: DbAccessorService, private reportsService: ReportsService){
 
+    }
+
+    private isUnderBeginnerShield(user: User): boolean {
+        if (!user.joinDate) return false;
+        const now = new Date();
+        const joinDate = new Date(user.joinDate);
+        const hoursSinceJoin = (now.getTime() - joinDate.getTime()) / (1000 * 60 * 60);
+        return hoursSinceJoin < BEGINNER_SHIELD_HOURS;
+    }
+
+    private getBeginnerShieldRemainingHours(user: User): number {
+        if (!user.joinDate) return 0;
+        const now = new Date();
+        const joinDate = new Date(user.joinDate);
+        const hoursSinceJoin = (now.getTime() - joinDate.getTime()) / (1000 * 60 * 60);
+        return Math.max(0, BEGINNER_SHIELD_HOURS - hoursSinceJoin);
     }
 
     async attack(attackDTO: AttackDTO): Promise<any>{
@@ -31,6 +48,22 @@ export class AttackingService {
         let defender: User = (await this.dbAccessorService.getCollection(USER_COLLECTIONS).findOne({username: attackDTO.defenderName})) as User;
         if(!attacker || !defender)
             throw new HttpException("Attacker or defender doesnt exist", HttpStatus.NOT_FOUND);
+
+        // Beginner shield validation
+        if (this.isUnderBeginnerShield(attacker)) {
+            const remaining = this.getBeginnerShieldRemainingHours(attacker);
+            throw new HttpException(`You are under beginner protection for ${remaining.toFixed(1)} more hours`, HttpStatus.FORBIDDEN);
+        }
+        if (this.isUnderBeginnerShield(defender)) {
+            const remaining = this.getBeginnerShieldRemainingHours(defender);
+            throw new HttpException(`This player is under beginner protection for ${remaining.toFixed(1)} more hours`, HttpStatus.FORBIDDEN);
+        }
+
+        // Same clan validation
+        if (attacker.clanName && defender.clanName && attacker.clanName === defender.clanName) {
+            throw new HttpException("You cannot attack players in your own clan", HttpStatus.BAD_REQUEST);
+        }
+
         const attackerVillage: Village = attacker.villages[attackDTO.attackerVillageIndex];
         const defenderVillage: Village = defender.villages[attackDTO.defenderVillageIndex];
         if(!attackerVillage || !defenderVillage)

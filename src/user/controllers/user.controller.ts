@@ -6,28 +6,68 @@ import { UserDTO } from '../dtos/userDTO';
 import { UserStatisticDTO } from '../dtos/userStatisticDTO';
 import { UserVillageRequestDTO } from '../dtos/userVillageRequestDTO';
 import { VillageDTO } from '../dtos/villageDTO';
+import { AuthService } from '../../auth/services/auth.service';
 
+export interface LoginResponseDTO {
+    user: UserDTO;
+    token: string;
+    ttlMinutes: number;
+}
+
+export interface RefreshTokenDTO {
+    token: string;
+}
 
 @Controller('users')
 export class UserController {
-    constructor(private userRepositorService: UserRepositoryService)
+    constructor(
+        private userRepositorService: UserRepositoryService,
+        private authService: AuthService
+    )
     {
 
 
     }
     @Post('register')
-    async registerUser(@Body() userFromClient: userFromClientDTO): Promise<boolean>
+    async registerUser(@Body() userFromClient: userFromClientDTO): Promise<LoginResponseDTO>
     {
         userFromClient.password = crypto.createHash("shake256")
         .update(userFromClient.password)
         .digest("hex");
-        return await this.userRepositorService.create(userFromClient);
+        const success = await this.userRepositorService.create(userFromClient);
+        if (success) {
+            // Auto-login after registration
+            const user = await this.userRepositorService.getUser(userFromClient.username);
+            const token = this.authService.generateToken(userFromClient.username);
+            return {
+                user,
+                token,
+                ttlMinutes: this.authService.getTtlMinutes()
+            };
+        }
+        throw new Error('Registration failed');
     }
 
     @Post('login')
-    async loginUser(@Body() userFromClient: userFromClientDTO): Promise<UserDTO>
+    async loginUser(@Body() userFromClient: userFromClientDTO): Promise<LoginResponseDTO>
     {
-        return await this.userRepositorService.login(userFromClient);
+        const user = await this.userRepositorService.login(userFromClient);
+        const token = this.authService.generateToken(user.username);
+        return {
+            user,
+            token,
+            ttlMinutes: this.authService.getTtlMinutes()
+        };
+    }
+
+    @Post('refresh-token')
+    async refreshToken(@Body() body: RefreshTokenDTO): Promise<{ token: string; ttlMinutes: number }>
+    {
+        const newToken = this.authService.refreshToken(body.token);
+        return {
+            token: newToken,
+            ttlMinutes: this.authService.getTtlMinutes()
+        };
     }
 
     @Get('statistics')
@@ -50,6 +90,12 @@ export class UserController {
 
     @Get(':username')
     async getUser(@Param('username') username: string): Promise<UserDTO>
+    {
+        return await this.userRepositorService.getUser(username);
+    }
+
+    @Get('profile/:username')
+    async getPlayerProfile(@Param('username') username: string): Promise<UserDTO>
     {
         return await this.userRepositorService.getUser(username);
     }

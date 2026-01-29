@@ -1,6 +1,8 @@
 import { BuildingsLevels } from "./buildingsLevels";
+import { Location } from "./location";
 import { ResourcesAmounts } from "./resourcesAmounts";
 import { ResourcesWorkers } from "./resourcesWorkers";
+import { SupportSentEntry } from "./supportSent";
 import { TroopsAmounts } from "./troopsAmounts";
 import { warehouseStorageByLevel, quartersPopulationByLevel } from 'utils';
 export class Village
@@ -11,15 +13,19 @@ export class Village
     population: number;
     resourcesWorkers: ResourcesWorkers;
     troops: TroopsAmounts; 
-    clanTroops: TroopsAmounts
-    constructor()
+    clanTroops: TroopsAmounts;
+    location: Location;
+    supportSent: SupportSentEntry[];
+    constructor(villageName: string = "New Village", location: Location = new Location(0, 0))
     {
-        this.villageName = "New Village";
+        this.villageName = villageName;
+        this.location = location;
         this.resourcesAmounts = new ResourcesAmounts(warehouseStorageByLevel[1], warehouseStorageByLevel[1], warehouseStorageByLevel[1]);
         this.buildingsLevels = new BuildingsLevels(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1);
         this.population = quartersPopulationByLevel[1];
         this.resourcesWorkers = new ResourcesWorkers(0, 0 , 0);
         this.troops = new TroopsAmounts(0, 0, 0, 0, 0, 0, 0);
         this.clanTroops = new TroopsAmounts(0, 0, 0, 0, 0, 0, 0);
+        this.supportSent = [];
     }
 }

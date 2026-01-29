@@ -1,6 +1,8 @@
 import { BuildingsLevels } from "../models/buildingsLevels";
+import { Location } from "../models/location";
 import { ResourcesAmounts } from "../models/resourcesAmounts";
 import { ResourcesWorkers } from "../models/resourcesWorkers";
+import { SupportSentEntry } from "../models/supportSent";
 import { TroopsAmounts } from "../models/troopsAmounts";
 import { Village } from "../models/village.entity";
 import { singleWorkerProductionSpeedPerSecond, factoriesProductionSpeedByLevel } from 'utils';
@@ -13,7 +15,9 @@ export class VillageDTO
     population: number;
     resourcesWorkers: ResourcesWorkers;
     troops: TroopsAmounts; 
-    clanTroops: TroopsAmounts
+    clanTroops: TroopsAmounts;
+    location: Location;
+    supportSent: SupportSentEntry[];
     woodProductionPerSecond: number;
     stoneProductionPerSecond:  number;
     cropProductionPerSecond: number;
@@ -27,6 +31,8 @@ export class VillageDTO
         this.resourcesWorkers = village.resourcesWorkers;
         this.troops = village.troops;
         this.clanTroops = village.clanTroops;
+        this.location = village.location;
+        this.supportSent = village.supportSent || [];
 
         this.woodProductionPerSecond = factoriesProductionSpeedByLevel[village.buildingsLevels.woodFactoryLevel] + village.resourcesWorkers.woodWorkers * singleWorkerProductionSpeedPerSecond ;
         this.stoneProductionPerSecond = factoriesProductionSpeedByLevel[village.buildingsLevels.stoneMineLevel] + village.resourcesWorkers.stoneWorkers * singleWorkerProductionSpeedPerSecond;

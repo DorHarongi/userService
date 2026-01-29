@@ -1,0 +1,316 @@
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { DbAccessorService } from '../../database/services/db-accessor.service';
+import { User } from '../../user/models/user.entity';
+import { Village } from '../../user/models/village.entity';
+import { TroopsAmounts } from '../../user/models/troopsAmounts';
+import { ResourcesAmounts } from '../../user/models/resourcesAmounts';
+import { Location } from '../../user/models/location';
+import { UserDTO } from '../../user/dtos/userDTO';
+import { SendSupportDTO, WithdrawSupportDTO, SendResourcesDTO, CreateVillageDTO } from '../dtos/interactionDTO';
+import { WorldService } from '../../world/services/world.service';
+import { warehouseStorageByLevel } from 'utils';
+
+const USERS_COLLECTION = "users";
+const CENTER_BUILDING_LEVEL_FOR_NEW_VILLAGE = 10;
+
+@Injectable()
+export class InteractionsService {
+    constructor(
+        private dbAccessorService: DbAccessorService,
+        private worldService: WorldService
+    ) {}
+
+    async sendSupport(dto: SendSupportDTO): Promise<UserDTO> {
+        const sender = await this.dbAccessorService.getCollection(USERS_COLLECTION).findOne({ username: dto.senderUsername }) as User;
+        const recipient = await this.dbAccessorService.getCollection(USERS_COLLECTION).findOne({ username: dto.recipientUsername }) as User;
+
+        if (!sender || !recipient) {
+            throw new HttpException("User not found", HttpStatus.NOT_FOUND);
+        }
+
+        // Same clan validation
+        if (!sender.clanName || !recipient.clanName || sender.clanName !== recipient.clanName) {
+            throw new HttpException("You can only send support to clan members", HttpStatus.BAD_REQUEST);
+        }
+
+        const senderVillage = sender.villages[dto.senderVillageIndex];
+        if (!senderVillage) {
+            throw new HttpException("Sender village not found", HttpStatus.NOT_FOUND);
+        }
+
+        const recipientVillage = recipient.villages.find(v => v.villageName === dto.recipientVillageName);
+        if (!recipientVillage) {
+            throw new HttpException("Recipient village not found", HttpStatus.NOT_FOUND);
+        }
+
+        // Validate sender has enough troops
+        if (!this.hasSufficientTroops(senderVillage.troops, dto.troops)) {
+            throw new HttpException("Insufficient troops", HttpStatus.BAD_REQUEST);
+        }
+
+        // Deduct troops from sender
+        this.subtractTroops(senderVillage.troops, dto.troops);
+
+        // Add to clanTroops of recipient
+        this.addTroops(recipientVillage.clanTroops, dto.troops);
+
+        // Track supportSent for withdrawal
+        const existingSupport = senderVillage.supportSent?.find(
+            s => s.recipientUsername === dto.recipientUsername && s.recipientVillageName === dto.recipientVillageName
+        );
+
+        if (existingSupport) {
+            this.addTroops(existingSupport.troops, dto.troops);
+        } else {
+            if (!senderVillage.supportSent) senderVillage.supportSent = [];
+            senderVillage.supportSent.push({
+                recipientUsername: dto.recipientUsername,
+                recipientVillageName: dto.recipientVillageName,
+                troops: { ...dto.troops }
+            });
+        }
+
+        // Update both users
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username: dto.senderUsername },
+            { $set: sender }
+        );
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username: dto.recipientUsername },
+            { $set: recipient }
+        );
+
+        return new UserDTO(sender);
+    }
+
+    async withdrawSupport(dto: WithdrawSupportDTO): Promise<UserDTO> {
+        const owner = await this.dbAccessorService.getCollection(USERS_COLLECTION).findOne({ username: dto.ownerUsername }) as User;
+        const recipient = await this.dbAccessorService.getCollection(USERS_COLLECTION).findOne({ username: dto.recipientUsername }) as User;
+
+        if (!owner || !recipient) {
+            throw new HttpException("User not found", HttpStatus.NOT_FOUND);
+        }
+
+        const ownerVillage = owner.villages[dto.ownerVillageIndex];
+        if (!ownerVillage) {
+            throw new HttpException("Owner village not found", HttpStatus.NOT_FOUND);
+        }
+
+        const recipientVillage = recipient.villages.find(v => v.villageName === dto.recipientVillageName);
+        if (!recipientVillage) {
+            throw new HttpException("Recipient village not found", HttpStatus.NOT_FOUND);
+        }
+
+        // Find support entry
+        const supportIndex = ownerVillage.supportSent?.findIndex(
+            s => s.recipientUsername === dto.recipientUsername && s.recipientVillageName === dto.recipientVillageName
+        );
+
+        if (supportIndex === undefined || supportIndex === -1) {
+            throw new HttpException("No support found to withdraw", HttpStatus.NOT_FOUND);
+        }
+
+        const supportEntry = ownerVillage.supportSent[supportIndex];
+
+        // Validate withdrawal amounts
+        if (!this.hasSufficientTroops(supportEntry.troops, dto.troops)) {
+            throw new HttpException("Cannot withdraw more troops than sent", HttpStatus.BAD_REQUEST);
+        }
+
+        // Validate recipient still has these troops in clanTroops
+        if (!this.hasSufficientTroops(recipientVillage.clanTroops, dto.troops)) {
+            throw new HttpException("Recipient no longer has these support troops", HttpStatus.BAD_REQUEST);
+        }
+
+        // Subtract from supportSent tracking
+        this.subtractTroops(supportEntry.troops, dto.troops);
+
+        // Remove entry if empty
+        if (this.isTroopsEmpty(supportEntry.troops)) {
+            ownerVillage.supportSent.splice(supportIndex, 1);
+        }
+
+        // Subtract from recipient's clanTroops
+        this.subtractTroops(recipientVillage.clanTroops, dto.troops);
+
+        // Add back to owner's troops
+        this.addTroops(ownerVillage.troops, dto.troops);
+
+        // Update both users
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username: dto.ownerUsername },
+            { $set: owner }
+        );
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username: dto.recipientUsername },
+            { $set: recipient }
+        );
+
+        return new UserDTO(owner);
+    }
+
+    async sendResources(dto: SendResourcesDTO): Promise<UserDTO> {
+        const sender = await this.dbAccessorService.getCollection(USERS_COLLECTION).findOne({ username: dto.senderUsername }) as User;
+        const recipient = await this.dbAccessorService.getCollection(USERS_COLLECTION).findOne({ username: dto.recipientUsername }) as User;
+
+        if (!sender || !recipient) {
+            throw new HttpException("User not found", HttpStatus.NOT_FOUND);
+        }
+
+        // Same clan validation
+        if (!sender.clanName || !recipient.clanName || sender.clanName !== recipient.clanName) {
+            throw new HttpException("You can only send resources to clan members", HttpStatus.BAD_REQUEST);
+        }
+
+        const senderVillage = sender.villages[dto.senderVillageIndex];
+        if (!senderVillage) {
+            throw new HttpException("Sender village not found", HttpStatus.NOT_FOUND);
+        }
+
+        const recipientVillage = recipient.villages.find(v => v.villageName === dto.recipientVillageName);
+        if (!recipientVillage) {
+            throw new HttpException("Recipient village not found", HttpStatus.NOT_FOUND);
+        }
+
+        // Validate sender has enough resources
+        if (senderVillage.resourcesAmounts.woodAmount < dto.resources.woodAmount ||
+            senderVillage.resourcesAmounts.stonesAmount < dto.resources.stonesAmount ||
+            senderVillage.resourcesAmounts.cropAmount < dto.resources.cropAmount) {
+            throw new HttpException("Insufficient resources", HttpStatus.BAD_REQUEST);
+        }
+
+        // Deduct from sender
+        senderVillage.resourcesAmounts.woodAmount -= dto.resources.woodAmount;
+        senderVillage.resourcesAmounts.stonesAmount -= dto.resources.stonesAmount;
+        senderVillage.resourcesAmounts.cropAmount -= dto.resources.cropAmount;
+
+        // Add to recipient (capped by warehouse)
+        const maxWood = warehouseStorageByLevel[recipientVillage.buildingsLevels.woodWarehouseLevel];
+        const maxStone = warehouseStorageByLevel[recipientVillage.buildingsLevels.stoneWarehouseLevel];
+        const maxCrop = warehouseStorageByLevel[recipientVillage.buildingsLevels.cropWarehouseLevel];
+
+        recipientVillage.resourcesAmounts.woodAmount = Math.min(
+            recipientVillage.resourcesAmounts.woodAmount + dto.resources.woodAmount,
+            maxWood
+        );
+        recipientVillage.resourcesAmounts.stonesAmount = Math.min(
+            recipientVillage.resourcesAmounts.stonesAmount + dto.resources.stonesAmount,
+            maxStone
+        );
+        recipientVillage.resourcesAmounts.cropAmount = Math.min(
+            recipientVillage.resourcesAmounts.cropAmount + dto.resources.cropAmount,
+            maxCrop
+        );
+
+        // Update both users
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username: dto.senderUsername },
+            { $set: sender }
+        );
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username: dto.recipientUsername },
+            { $set: recipient }
+        );
+
+        return new UserDTO(sender);
+    }
+
+    async createNewVillage(dto: CreateVillageDTO): Promise<UserDTO> {
+        const user = await this.dbAccessorService.getCollection(USERS_COLLECTION).findOne({ username: dto.username }) as User;
+
+        if (!user) {
+            throw new HttpException("User not found", HttpStatus.NOT_FOUND);
+        }
+
+        const sourceVillage = user.villages[dto.sourceVillageIndex];
+        if (!sourceVillage) {
+            throw new HttpException("Source village not found", HttpStatus.NOT_FOUND);
+        }
+
+        // Validate center building level
+        if (sourceVillage.buildingsLevels.centerBuildingLevel < CENTER_BUILDING_LEVEL_FOR_NEW_VILLAGE) {
+            throw new HttpException(
+                `Center building must be level ${CENTER_BUILDING_LEVEL_FOR_NEW_VILLAGE} to create a new village`,
+                HttpStatus.BAD_REQUEST
+            );
+        }
+
+        // Check if user has already created a village from this source
+        // Each village can only create one new village
+        const villagesCreatedBySource = user.villages.filter((v, i) => i > 0); // All except first
+        if (villagesCreatedBySource.length >= user.villages.filter(v => 
+            v.buildingsLevels.centerBuildingLevel >= CENTER_BUILDING_LEVEL_FOR_NEW_VILLAGE
+        ).length) {
+            throw new HttpException(
+                "This village has already been used to create a new village",
+                HttpStatus.BAD_REQUEST
+            );
+        }
+
+        // Validate village name is unique for this user
+        if (user.villages.some(v => v.villageName === dto.newVillageName)) {
+            throw new HttpException("Village name already exists", HttpStatus.CONFLICT);
+        }
+
+        // Reserve the grid cell
+        const reserved = await this.worldService.reserveGridForVillage(
+            dto.x, dto.y, dto.username, dto.newVillageName
+        );
+
+        if (!reserved) {
+            throw new HttpException("Grid cell is not available", HttpStatus.CONFLICT);
+        }
+
+        // Create new village
+        const newVillage = new Village(dto.newVillageName, new Location(dto.x, dto.y));
+        user.villages.push(newVillage);
+
+        // Update user
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username: dto.username },
+            { $set: user }
+        );
+
+        return new UserDTO(user);
+    }
+
+    private hasSufficientTroops(available: TroopsAmounts, required: TroopsAmounts): boolean {
+        return available.spearFighters >= required.spearFighters &&
+            available.swordFighters >= required.swordFighters &&
+            available.axeFighters >= required.axeFighters &&
+            available.archers >= required.archers &&
+            available.magicians >= required.magicians &&
+            available.horsemen >= required.horsemen &&
+            available.catapults >= required.catapults;
+    }
+
+    private subtractTroops(from: TroopsAmounts, amount: TroopsAmounts): void {
+        from.spearFighters -= amount.spearFighters;
+        from.swordFighters -= amount.swordFighters;
+        from.axeFighters -= amount.axeFighters;
+        from.archers -= amount.archers;
+        from.magicians -= amount.magicians;
+        from.horsemen -= amount.horsemen;
+        from.catapults -= amount.catapults;
+    }
+
+    private addTroops(to: TroopsAmounts, amount: TroopsAmounts): void {
+        to.spearFighters += amount.spearFighters;
+        to.swordFighters += amount.swordFighters;
+        to.axeFighters += amount.axeFighters;
+        to.archers += amount.archers;
+        to.magicians += amount.magicians;
+        to.horsemen += amount.horsemen;
+        to.catapults += amount.catapults;
+    }
+
+    private isTroopsEmpty(troops: TroopsAmounts): boolean {
+        return troops.spearFighters === 0 &&
+            troops.swordFighters === 0 &&
+            troops.axeFighters === 0 &&
+            troops.archers === 0 &&
+            troops.magicians === 0 &&
+            troops.horsemen === 0 &&
+            troops.catapults === 0;
+    }
+}

@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Inject, forwardRef } from '@nestjs/common';
 import { InsertOneResult } from 'mongodb';
 import { DbAccessorService } from '../../database/services/db-accessor.service';
 import { User } from '../models/user.entity';
@@ -9,19 +9,56 @@ import { UserStatisticDTO } from '../dtos/userStatisticDTO';
 import { Village } from '../models/village.entity';
 import { UserVillageRequestDTO } from '../dtos/userVillageRequestDTO';
 import { VillageDTO } from '../dtos/villageDTO';
+import { WorldService } from '../../world/services/world.service';
+import { Location } from '../models/location';
 
 const MAX_USERS_IN_EACH_STATISTICS_PAGE = 10;
 const COLLECTION_NAME = "users";
 
 @Injectable()
 export class UserRepositoryService {
-    constructor(private dbAccessorService: DbAccessorService)
+    constructor(
+        private dbAccessorService: DbAccessorService,
+        @Inject(forwardRef(() => WorldService)) private worldService: WorldService
+    )
     {
 
     }
     async create(userFromClient: userFromClientDTO): Promise<boolean> {
-        const user:User = new User(userFromClient);
+        // Check if username already exists
+        const existingUser = await this.dbAccessorService.getCollection(COLLECTION_NAME).findOne({ username: userFromClient.username });
+        if (existingUser) {
+            throw new HttpException("Username already exists", HttpStatus.CONFLICT);
+        }
+
+        // Initialize world if needed
+        try {
+            await this.worldService.initializeWorld();
+        } catch (e) {
+            console.error("World initialization error (may be partial, continuing):", e.message);
+        }
+
+        // Find a location using proximity-based placement
+        const location: Location = await this.worldService.findLocationForNewVillage();
+        
+        // Try to reserve the grid cell FIRST before creating user
+        const reserved = await this.worldService.reserveGridForVillage(location.x, location.y, userFromClient.username, "Village");
+        if (!reserved) {
+            // Retry with a different location
+            const retryLocation = await this.worldService.findLocationForNewVillage();
+            const retryReserved = await this.worldService.reserveGridForVillage(retryLocation.x, retryLocation.y, userFromClient.username, "Village");
+            if (!retryReserved) {
+                throw new HttpException("Could not find available location for village", HttpStatus.SERVICE_UNAVAILABLE);
+            }
+            // Use retry location
+            const user: User = new User(userFromClient, retryLocation);
+            let result: InsertOneResult = await this.dbAccessorService.getCollection(COLLECTION_NAME).insertOne(user);
+            return result.acknowledged;
+        }
+        
+        const user: User = new User(userFromClient, location);
         let result: InsertOneResult = await this.dbAccessorService.getCollection(COLLECTION_NAME).insertOne(user);
+        
         return result.acknowledged;
     }  
 
