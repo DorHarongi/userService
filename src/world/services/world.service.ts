@@ -90,16 +90,21 @@ export class WorldService {
         const existingVillageCount = await this.dbAccessorService.getCollection(GRID_COLLECTION).countDocuments({ taken: true });
 
         if (existingVillageCount === 0) {
-            // First player - place near center of the map
+            // First player - place randomly near center of the map
             const centerX = Math.floor(WORLD_SIZE / 2);
             const centerY = Math.floor(WORLD_SIZE / 2);
             
-            // Find an available spot near center
-            const nearbyGrid = await this.dbAccessorService.getCollection(GRID_COLLECTION).findOne({
-                taken: false,
-                x: { $gte: centerX - 5, $lte: centerX + 5 },
-                y: { $gte: centerY - 5, $lte: centerY + 5 }
-            }) as IGrid;
+            // Find a RANDOM available spot near center using $sample
+            const nearbyGrid = await this.dbAccessorService.getCollection(GRID_COLLECTION).aggregate([
+                {
+                    $match: {
+                        taken: false,
+                        x: { $gte: centerX - 5, $lte: centerX + 5 },
+                        y: { $gte: centerY - 5, $lte: centerY + 5 }
+                    }
+                },
+                { $sample: { size: 1 } }
+            ]).next() as IGrid;
 
             if (nearbyGrid) {
                 return new Location(nearbyGrid.x, nearbyGrid.y);
@@ -113,13 +118,18 @@ export class WorldService {
             .toArray() as IGrid[];
 
         if (existingVillages.length > 0) {
-            // Shuffle and try to find spot near each village
+            // Shuffle and try to find a RANDOM spot near each village
             for (const village of existingVillages.sort(() => Math.random() - 0.5)) {
-                const nearbySpot = await this.dbAccessorService.getCollection(GRID_COLLECTION).findOne({
-                    taken: false,
-                    x: { $gte: Math.max(0, village.x - PROXIMITY_RANGE), $lte: Math.min(WORLD_SIZE - 1, village.x + PROXIMITY_RANGE) },
-                    y: { $gte: Math.max(0, village.y - PROXIMITY_RANGE), $lte: Math.min(WORLD_SIZE - 1, village.y + PROXIMITY_RANGE) }
-                }) as IGrid;
+                const nearbySpot = await this.dbAccessorService.getCollection(GRID_COLLECTION).aggregate([
+                    {
+                        $match: {
+                            taken: false,
+                            x: { $gte: Math.max(0, village.x - PROXIMITY_RANGE), $lte: Math.min(WORLD_SIZE - 1, village.x + PROXIMITY_RANGE) },
+                            y: { $gte: Math.max(0, village.y - PROXIMITY_RANGE), $lte: Math.min(WORLD_SIZE - 1, village.y + PROXIMITY_RANGE) }
+                        }
+                    },
+                    { $sample: { size: 1 } }
+                ]).next() as IGrid;
 
                 if (nearbySpot) {
                     return new Location(nearbySpot.x, nearbySpot.y);
@@ -127,8 +137,11 @@ export class WorldService {
             }
         }
 
-        // Fallback: if no spot found near existing villages, find any available spot
-        const anyAvailableGrid = await this.dbAccessorService.getCollection(GRID_COLLECTION).findOne({ taken: false }) as IGrid;
+        // Fallback: if no spot found near existing villages, find any random available spot
+        const anyAvailableGrid = await this.dbAccessorService.getCollection(GRID_COLLECTION).aggregate([
+            { $match: { taken: false } },
+            { $sample: { size: 1 } }
+        ]).next() as IGrid;
 
         if (anyAvailableGrid) {
             return new Location(anyAvailableGrid.x, anyAvailableGrid.y);
