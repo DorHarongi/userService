@@ -150,13 +150,13 @@ export class ClansService {
                             requestDate: new Date()
                         }
                     }
-                }
+                } as any
             );
 
             // Track pending request on user side
             await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
                 { username: joinRequest.username },
-                { $push: { pendingClanRequests: joinRequest.clanName } }
+                { $push: { pendingClanRequests: joinRequest.clanName } } as any
             );
 
             return { success: true };
@@ -176,13 +176,13 @@ export class ClansService {
         // Remove from pending requests
         await this.dbAccessorService.getCollection(CLANS_COLLECTION).updateOne(
             { clanName: handleRequest.clanName },
-            { $pull: { pendingRequests: { username: handleRequest.requestUsername } } }
+            { $pull: { pendingRequests: { username: handleRequest.requestUsername } } } as any
         );
 
         // Remove from user's pending clan requests
         await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
             { username: handleRequest.requestUsername },
-            { $pull: { pendingClanRequests: handleRequest.clanName } }
+            { $pull: { pendingClanRequests: handleRequest.clanName } } as any
         );
 
         if (handleRequest.accept) {
@@ -195,7 +195,7 @@ export class ClansService {
     private async addMemberToClan(clanName: string, username: string): Promise<void> {
         await this.dbAccessorService.getCollection(CLANS_COLLECTION).updateOne(
             { clanName },
-            { $addToSet: { members: username } }
+            { $addToSet: { members: username } } as any
         );
 
         await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
@@ -203,7 +203,7 @@ export class ClansService {
             { 
                 $set: { clanName: clanName },
                 $pull: { pendingClanRequests: clanName }
-            }
+            } as any
         );
     }
 
@@ -223,7 +223,7 @@ export class ClansService {
                     { 
                         $set: { leaderUsername: newLeader },
                         $pull: { members: leaveClanDTO.username }
-                    }
+                    } as any
                 );
             } else {
                 // Dissolve clan
@@ -233,7 +233,7 @@ export class ClansService {
             // Regular member leaving
             await this.dbAccessorService.getCollection(CLANS_COLLECTION).updateOne(
                 { clanName: leaveClanDTO.clanName },
-                { $pull: { members: leaveClanDTO.username } }
+                { $pull: { members: leaveClanDTO.username } } as any
             );
         }
 
