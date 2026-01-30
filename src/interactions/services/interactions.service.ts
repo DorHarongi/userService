@@ -342,6 +342,14 @@ export class InteractionsService {
             await this.worldService.updateVillageName(village.location.x, village.location.y, dto.newVillageName.trim());
         }
 
+        // Update all supportSent entries in other users that reference this village
+        // This ensures support troop withdrawal still works after village rename
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateMany(
+            { "villages.supportSent.recipientUsername": dto.username, "villages.supportSent.recipientVillageName": oldName },
+            { $set: { "villages.$[].supportSent.$[elem].recipientVillageName": dto.newVillageName.trim() } },
+            { arrayFilters: [{ "elem.recipientUsername": dto.username, "elem.recipientVillageName": oldName }] }
+        );
+
         return new UserDTO(user);
     }
 
