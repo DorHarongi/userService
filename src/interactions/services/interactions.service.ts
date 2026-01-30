@@ -8,6 +8,7 @@ import { Location } from '../../user/models/location';
 import { UserDTO } from '../../user/dtos/userDTO';
 import { SendSupportDTO, WithdrawSupportDTO, SendResourcesDTO, CreateVillageDTO } from '../dtos/interactionDTO';
 import { WorldService } from '../../world/services/world.service';
+import { MessagesService } from '../../messages/services/messages.service';
 import { warehouseStorageByLevel } from 'utils';
 
 const USERS_COLLECTION = "users";
@@ -17,7 +18,8 @@ const CENTER_BUILDING_LEVEL_FOR_NEW_VILLAGE = 10;
 export class InteractionsService {
     constructor(
         private dbAccessorService: DbAccessorService,
-        private worldService: WorldService
+        private worldService: WorldService,
+        private messagesService: MessagesService
     ) {}
 
     async sendSupport(dto: SendSupportDTO): Promise<UserDTO> {
@@ -48,10 +50,15 @@ export class InteractionsService {
             throw new HttpException("Insufficient troops", HttpStatus.BAD_REQUEST);
         }
 
+        // Check if any troops are being sent
+        if (this.isTroopsEmpty(dto.troops)) {
+            throw new HttpException("You must select at least one troop to send", HttpStatus.BAD_REQUEST);
+        }
+
         // Deduct troops from sender
         this.subtractTroops(senderVillage.troops, dto.troops);
 
-        // Add to clanTroops of recipient
+        // Add to clanTroops of recipient (support troops don't count towards population)
         this.addTroops(recipientVillage.clanTroops, dto.troops);
 
         // Track supportSent for withdrawal
@@ -78,6 +85,35 @@ export class InteractionsService {
         await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
             { username: dto.recipientUsername },
             { $set: recipient }
+        );
+
+        // Send messages to both parties
+        const troopsData = {
+            spearFighters: dto.troops.spearFighters,
+            swordFighters: dto.troops.swordFighters,
+            axeFighters: dto.troops.axeFighters,
+            archers: dto.troops.archers,
+            magicians: dto.troops.magicians,
+            horsemen: dto.troops.horsemen,
+            catapults: dto.troops.catapults
+        };
+
+        await this.messagesService.sendSupportTroopsMessage(
+            dto.senderUsername,
+            dto.recipientUsername,
+            senderVillage.villageName,
+            dto.recipientVillageName,
+            troopsData,
+            true // sender message
+        );
+
+        await this.messagesService.sendSupportTroopsMessage(
+            dto.senderUsername,
+            dto.recipientUsername,
+            senderVillage.villageName,
+            dto.recipientVillageName,
+            troopsData,
+            false // recipient message
         );
 
         return new UserDTO(sender);
@@ -172,35 +208,39 @@ export class InteractionsService {
             throw new HttpException("Recipient village not found", HttpStatus.NOT_FOUND);
         }
 
-        // Validate sender has enough resources
-        if (senderVillage.resourcesAmounts.woodAmount < dto.resources.woodAmount ||
-            senderVillage.resourcesAmounts.stonesAmount < dto.resources.stonesAmount ||
-            senderVillage.resourcesAmounts.cropAmount < dto.resources.cropAmount) {
-            throw new HttpException("Insufficient resources", HttpStatus.BAD_REQUEST);
-        }
+        // Cap requested amounts by what sender actually has
+        const actualWoodToSend = Math.min(dto.resources.woodAmount, senderVillage.resourcesAmounts.woodAmount);
+        const actualStoneToSend = Math.min(dto.resources.stonesAmount, senderVillage.resourcesAmounts.stonesAmount);
+        const actualCropToSend = Math.min(dto.resources.cropAmount, senderVillage.resourcesAmounts.cropAmount);
 
-        // Deduct from sender
-        senderVillage.resourcesAmounts.woodAmount -= dto.resources.woodAmount;
-        senderVillage.resourcesAmounts.stonesAmount -= dto.resources.stonesAmount;
-        senderVillage.resourcesAmounts.cropAmount -= dto.resources.cropAmount;
-
-        // Add to recipient (capped by warehouse)
+        // Calculate recipient's available storage space
         const maxWood = warehouseStorageByLevel[recipientVillage.buildingsLevels.woodWarehouseLevel];
         const maxStone = warehouseStorageByLevel[recipientVillage.buildingsLevels.stoneWarehouseLevel];
         const maxCrop = warehouseStorageByLevel[recipientVillage.buildingsLevels.cropWarehouseLevel];
 
-        recipientVillage.resourcesAmounts.woodAmount = Math.min(
-            recipientVillage.resourcesAmounts.woodAmount + dto.resources.woodAmount,
-            maxWood
-        );
-        recipientVillage.resourcesAmounts.stonesAmount = Math.min(
-            recipientVillage.resourcesAmounts.stonesAmount + dto.resources.stonesAmount,
-            maxStone
-        );
-        recipientVillage.resourcesAmounts.cropAmount = Math.min(
-            recipientVillage.resourcesAmounts.cropAmount + dto.resources.cropAmount,
-            maxCrop
-        );
+        const woodSpace = maxWood - recipientVillage.resourcesAmounts.woodAmount;
+        const stoneSpace = maxStone - recipientVillage.resourcesAmounts.stonesAmount;
+        const cropSpace = maxCrop - recipientVillage.resourcesAmounts.cropAmount;
+
+        // Calculate what recipient can actually receive (capped by available space)
+        const woodReceived = Math.min(actualWoodToSend, woodSpace);
+        const stoneReceived = Math.min(actualStoneToSend, stoneSpace);
+        const cropReceived = Math.min(actualCropToSend, cropSpace);
+
+        // Check if anything can be transferred
+        if (woodReceived === 0 && stoneReceived === 0 && cropReceived === 0) {
+            throw new HttpException("Recipient's warehouses are full", HttpStatus.BAD_REQUEST);
+        }
+
+        // Deduct only what recipient can receive from sender
+        senderVillage.resourcesAmounts.woodAmount -= woodReceived;
+        senderVillage.resourcesAmounts.stonesAmount -= stoneReceived;
+        senderVillage.resourcesAmounts.cropAmount -= cropReceived;
+
+        // Add to recipient
+        recipientVillage.resourcesAmounts.woodAmount += woodReceived;
+        recipientVillage.resourcesAmounts.stonesAmount += stoneReceived;
+        recipientVillage.resourcesAmounts.cropAmount += cropReceived;
 
         // Update both users
         await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
@@ -210,6 +250,31 @@ export class InteractionsService {
         await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
             { username: dto.recipientUsername },
             { $set: recipient }
+        );
+
+        // Send messages to both parties
+        const resourcesData = {
+            wood: woodReceived,
+            stone: stoneReceived,
+            crop: cropReceived
+        };
+
+        await this.messagesService.sendResourceTransferMessage(
+            dto.senderUsername,
+            dto.recipientUsername,
+            senderVillage.villageName,
+            dto.recipientVillageName,
+            resourcesData,
+            true // sender message
+        );
+
+        await this.messagesService.sendResourceTransferMessage(
+            dto.senderUsername,
+            dto.recipientUsername,
+            senderVillage.villageName,
+            dto.recipientVillageName,
+            resourcesData,
+            false // recipient message
         );
 
         return new UserDTO(sender);

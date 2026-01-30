@@ -13,9 +13,10 @@ import { ClansModule } from './clans/clans.module';
 import { MessagesModule } from './messages/messages.module';
 import { InteractionsModule } from './interactions/interactions.module';
 import { AuthModule } from './auth/auth.module';
+import { QuestModule } from './quests/quest.module';
 
 @Module({
-  imports: [UserModule, DatabaseModule, BuildingsModule, TroopsModule, WorkersModule, AttackingModule, ReportsModule, WorldModule, ClansModule, MessagesModule, InteractionsModule, AuthModule],
+  imports: [UserModule, DatabaseModule, BuildingsModule, TroopsModule, WorkersModule, AttackingModule, ReportsModule, WorldModule, ClansModule, MessagesModule, InteractionsModule, AuthModule, QuestModule],
   controllers: [AppController],
   providers: [AppService],
 })

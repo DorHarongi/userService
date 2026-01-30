@@ -12,17 +12,22 @@ import { spearFighterMinimumArsenalLevel, swordFighterMinimumArsenalLevel, axeFi
     swordFighterMaterialsCost, spearFighterMaterialsCost, axeFighterMaterialsCost, archerMaterialsCost, magicianMaterialsCost, horsemenMaterialsCost, catapultsMaterialsCost,
     quartersPopulationByLevel}
     from 'utils'
+import { QuestService } from '../../../../quests/quest.service';
+import { QuestAwareResponse } from '../../../../quests/quest-response.dto';
 
     const USER_COLLECTIONS = "users";
 
 @Injectable()
 export class TroopsTrainingService {
-    constructor(private dbAccessorService: DbAccessorService)
+    constructor(
+        private dbAccessorService: DbAccessorService,
+        private questService: QuestService
+    )
     {
 
     }
 
-    async trainTroops(trainDTO: TrainDTO): Promise<UserDTO>{
+    async trainTroops(trainDTO: TrainDTO): Promise<QuestAwareResponse>{
         const user: User = (await this.dbAccessorService.getCollection(USER_COLLECTIONS).findOne({username: trainDTO.username})) as User;
         if(!user)
             throw new HttpException("Username doesnt exist", HttpStatus.NOT_FOUND);
@@ -52,8 +57,14 @@ export class TroopsTrainingService {
 
         this.addTroopsToUser(village.troops, trainDTO.troopsAmount);
 
+        // Check for quest completion
+        const questCompleted = this.questService.checkAndCompleteQuest(user, {
+            type: 'TRAIN_TROOPS',
+            totalTroops: this.calculateTotalTroops(village)
+        }, trainDTO.villageIndex);
+
         const updateResult: UpdateResult = await this.dbAccessorService.getCollection(USER_COLLECTIONS).updateOne({username: trainDTO.username}, {$set: user});
-        return new UserDTO(user);
+        return { user: new UserDTO(user), questCompleted };
     }
 
     foundNegativeNumbersInDTO(trainDTO: TrainDTO)

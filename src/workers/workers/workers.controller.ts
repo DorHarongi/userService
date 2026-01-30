@@ -1,7 +1,7 @@
 import { Body, Controller, Post } from '@nestjs/common';
-import { UserDTO } from '../../user/dtos/userDTO';
 import { WorkersDTO } from '../dtos/workersDTO';
 import { WorkersService } from './workers.service';
+import { QuestAwareResponse } from '../../quests/quest-response.dto';
 
 @Controller('workers')
 export class WorkersController {
@@ -13,7 +13,7 @@ export class WorkersController {
     }
 
     @Post()
-    async hireWorkers(@Body() workersDTO: WorkersDTO): Promise<UserDTO>
+    async hireWorkers(@Body() workersDTO: WorkersDTO): Promise<QuestAwareResponse>
     {
         return await this.workersService.hireWorkers(workersDTO);
     }

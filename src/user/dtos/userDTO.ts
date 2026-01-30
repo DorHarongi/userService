@@ -10,6 +10,7 @@ export class UserDTO
     energy: number;
     pendingClanRequests: string[];
     intro: string;
+    currentQuestIndex: number;
 
     constructor(user: User)
     {
@@ -19,6 +20,7 @@ export class UserDTO
         this.energy = user.energy;
         this.pendingClanRequests = user.pendingClanRequests || [];
         this.intro = user.intro || '';
+        this.currentQuestIndex = user.currentQuestIndex || 1; // Default to 1 for backwards compatibility
         this.villages = [];
         for(let village of user.villages)
         {

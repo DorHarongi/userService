@@ -8,17 +8,22 @@ import { Village } from '../../../user/models/village.entity';
 import { UpdateResult } from 'mongodb';
 import { BuildingGetterSetter } from '../../classes/buildingGetterSetter';
 import { UserDTO } from '../../../user/dtos/userDTO';
+import { QuestService } from '../../../quests/quest.service';
+import { QuestAwareResponse } from '../../../quests/quest-response.dto';
 
 const USER_COLLECTIONS = "users";
 
 @Injectable()
 export class BuildingsUpgradingService {
-    constructor(private dbAccessorService: DbAccessorService)
+    constructor(
+        private dbAccessorService: DbAccessorService,
+        private questService: QuestService
+    )
     {
 
     }
 
-    async upgradeBuilding(upgradeDTO: upgradeDTO): Promise<UserDTO>{
+    async upgradeBuilding(upgradeDTO: upgradeDTO): Promise<QuestAwareResponse>{
         const user: User = (await this.dbAccessorService.getCollection(USER_COLLECTIONS).findOne({username: upgradeDTO.username})) as User;
         if(!user)
             throw new HttpException("Username doesnt exist", HttpStatus.NOT_FOUND);
@@ -49,8 +54,15 @@ export class BuildingsUpgradingService {
         village.resourcesAmounts.stonesAmount -= materialsCost.stones;
         village.resourcesAmounts.woodAmount -= materialsCost.wood;
 
+        // Check for quest completion
+        const questCompleted = this.questService.checkAndCompleteQuest(user, {
+            type: 'UPGRADE_BUILDING',
+            buildingName: upgradeDTO.buildingName,
+            newLevel: buildingNextLevel
+        }, upgradeDTO.villageIndex);
+
         const updateResult: UpdateResult = await this.dbAccessorService.getCollection(USER_COLLECTIONS).updateOne({username: upgradeDTO.username}, {$set: user});
-        return new UserDTO(user);
+        return { user: new UserDTO(user), questCompleted };
     }
 
     buildUserBuildingsLevelsDictionary(userVillage: Village): {[name: string] : BuildingGetterSetter}

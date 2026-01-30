@@ -1,7 +1,7 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { ObjectId } from 'mongodb';
 import { DbAccessorService } from '../../database/services/db-accessor.service';
-import { Message, MessageType, IMessage } from '../models/message.entity';
+import { Message, MessageType, IMessage, ResourcesMetadata, TroopsMetadata } from '../models/message.entity';
 import { MessageDTO, SendMessageDTO } from '../dtos/messageDTO';
 
 const MESSAGES_COLLECTION = "messages";
@@ -73,7 +73,17 @@ export class MessagesService {
         let filter: any = { recipientUsername: username };
         
         if (type === 'messages') {
-            filter.type = { $in: [MessageType.PLAYER_MESSAGE, MessageType.CLAN_JOIN_REQUEST, MessageType.CLAN_REQUEST_ACCEPTED, MessageType.CLAN_REQUEST_DECLINED, MessageType.SYSTEM_MESSAGE] };
+            filter.type = { $in: [
+                MessageType.PLAYER_MESSAGE, 
+                MessageType.CLAN_JOIN_REQUEST, 
+                MessageType.CLAN_REQUEST_ACCEPTED, 
+                MessageType.CLAN_REQUEST_DECLINED, 
+                MessageType.SYSTEM_MESSAGE,
+                MessageType.RESOURCES_SENT,
+                MessageType.RESOURCES_RECEIVED,
+                MessageType.SUPPORT_SENT,
+                MessageType.SUPPORT_RECEIVED
+            ] };
         }
 
         const result = await this.dbAccessorService.getCollection(MESSAGES_COLLECTION)
@@ -90,7 +100,17 @@ export class MessagesService {
         let filter: any = { recipientUsername: username };
         
         if (type === 'messages') {
-            filter.type = { $in: [MessageType.PLAYER_MESSAGE, MessageType.CLAN_JOIN_REQUEST, MessageType.CLAN_REQUEST_ACCEPTED, MessageType.CLAN_REQUEST_DECLINED, MessageType.SYSTEM_MESSAGE] };
+            filter.type = { $in: [
+                MessageType.PLAYER_MESSAGE, 
+                MessageType.CLAN_JOIN_REQUEST, 
+                MessageType.CLAN_REQUEST_ACCEPTED, 
+                MessageType.CLAN_REQUEST_DECLINED, 
+                MessageType.SYSTEM_MESSAGE,
+                MessageType.RESOURCES_SENT,
+                MessageType.RESOURCES_RECEIVED,
+                MessageType.SUPPORT_SENT,
+                MessageType.SUPPORT_RECEIVED
+            ] };
         }
 
         const skip = MAX_MESSAGES_PER_PAGE * (page - 1);
@@ -152,5 +172,87 @@ export class MessagesService {
         );
 
         await this.dbAccessorService.getCollection(MESSAGES_COLLECTION).insertOne(message);
+    }
+
+    async sendResourceTransferMessage(
+        senderUsername: string,
+        recipientUsername: string,
+        senderVillageName: string,
+        recipientVillageName: string,
+        resources: ResourcesMetadata,
+        isSenderMessage: boolean
+    ): Promise<void> {
+        const resourcesData: ResourcesMetadata = {
+            ...resources,
+            senderVillageName,
+            recipientVillageName
+        };
+
+        if (isSenderMessage) {
+            // Message for sender
+            const message = new Message(
+                senderUsername,
+                MessageType.RESOURCES_SENT,
+                `Resources sent to ${recipientUsername}`,
+                `You sent resources to ${recipientUsername} (${recipientVillageName})`,
+                false,
+                senderUsername,
+                { resources: resourcesData }
+            );
+            await this.dbAccessorService.getCollection(MESSAGES_COLLECTION).insertOne(message);
+        } else {
+            // Message for recipient
+            const message = new Message(
+                recipientUsername,
+                MessageType.RESOURCES_RECEIVED,
+                `Resources received from ${senderUsername}`,
+                `You received resources from ${senderUsername} (${senderVillageName})`,
+                false,
+                senderUsername,
+                { resources: resourcesData }
+            );
+            await this.dbAccessorService.getCollection(MESSAGES_COLLECTION).insertOne(message);
+        }
+    }
+
+    async sendSupportTroopsMessage(
+        senderUsername: string,
+        recipientUsername: string,
+        senderVillageName: string,
+        recipientVillageName: string,
+        troops: TroopsMetadata,
+        isSenderMessage: boolean
+    ): Promise<void> {
+        const troopsData: TroopsMetadata = {
+            ...troops,
+            senderVillageName,
+            recipientVillageName
+        };
+
+        if (isSenderMessage) {
+            // Message for sender
+            const message = new Message(
+                senderUsername,
+                MessageType.SUPPORT_SENT,
+                `Support troops sent to ${recipientUsername}`,
+                `You sent support troops to ${recipientUsername} (${recipientVillageName})`,
+                false,
+                senderUsername,
+                { troops: troopsData }
+            );
+            await this.dbAccessorService.getCollection(MESSAGES_COLLECTION).insertOne(message);
+        } else {
+            // Message for recipient
+            const message = new Message(
+                recipientUsername,
+                MessageType.SUPPORT_RECEIVED,
+                `Support troops received from ${senderUsername}`,
+                `You received support troops from ${senderUsername} (${senderVillageName})`,
+                false,
+                senderUsername,
+                { troops: troopsData }
+            );
+            await this.dbAccessorService.getCollection(MESSAGES_COLLECTION).insertOne(message);
+        }
     }
 }

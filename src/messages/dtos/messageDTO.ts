@@ -1,4 +1,4 @@
-import { Message, MessageType } from "../models/message.entity";
+import { Message, MessageType, ResourcesMetadata, TroopsMetadata } from "../models/message.entity";
 
 export class MessageDTO {
     id: string;
@@ -13,6 +13,8 @@ export class MessageDTO {
     metadata?: {
         clanName?: string;
         requestUsername?: string;
+        resources?: ResourcesMetadata;
+        troops?: TroopsMetadata;
     };
 
     constructor(message: Message) {

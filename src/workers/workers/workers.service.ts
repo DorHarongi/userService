@@ -7,18 +7,23 @@ import { User } from '../../user/models/user.entity';
 import { WorkersDTO } from '../dtos/workersDTO';
 import { quartersPopulationByLevel} from 'utils';
 import { ResourcesWorkers } from '../../user/models/resourcesWorkers';
+import { QuestService } from '../../quests/quest.service';
+import { QuestAwareResponse } from '../../quests/quest-response.dto';
 
 const USER_COLLECTIONS = "users";
 
 @Injectable()
 export class WorkersService {
     
-    constructor(private dbAccessorService: DbAccessorService)
+    constructor(
+        private dbAccessorService: DbAccessorService,
+        private questService: QuestService
+    )
     {
 
     }
     
-    async hireWorkers(workersDTO: WorkersDTO): Promise<UserDTO>{
+    async hireWorkers(workersDTO: WorkersDTO): Promise<QuestAwareResponse>{
         const user: User = (await this.dbAccessorService.getCollection(USER_COLLECTIONS).findOne({username: workersDTO.username})) as User;
         if(!user)
             throw new HttpException("Username doesnt exist", HttpStatus.NOT_FOUND);
@@ -36,8 +41,15 @@ export class WorkersService {
         // everything good -> changeWorkers workers
 
         this.addWorkersToVillage(village, workersDTO.resourcesWorkers);
+
+        // Check for quest completion
+        const questCompleted = this.questService.checkAndCompleteQuest(user, {
+            type: 'HIRE_WORKERS',
+            totalWorkers: this.calculateTotalWorkers(village)
+        }, workersDTO.villageIndex);
+
         const updateResult: UpdateResult = await this.dbAccessorService.getCollection(USER_COLLECTIONS).updateOne({username: workersDTO.username}, {$set: user});
-        return new UserDTO(user);
+        return { user: new UserDTO(user), questCompleted };
     }
 
     addWorkersToVillage(village: Village, resourcesWorkers: ResourcesWorkers): void

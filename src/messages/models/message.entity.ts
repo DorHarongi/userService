@@ -5,7 +5,31 @@ export enum MessageType {
     CLAN_REQUEST_ACCEPTED = "clan_request_accepted",
     CLAN_REQUEST_DECLINED = "clan_request_declined",
     PLAYER_MESSAGE = "player_message",
-    SYSTEM_MESSAGE = "system_message"
+    SYSTEM_MESSAGE = "system_message",
+    RESOURCES_SENT = "resources_sent",
+    RESOURCES_RECEIVED = "resources_received",
+    SUPPORT_SENT = "support_sent",
+    SUPPORT_RECEIVED = "support_received"
+}
+
+export interface ResourcesMetadata {
+    wood: number;
+    stone: number;
+    crop: number;
+    senderVillageName?: string;
+    recipientVillageName?: string;
+}
+
+export interface TroopsMetadata {
+    spearFighters: number;
+    swordFighters: number;
+    axeFighters: number;
+    archers: number;
+    magicians: number;
+    horsemen: number;
+    catapults: number;
+    senderVillageName?: string;
+    recipientVillageName?: string;
 }
 
 export interface IMessage {
@@ -21,6 +45,8 @@ export interface IMessage {
     metadata?: {
         clanName?: string;
         requestUsername?: string;
+        resources?: ResourcesMetadata;
+        troops?: TroopsMetadata;
     };
 }
 
@@ -37,6 +63,8 @@ export class Message implements IMessage {
     metadata?: {
         clanName?: string;
         requestUsername?: string;
+        resources?: ResourcesMetadata;
+        troops?: TroopsMetadata;
     };
 
     constructor(
@@ -46,7 +74,12 @@ export class Message implements IMessage {
         content: string,
         actionable: boolean = false,
         senderUsername?: string,
-        metadata?: { clanName?: string; requestUsername?: string }
+        metadata?: { 
+            clanName?: string; 
+            requestUsername?: string;
+            resources?: ResourcesMetadata;
+            troops?: TroopsMetadata;
+        }
     ) {
         this.recipientUsername = recipientUsername;
         this.senderUsername = senderUsername;

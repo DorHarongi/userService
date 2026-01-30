@@ -3,7 +3,7 @@ import { IUser } from "./IUser.interface";
 import { userFromClientDTO } from "../dtos/userFromClientDTO";
 import { Village } from "./village.entity";
 import { Location } from "./location";
-import { maxEnergy } from 'utils'
+import { maxEnergy, TOTAL_QUESTS } from 'utils'
 
 export class User implements IUser
 {
@@ -16,6 +16,7 @@ export class User implements IUser
     energy: number;
     pendingClanRequests: string[]; // clan names user has requested to join
     intro: string; // player bio/intro, max 200 characters
+    currentQuestIndex: number; // 1-15 = on that quest, > TOTAL_QUESTS = completed all (only for first village)
 
     constructor(userFromClientDTO: userFromClientDTO, initialLocation: Location = new Location(0, 0))
     {
@@ -27,5 +28,6 @@ export class User implements IUser
         this.energy = maxEnergy;
         this.pendingClanRequests = [];
         this.intro = "";
+        this.currentQuestIndex = 1; // Start at quest 1
     }
 }
