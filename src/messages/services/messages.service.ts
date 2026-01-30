@@ -137,7 +137,7 @@ export class MessagesService {
         // So we only count where read is explicitly false
         const count = await this.dbAccessorService.getCollection(MESSAGES_COLLECTION).countDocuments({
             recipientUsername: username,
-            read: { $ne: true }
+            read: false
         });
         return count;
     }

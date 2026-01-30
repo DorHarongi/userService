@@ -62,15 +62,16 @@ export class ReportsService {
     async getUnreadReportCount(username: string): Promise<number> {
       // Count reports where user is attacker and not read by attacker
       // OR user is defender and not read by defender
-      // For backward compatibility, treat undefined readBy fields as read (true)
+      // For backward compatibility, treat undefined/null readBy fields as read (true)
+      // So only count where the field is explicitly false
       const unreadAsAttacker = await this.dbAccessorService.getCollection(COLLECTION_NAME).countDocuments({
         attackerName: username,
-        readByAttacker: { $ne: true }
+        readByAttacker: false
       });
       
       const unreadAsDefender = await this.dbAccessorService.getCollection(COLLECTION_NAME).countDocuments({
         defenderName: username,
-        readByDefender: { $ne: true }
+        readByDefender: false
       });
       
       return unreadAsAttacker + unreadAsDefender;
