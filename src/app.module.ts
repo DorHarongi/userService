@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { UserModule } from './user/user.module';
@@ -14,9 +15,26 @@ import { MessagesModule } from './messages/messages.module';
 import { InteractionsModule } from './interactions/interactions.module';
 import { AuthModule } from './auth/auth.module';
 import { QuestModule } from './quests/quest.module';
+import { BossesModule } from './bosses/bosses.module';
 
 @Module({
-  imports: [UserModule, DatabaseModule, BuildingsModule, TroopsModule, WorkersModule, AttackingModule, ReportsModule, WorldModule, ClansModule, MessagesModule, InteractionsModule, AuthModule, QuestModule],
+  imports: [
+    ScheduleModule.forRoot(),
+    UserModule, 
+    DatabaseModule, 
+    BuildingsModule, 
+    TroopsModule, 
+    WorkersModule, 
+    AttackingModule, 
+    ReportsModule, 
+    WorldModule, 
+    ClansModule, 
+    MessagesModule, 
+    InteractionsModule, 
+    AuthModule, 
+    QuestModule,
+    BossesModule
+  ],
   controllers: [AppController],
   providers: [AppService],
 })

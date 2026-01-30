@@ -1,7 +1,9 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { WorldService } from '../services/world.service';
-import { MapWindowRequestDTO, MapWindowResponseDTO, MinimapResponseDTO, VillageOnMapDTO } from '../dtos/mapWindowDTO';
+import { MapWindowRequestDTO, MapWindowResponseDTO, MinimapResponseDTO, VillageOnMapDTO, BossOnMapDTO } from '../dtos/mapWindowDTO';
 import { DbAccessorService } from '../../database/services/db-accessor.service';
+import { IBoss } from '../../bosses/models/boss.entity';
+import { BOSS_CLAIM_DURATION_MS, BOSS_UNCLAIMED_DESPAWN_MS } from 'utils';
 
 @Controller('world')
 export class WorldController {
@@ -36,8 +38,18 @@ export class WorldController {
             clanName: userClanMap.get(v.ownerUsername || '') || undefined
         }));
 
+        // Get bosses in the window
+        const bosses = await this.dbAccessorService.getCollection('bosses').find({
+            isDefeated: false,
+            x: { $gte: x, $lt: x + 10 },
+            y: { $gte: y, $lt: y + 10 }
+        }).toArray() as IBoss[];
+
+        const bossesDTO: BossOnMapDTO[] = bosses.map(b => this.mapBossToDTO(b));
+
         return {
             villages: villagesDTO,
+            bosses: bossesDTO,
             worldSize: this.worldService.getWorldSize()
         };
     }
@@ -65,9 +77,39 @@ export class WorldController {
             clanName: userClanMap.get(v.ownerUsername || '') || undefined
         }));
 
+        // Get all active bosses for minimap
+        const bosses = await this.dbAccessorService.getCollection('bosses').find({
+            isDefeated: false
+        }).toArray() as IBoss[];
+
+        const bossesDTO: BossOnMapDTO[] = bosses.map(b => this.mapBossToDTO(b));
+
         return {
             villages: villagesDTO,
+            bosses: bossesDTO,
             worldSize: this.worldService.getWorldSize()
+        };
+    }
+
+    private mapBossToDTO(boss: IBoss): BossOnMapDTO {
+        let expiresAt: Date | undefined;
+        if (boss.claimedAt) {
+            expiresAt = new Date(new Date(boss.claimedAt).getTime() + BOSS_CLAIM_DURATION_MS);
+        } else {
+            expiresAt = new Date(new Date(boss.spawnedAt).getTime() + BOSS_UNCLAIMED_DESPAWN_MS);
+        }
+
+        return {
+            id: boss._id?.toHexString() || '',
+            x: boss.x,
+            y: boss.y,
+            tier: boss.tier,
+            name: boss.name,
+            currentHp: boss.currentHp,
+            maxHp: boss.maxHp,
+            claimedByClanId: boss.claimedByClanId,
+            claimedByClanName: boss.claimedByClanName,
+            expiresAt
         };
     }
 
@@ -108,12 +150,26 @@ export class WorldController {
         @Query('centerX') centerX: string, 
         @Query('centerY') centerY: string,
         @Query('range') range: string
-    ): Promise<{ x: number; y: number }[]> {
+    ): Promise<{ x: number; y: number; hasBoss?: boolean }[]> {
         const x = parseInt(centerX) || 0;
         const y = parseInt(centerY) || 0;
         const r = parseInt(range) || 5;
         
         const cells = await this.worldService.getAvailableCellsNearVillage(x, y, r);
-        return cells.map(c => ({ x: c.x, y: c.y }));
+        
+        // Get bosses in the area to mark cells with bosses
+        const bosses = await this.dbAccessorService.getCollection('bosses').find({
+            isDefeated: false,
+            x: { $gte: x - r, $lte: x + r },
+            y: { $gte: y - r, $lte: y + r }
+        }).toArray() as IBoss[];
+        
+        const bossLocations = new Set(bosses.map(b => `${b.x},${b.y}`));
+        
+        return cells.map(c => ({
+            x: c.x,
+            y: c.y,
+            hasBoss: bossLocations.has(`${c.x},${c.y}`)
+        }));
     }
 }

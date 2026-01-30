@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Inject, forwardRef } from '@nestjs/common';
 import { DbAccessorService } from '../../database/services/db-accessor.service';
 import { User } from '../../user/models/user.entity';
 import { Village } from '../../user/models/village.entity';
@@ -9,6 +9,7 @@ import { UserDTO } from '../../user/dtos/userDTO';
 import { SendSupportDTO, WithdrawSupportDTO, SendResourcesDTO, CreateVillageDTO } from '../dtos/interactionDTO';
 import { WorldService } from '../../world/services/world.service';
 import { MessagesService } from '../../messages/services/messages.service';
+import { BossService } from '../../bosses/services/boss.service';
 import { warehouseStorageByLevel, embassyMaximumDefenseTroopsByLevels } from 'utils';
 
 const USERS_COLLECTION = "users";
@@ -19,7 +20,8 @@ export class InteractionsService {
     constructor(
         private dbAccessorService: DbAccessorService,
         private worldService: WorldService,
-        private messagesService: MessagesService
+        private messagesService: MessagesService,
+        @Inject(forwardRef(() => BossService)) private bossService: BossService
     ) {}
 
     async sendSupport(dto: SendSupportDTO): Promise<UserDTO> {
@@ -365,6 +367,12 @@ export class InteractionsService {
         // Validate village name is unique for this user
         if (user.villages.some(v => v.villageName === dto.newVillageName)) {
             throw new HttpException("Village name already exists", HttpStatus.CONFLICT);
+        }
+
+        // Check if a boss is occupying this cell
+        const hasBoss = await this.bossService.isCellOccupiedByBoss(dto.x, dto.y);
+        if (hasBoss) {
+            throw new HttpException("Cannot create village on a cell occupied by a raid boss", HttpStatus.CONFLICT);
         }
 
         // Reserve the grid cell
