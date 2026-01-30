@@ -13,6 +13,16 @@ export class MessagesService {
     constructor(private dbAccessorService: DbAccessorService) {}
 
     async sendMessage(sendMessageDTO: SendMessageDTO): Promise<MessageDTO> {
+        // Validate sender
+        if (!sendMessageDTO.senderUsername) {
+            throw new HttpException("Sender username is required", HttpStatus.BAD_REQUEST);
+        }
+
+        // Validate recipient
+        if (!sendMessageDTO.recipientUsername) {
+            throw new HttpException("Recipient username is required", HttpStatus.BAD_REQUEST);
+        }
+
         // Validate message length
         if (!sendMessageDTO.content || sendMessageDTO.content.trim().length === 0) {
             throw new HttpException("Message cannot be empty", HttpStatus.BAD_REQUEST);
