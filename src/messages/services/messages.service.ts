@@ -142,20 +142,6 @@ export class MessagesService {
         return count;
     }
 
-    async sendClanJoinRequestMessage(leaderUsername: string, requestUsername: string, clanName: string, message?: string): Promise<void> {
-        const msg = new Message(
-            leaderUsername,
-            MessageType.CLAN_JOIN_REQUEST,
-            `Join Request: ${requestUsername}`,
-            message || `${requestUsername} wants to join ${clanName}.`,
-            true, // actionable
-            requestUsername
-        );
-        msg.metadata = { requestUsername, clanName };
-
-        await this.dbAccessorService.getCollection(MESSAGES_COLLECTION).insertOne(msg);
-    }
-
     async sendClanNotificationMessage(username: string, subject: string, content: string): Promise<void> {
         const message = new Message(
             username,
