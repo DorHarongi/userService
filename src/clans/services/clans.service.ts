@@ -213,6 +213,9 @@ export class ClansService {
             throw new HttpException("Clan not found", HttpStatus.NOT_FOUND);
         }
 
+        // Withdraw all support troops the leaving player has sent to clan members
+        await this.withdrawAllSupportTroops(leaveClanDTO.username);
+
         if (clan.leaderUsername === leaveClanDTO.username) {
             // If leader leaves, either transfer leadership or dissolve clan
             if (clan.members.length > 1) {
@@ -244,6 +247,63 @@ export class ClansService {
         );
 
         return { success: true };
+    }
+
+    // Withdraw all support troops a user has sent when they leave the clan
+    private async withdrawAllSupportTroops(username: string): Promise<void> {
+        const user = await this.dbAccessorService.getCollection(USERS_COLLECTION).findOne({ username }) as User;
+        if (!user) return;
+
+        // Go through each village and withdraw support sent
+        for (const village of user.villages) {
+            if (!village.supportSent || village.supportSent.length === 0) continue;
+
+            for (const support of village.supportSent) {
+                // Get the recipient user
+                const recipient = await this.dbAccessorService.getCollection(USERS_COLLECTION).findOne({ 
+                    username: support.recipientUsername 
+                }) as User;
+                
+                if (!recipient) continue;
+
+                // Find the recipient village
+                const recipientVillage = recipient.villages.find(v => v.villageName === support.recipientVillageName);
+                if (!recipientVillage || !recipientVillage.clanTroops) continue;
+
+                // Subtract troops from recipient's clanTroops
+                recipientVillage.clanTroops.spearFighters = Math.max(0, (recipientVillage.clanTroops.spearFighters || 0) - (support.troops.spearFighters || 0));
+                recipientVillage.clanTroops.swordFighters = Math.max(0, (recipientVillage.clanTroops.swordFighters || 0) - (support.troops.swordFighters || 0));
+                recipientVillage.clanTroops.axeFighters = Math.max(0, (recipientVillage.clanTroops.axeFighters || 0) - (support.troops.axeFighters || 0));
+                recipientVillage.clanTroops.archers = Math.max(0, (recipientVillage.clanTroops.archers || 0) - (support.troops.archers || 0));
+                recipientVillage.clanTroops.magicians = Math.max(0, (recipientVillage.clanTroops.magicians || 0) - (support.troops.magicians || 0));
+                recipientVillage.clanTroops.horsemen = Math.max(0, (recipientVillage.clanTroops.horsemen || 0) - (support.troops.horsemen || 0));
+                recipientVillage.clanTroops.catapults = Math.max(0, (recipientVillage.clanTroops.catapults || 0) - (support.troops.catapults || 0));
+
+                // Update recipient
+                await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+                    { username: support.recipientUsername },
+                    { $set: recipient }
+                );
+
+                // Return troops to the sender's village
+                village.troops.spearFighters = (village.troops.spearFighters || 0) + (support.troops.spearFighters || 0);
+                village.troops.swordFighters = (village.troops.swordFighters || 0) + (support.troops.swordFighters || 0);
+                village.troops.axeFighters = (village.troops.axeFighters || 0) + (support.troops.axeFighters || 0);
+                village.troops.archers = (village.troops.archers || 0) + (support.troops.archers || 0);
+                village.troops.magicians = (village.troops.magicians || 0) + (support.troops.magicians || 0);
+                village.troops.horsemen = (village.troops.horsemen || 0) + (support.troops.horsemen || 0);
+                village.troops.catapults = (village.troops.catapults || 0) + (support.troops.catapults || 0);
+            }
+
+            // Clear supportSent for this village
+            village.supportSent = [];
+        }
+
+        // Update the leaving user with returned troops
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username },
+            { $set: user }
+        );
     }
 
     async getClanMembers(clanName: string): Promise<string[]> {
@@ -281,6 +341,9 @@ export class ClansService {
         if (!clan.members.includes(memberUsername)) {
             throw new HttpException("User is not a member of this clan", HttpStatus.BAD_REQUEST);
         }
+
+        // Withdraw all support troops the kicked player has sent to clan members
+        await this.withdrawAllSupportTroops(memberUsername);
 
         // Remove member from clan
         await this.dbAccessorService.getCollection(CLANS_COLLECTION).updateOne(
