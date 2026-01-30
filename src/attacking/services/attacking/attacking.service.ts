@@ -69,14 +69,15 @@ export class AttackingService {
         if(!attackerVillage || !defenderVillage)
             throw new HttpException("Attacker or defender village doesnt exist", HttpStatus.NOT_FOUND) 
 
+        // Check troops exist and are valid FIRST (before accessing properties)
+        if(!attackDTO.attackingTroops || !this.hasTroopsToAttack(attackDTO.attackingTroops))
+            throw new HttpException("You must select at least one troop to attack", HttpStatus.BAD_REQUEST)
+
         if(!this.doesAttackerActuallyHaveThoseTroops(attackDTO.attackingTroops, attackerVillage.troops))
             throw new HttpException("You chose more troops than you have", HttpStatus.BAD_REQUEST) 
 
         if(!this.doesAttackerHaveEnoughEnergy(attacker.energy))
             throw new HttpException("You have no energy.", HttpStatus.BAD_REQUEST)
-
-        if(!this.hasTroopsToAttack(attackDTO.attackingTroops))
-            throw new HttpException("You must select at least one troop to attack", HttpStatus.BAD_REQUEST)
 
 
         // everything good -> attack
