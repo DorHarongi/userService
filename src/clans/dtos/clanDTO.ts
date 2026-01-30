@@ -65,3 +65,9 @@ export interface UpdateClanNameDTO {
     newClanName: string;
     leaderUsername: string;
 }
+
+export interface ToggleClanOpenDTO {
+    clanName: string;
+    leaderUsername: string;
+    isOpen: boolean;
+}

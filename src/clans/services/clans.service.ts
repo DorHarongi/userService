@@ -1,7 +1,7 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { DbAccessorService } from '../../database/services/db-accessor.service';
 import { Clan, IClan } from '../models/clan.entity';
-import { ClanDTO, ClanStatisticDTO, CreateClanDTO, HandleJoinRequestDTO, JoinClanRequestDTO, LeaveClanDTO } from '../dtos/clanDTO';
+import { ClanDTO, ClanStatisticDTO, CreateClanDTO, HandleJoinRequestDTO, JoinClanRequestDTO, LeaveClanDTO, ToggleClanOpenDTO } from '../dtos/clanDTO';
 import { User } from '../../user/models/user.entity';
 import { embassyMinimumLevelForClanJoin } from 'utils';
 
@@ -392,6 +392,24 @@ export class ClansService {
         await this.dbAccessorService.getCollection(USERS_COLLECTION).updateMany(
             { pendingClanRequests: oldClanName },
             { $set: { "pendingClanRequests.$": newClanName } }
+        );
+
+        return { success: true };
+    }
+
+    async toggleClanOpen(toggleDTO: ToggleClanOpenDTO): Promise<{ success: boolean }> {
+        const clan = await this.dbAccessorService.getCollection(CLANS_COLLECTION).findOne({ clanName: toggleDTO.clanName }) as Clan;
+        if (!clan) {
+            throw new HttpException("Clan not found", HttpStatus.NOT_FOUND);
+        }
+
+        if (clan.leaderUsername !== toggleDTO.leaderUsername) {
+            throw new HttpException("Only the clan leader can change clan settings", HttpStatus.FORBIDDEN);
+        }
+
+        await this.dbAccessorService.getCollection(CLANS_COLLECTION).updateOne(
+            { clanName: toggleDTO.clanName },
+            { $set: { isOpen: toggleDTO.isOpen } }
         );
 
         return { success: true };

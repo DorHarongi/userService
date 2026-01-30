@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ClansService } from '../services/clans.service';
-import { ClanDTO, ClanStatisticDTO, CreateClanDTO, HandleJoinRequestDTO, JoinClanRequestDTO, LeaveClanDTO, KickMemberDTO, UpdateClanNameDTO } from '../dtos/clanDTO';
+import { ClanDTO, ClanStatisticDTO, CreateClanDTO, HandleJoinRequestDTO, JoinClanRequestDTO, LeaveClanDTO, KickMemberDTO, UpdateClanNameDTO, ToggleClanOpenDTO } from '../dtos/clanDTO';
 import { MessagesService } from '../../messages/services/messages.service';
 
 @Controller('clans')
@@ -120,5 +120,10 @@ export class ClansController {
             updateClanNameDTO.newClanName,
             updateClanNameDTO.leaderUsername
         );
+    }
+
+    @Post('toggle-open')
+    async toggleClanOpen(@Body() toggleDTO: ToggleClanOpenDTO): Promise<{ success: boolean }> {
+        return await this.clansService.toggleClanOpen(toggleDTO);
     }
 }
