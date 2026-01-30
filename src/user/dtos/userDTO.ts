@@ -17,7 +17,7 @@ export class UserDTO
         this.username = user.username;
         this.joinDate = user.joinDate;
         this.clanName = user.clanName;
-        this.energy = user.energy;
+        this.energy = user.energy ?? 5; // Default to max energy (5) for backwards compatibility
         this.pendingClanRequests = user.pendingClanRequests || [];
         this.intro = user.intro || '';
         this.currentQuestIndex = user.currentQuestIndex || 1; // Default to 1 for backwards compatibility
