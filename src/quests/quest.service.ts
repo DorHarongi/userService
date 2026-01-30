@@ -39,7 +39,7 @@ export class QuestService {
         if (!village) return null;
 
         // Check if the action completes the current quest
-        if (this.isQuestCompleted(currentQuest, action, village)) {
+        if (this.isQuestCompletedByAction(currentQuest, action, village)) {
             return this.completeQuest(user, currentQuest);
         }
 
@@ -47,9 +47,51 @@ export class QuestService {
     }
 
     /**
+     * Check if current quest is already completed (conditions already met from before)
+     * and claim the rewards if so.
+     * 
+     * @param user The user object (will be modified if quest is claimable)
+     * @returns QuestCompletionResult if quest was claimed, null otherwise
+     */
+    claimCompletedQuest(user: User): QuestCompletionResult | null {
+        // Check if user has valid quest index
+        const currentQuestIndex = user.currentQuestIndex || 1;
+        if (currentQuestIndex < 1 || currentQuestIndex > TOTAL_QUESTS) return null;
+
+        const currentQuest = getQuestByIndex(currentQuestIndex);
+        if (!currentQuest) return null;
+
+        const village = user.villages[0];
+        if (!village) return null;
+
+        // Check if the quest conditions are already met
+        if (this.isQuestConditionMet(currentQuest, village)) {
+            return this.completeQuest(user, currentQuest);
+        }
+
+        return null;
+    }
+
+    /**
+     * Check if current quest conditions are already met (without claiming)
+     */
+    isCurrentQuestClaimable(user: User): boolean {
+        const currentQuestIndex = user.currentQuestIndex || 1;
+        if (currentQuestIndex < 1 || currentQuestIndex > TOTAL_QUESTS) return false;
+
+        const currentQuest = getQuestByIndex(currentQuestIndex);
+        if (!currentQuest) return false;
+
+        const village = user.villages[0];
+        if (!village) return false;
+
+        return this.isQuestConditionMet(currentQuest, village);
+    }
+
+    /**
      * Check if a quest's conditions are met based on the action and current village state
      */
-    private isQuestCompleted(quest: Quest, action: QuestAction, village: Village): boolean {
+    private isQuestCompletedByAction(quest: Quest, action: QuestAction, village: Village): boolean {
         const condition = quest.condition;
 
         switch (condition.type) {
@@ -75,6 +117,50 @@ export class QuestService {
             default:
                 return false;
         }
+    }
+
+    /**
+     * Check if quest conditions are already met based on current village state (no action required)
+     */
+    private isQuestConditionMet(quest: Quest, village: Village): boolean {
+        const condition = quest.condition;
+
+        switch (condition.type) {
+            case QuestCompletionType.BUILDING_LEVEL:
+                const buildingLevel = this.getBuildingLevel(village, condition.buildingName || '');
+                return buildingLevel >= (condition.level || 0);
+
+            case QuestCompletionType.TRAIN_TROOPS:
+                const totalTroops = this.countTotalTroops(village);
+                return totalTroops >= (condition.count || 0);
+
+            case QuestCompletionType.HIRE_WORKERS:
+                const totalWorkers = this.countTotalWorkers(village);
+                return totalWorkers >= (condition.count || 0);
+
+            default:
+                return false;
+        }
+    }
+
+    /**
+     * Get building level by name
+     */
+    private getBuildingLevel(village: Village, buildingName: string): number {
+        const buildingMap: { [key: string]: number } = {
+            'centerBuilding': village.buildingsLevels?.centerBuildingLevel || 1,
+            'woodFactory': village.buildingsLevels?.woodFactoryLevel || 1,
+            'stoneMine': village.buildingsLevels?.stoneMineLevel || 1,
+            'cropFarm': village.buildingsLevels?.cropFarmLevel || 1,
+            'arsenal': village.buildingsLevels?.arsenalLevel || 1,
+            'quarters': village.buildingsLevels?.quartersLevel || 1,
+            'woodWarehouse': village.buildingsLevels?.woodWarehouseLevel || 1,
+            'stoneWarehouse': village.buildingsLevels?.stoneWarehouseLevel || 1,
+            'cropWarehouse': village.buildingsLevels?.cropWarehouseLevel || 1,
+            'wall': village.buildingsLevels?.wallLevel || 1,
+            'embassy': village.buildingsLevels?.embassyLevel || 1,
+        };
+        return buildingMap[buildingName] || 1;
     }
 
     /**
