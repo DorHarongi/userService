@@ -6,17 +6,32 @@ import { MessageDTO, SendMessageDTO } from '../dtos/messageDTO';
 
 const MESSAGES_COLLECTION = "messages";
 const MAX_MESSAGES_PER_PAGE = 10;
+const MAX_MESSAGE_LENGTH = 100;
 
 @Injectable()
 export class MessagesService {
     constructor(private dbAccessorService: DbAccessorService) {}
 
     async sendMessage(sendMessageDTO: SendMessageDTO): Promise<MessageDTO> {
+        // Validate message length
+        if (!sendMessageDTO.content || sendMessageDTO.content.trim().length === 0) {
+            throw new HttpException("Message cannot be empty", HttpStatus.BAD_REQUEST);
+        }
+        
+        if (sendMessageDTO.content.length > MAX_MESSAGE_LENGTH) {
+            throw new HttpException(`Message cannot exceed ${MAX_MESSAGE_LENGTH} characters`, HttpStatus.BAD_REQUEST);
+        }
+
+        // Cannot message yourself
+        if (sendMessageDTO.senderUsername === sendMessageDTO.recipientUsername) {
+            throw new HttpException("You cannot send a message to yourself", HttpStatus.BAD_REQUEST);
+        }
+
         const message = new Message(
             sendMessageDTO.recipientUsername,
             MessageType.PLAYER_MESSAGE,
-            sendMessageDTO.subject,
-            sendMessageDTO.content,
+            sendMessageDTO.subject || `Message from ${sendMessageDTO.senderUsername}`,
+            sendMessageDTO.content.trim(),
             false,
             sendMessageDTO.senderUsername
         );

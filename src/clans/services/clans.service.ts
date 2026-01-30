@@ -3,6 +3,7 @@ import { DbAccessorService } from '../../database/services/db-accessor.service';
 import { Clan, IClan } from '../models/clan.entity';
 import { ClanDTO, ClanStatisticDTO, CreateClanDTO, HandleJoinRequestDTO, JoinClanRequestDTO, LeaveClanDTO } from '../dtos/clanDTO';
 import { User } from '../../user/models/user.entity';
+import { embassyMinimumLevelForClanJoin } from 'utils';
 
 const CLANS_COLLECTION = "clans";
 const USERS_COLLECTION = "users";
@@ -26,6 +27,17 @@ export class ClansService {
         }
         if (user.clanName && user.clanName !== "") {
             throw new HttpException("User already belongs to a clan", HttpStatus.BAD_REQUEST);
+        }
+
+        // Check embassy level in any village
+        const hasRequiredEmbassyLevel = user.villages?.some(
+            v => v.buildingsLevels.embassyLevel >= embassyMinimumLevelForClanJoin
+        );
+        if (!hasRequiredEmbassyLevel) {
+            throw new HttpException(
+                `Embassy must be level ${embassyMinimumLevelForClanJoin} or higher to create a clan`,
+                HttpStatus.BAD_REQUEST
+            );
         }
 
         const clan = new Clan(createClanDTO.clanName, createClanDTO.description, createClanDTO.leaderUsername, createClanDTO.isOpen);
