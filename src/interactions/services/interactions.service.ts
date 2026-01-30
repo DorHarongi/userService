@@ -9,7 +9,7 @@ import { UserDTO } from '../../user/dtos/userDTO';
 import { SendSupportDTO, WithdrawSupportDTO, SendResourcesDTO, CreateVillageDTO } from '../dtos/interactionDTO';
 import { WorldService } from '../../world/services/world.service';
 import { MessagesService } from '../../messages/services/messages.service';
-import { warehouseStorageByLevel } from 'utils';
+import { warehouseStorageByLevel, embassyMaximumDefenseTroopsByLevels } from 'utils';
 
 const USERS_COLLECTION = "users";
 const CENTER_BUILDING_LEVEL_FOR_NEW_VILLAGE = 10;
@@ -53,6 +53,21 @@ export class InteractionsService {
         // Check if any troops are being sent
         if (this.isTroopsEmpty(dto.troops)) {
             throw new HttpException("You must select at least one troop to send", HttpStatus.BAD_REQUEST);
+        }
+
+        // Validate embassy capacity
+        const embassyLevel = recipientVillage.buildingsLevels.embassyLevel || 0;
+        const embassyCapacity = embassyMaximumDefenseTroopsByLevels[embassyLevel] || 0;
+        const currentSupportTroops = this.countTotalTroops(recipientVillage.clanTroops);
+        const incomingTroops = this.countTotalTroops(dto.troops);
+        
+        if (currentSupportTroops + incomingTroops > embassyCapacity) {
+            const availableSpace = Math.max(0, embassyCapacity - currentSupportTroops);
+            throw new HttpException(
+                `Recipient's embassy can only hold ${embassyCapacity} support troops. ` +
+                `Currently has ${currentSupportTroops}, space for ${availableSpace} more.`,
+                HttpStatus.BAD_REQUEST
+            );
         }
 
         // Deduct troops from sender
@@ -456,5 +471,15 @@ export class InteractionsService {
             troops.magicians === 0 &&
             troops.horsemen === 0 &&
             troops.catapults === 0;
+    }
+
+    private countTotalTroops(troops: TroopsAmounts): number {
+        return (troops.spearFighters || 0) +
+            (troops.swordFighters || 0) +
+            (troops.axeFighters || 0) +
+            (troops.archers || 0) +
+            (troops.magicians || 0) +
+            (troops.horsemen || 0) +
+            (troops.catapults || 0);
     }
 }
