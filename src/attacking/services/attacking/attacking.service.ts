@@ -75,6 +75,9 @@ export class AttackingService {
         if(!this.doesAttackerHaveEnoughEnergy(attacker.energy))
             throw new HttpException("You have no energy.", HttpStatus.BAD_REQUEST)
 
+        if(!this.hasTroopsToAttack(attackDTO.attackingTroops))
+            throw new HttpException("You must select at least one troop to attack", HttpStatus.BAD_REQUEST)
+
 
         // everything good -> attack
         let attackerTroops: TroopsAmounts = attackDTO.attackingTroops;
@@ -160,6 +163,12 @@ export class AttackingService {
 
     doesAttackerHaveEnoughEnergy(energy: number): boolean{
         return energy > 1;
+    }
+
+    hasTroopsToAttack(troops: TroopsAmounts): boolean {
+        const total = troops.spearFighters + troops.swordFighters + troops.axeFighters +
+            troops.archers + troops.magicians + troops.horsemen + troops.catapults;
+        return total > 0;
     }
 
     decreaseEnergy(attacker: User)

@@ -236,13 +236,27 @@ export class InteractionsService {
         }
 
         // Check if user has already created a village from this source
-        // Each village can only create one new village
-        const villagesCreatedBySource = user.villages.filter((v, i) => i > 0); // All except first
-        if (villagesCreatedBySource.length >= user.villages.filter(v => 
-            v.buildingsLevels.centerBuildingLevel >= CENTER_BUILDING_LEVEL_FOR_NEW_VILLAGE
-        ).length) {
+        // Each level 10 village can only create one new village
+        // Village at index N can create village at index N+1
+        if (dto.sourceVillageIndex < user.villages.length - 1) {
             throw new HttpException(
                 "This village has already been used to create a new village",
+                HttpStatus.BAD_REQUEST
+            );
+        }
+
+        // Validate location is within 3x3 (1 cell distance) from source village
+        const sourceLocation = sourceVillage.location;
+        if (!sourceLocation) {
+            throw new HttpException("Source village has no location", HttpStatus.BAD_REQUEST);
+        }
+        
+        const dx = Math.abs(dto.x - sourceLocation.x);
+        const dy = Math.abs(dto.y - sourceLocation.y);
+        
+        if (dx > 1 || dy > 1 || (dx === 0 && dy === 0)) {
+            throw new HttpException(
+                "New village must be placed within 1 cell of your source village (3x3 grid)",
                 HttpStatus.BAD_REQUEST
             );
         }
