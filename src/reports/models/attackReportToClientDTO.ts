@@ -4,6 +4,7 @@ import { AttackReport } from "./attackReport.entity";
 
 export class AttackReportToClientDTO
 {
+    id: string;
     attackerName: string;
     attackerVillageName: string;
 
@@ -26,9 +27,12 @@ export class AttackReportToClientDTO
     defenderTotalLostTroops: TroopsAmounts;
     supportTotalTroops: TroopsAmounts;
     supportTotalLostTroops: TroopsAmounts;
+    
+    read: boolean;
 
-    constructor(attackReport: AttackReport)
+    constructor(attackReport: AttackReport, viewingUsername?: string)
     {
+        this.id = attackReport._id?.toString() || '';
         this.attackerName = attackReport.attackerName;
         this.attackerVillageName = attackReport.attackerVillageName;
         this.defenderName = attackReport.defenderName;
@@ -47,5 +51,15 @@ export class AttackReportToClientDTO
         this.defenderTotalLostTroops = attackReport.defenderTotalLostTroops;
         this.supportTotalTroops = attackReport.supportTotalTroops;
         this.supportTotalLostTroops = attackReport.supportTotalLostTroops;
+        
+        // Determine read status based on viewing user
+        // For backward compatibility, treat undefined as read (true)
+        if (viewingUsername === attackReport.attackerName) {
+            this.read = attackReport.readByAttacker !== false;
+        } else if (viewingUsername === attackReport.defenderName) {
+            this.read = attackReport.readByDefender !== false;
+        } else {
+            this.read = true;
+        }
     }
 }

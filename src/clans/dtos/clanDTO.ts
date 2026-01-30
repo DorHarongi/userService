@@ -53,3 +53,9 @@ export interface LeaveClanDTO {
     clanName: string;
     username: string;
 }
+
+export interface KickMemberDTO {
+    clanName: string;
+    leaderUsername: string;
+    memberUsername: string;
+}

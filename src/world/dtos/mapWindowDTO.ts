@@ -8,6 +8,7 @@ export interface VillageOnMapDTO {
     y: number;
     ownerUsername: string;
     villageName: string;
+    clanName?: string;
 }
 
 export interface MapWindowResponseDTO {

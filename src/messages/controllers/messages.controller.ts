@@ -40,4 +40,9 @@ export class MessagesController {
     ): Promise<{ success: boolean }> {
         return await this.messagesService.deleteMessage(messageId, username);
     }
+
+    @Get(':username/unread')
+    async getUnreadMessageCount(@Param('username') username: string): Promise<number> {
+        return await this.messagesService.getUnreadMessageCount(username);
+    }
 }

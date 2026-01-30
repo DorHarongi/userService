@@ -1,4 +1,4 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { AttackReportToClientDTO } from '../../models/attackReportToClientDTO';
 import { ReportsService } from '../../services/reports/reports.service';
 
@@ -17,5 +17,17 @@ export class ReportsController {
     async getAttackReports(@Param('username') username: string, @Param('page') page: number): Promise<AttackReportToClientDTO[]>
     {
         return await this.reportsService.getAttackReportsOfUser(username, page);
+    }
+
+    @Get('unread/:username')
+    async getUnreadReportCount(@Param('username') username: string): Promise<number>
+    {
+        return await this.reportsService.getUnreadReportCount(username);
+    }
+
+    @Post('read')
+    async markReportAsRead(@Body() body: { reportId: string; username: string }): Promise<{ success: boolean }>
+    {
+        return await this.reportsService.markReportAsRead(body.reportId, body.username);
     }
 }

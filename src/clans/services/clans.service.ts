@@ -263,4 +263,37 @@ export class ClansService {
         
         return user1.clanName === user2.clanName;
     }
+
+    async kickMember(clanName: string, leaderUsername: string, memberUsername: string): Promise<{ success: boolean }> {
+        const clan = await this.dbAccessorService.getCollection(CLANS_COLLECTION).findOne({ clanName }) as Clan;
+        if (!clan) {
+            throw new HttpException("Clan not found", HttpStatus.NOT_FOUND);
+        }
+
+        if (clan.leaderUsername !== leaderUsername) {
+            throw new HttpException("Only the clan leader can kick members", HttpStatus.FORBIDDEN);
+        }
+
+        if (leaderUsername === memberUsername) {
+            throw new HttpException("You cannot kick yourself", HttpStatus.BAD_REQUEST);
+        }
+
+        if (!clan.members.includes(memberUsername)) {
+            throw new HttpException("User is not a member of this clan", HttpStatus.BAD_REQUEST);
+        }
+
+        // Remove member from clan
+        await this.dbAccessorService.getCollection(CLANS_COLLECTION).updateOne(
+            { clanName },
+            { $pull: { members: memberUsername } } as any
+        );
+
+        // Clear user's clan
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username: memberUsername },
+            { $set: { clanName: "" } }
+        );
+
+        return { success: true };
+    }
 }

@@ -1,10 +1,14 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { WorldService } from '../services/world.service';
 import { MapWindowRequestDTO, MapWindowResponseDTO, MinimapResponseDTO, VillageOnMapDTO } from '../dtos/mapWindowDTO';
+import { DbAccessorService } from '../../database/services/db-accessor.service';
 
 @Controller('world')
 export class WorldController {
-    constructor(private worldService: WorldService) {}
+    constructor(
+        private worldService: WorldService,
+        private dbAccessorService: DbAccessorService
+    ) {}
 
     @Get('map')
     async getMapWindow(@Query('startX') startX: string, @Query('startY') startY: string): Promise<MapWindowResponseDTO> {
@@ -12,11 +16,24 @@ export class WorldController {
         const y = parseInt(startY) || 0;
         
         const villages = await this.worldService.getVillagesInWindow(x, y);
+        
+        // Look up clan names for each owner
+        const ownerUsernames = [...new Set(villages.map(v => v.ownerUsername).filter(Boolean))];
+        const users = await this.dbAccessorService.getCollection('users').find({
+            username: { $in: ownerUsernames }
+        }).project({ username: 1, clanName: 1 }).toArray();
+        
+        const userClanMap = new Map<string, string>();
+        users.forEach((u: any) => {
+            if (u.clanName) userClanMap.set(u.username, u.clanName);
+        });
+        
         const villagesDTO: VillageOnMapDTO[] = villages.map(v => ({
             x: v.x,
             y: v.y,
             ownerUsername: v.ownerUsername || '',
-            villageName: v.villageName || ''
+            villageName: v.villageName || '',
+            clanName: userClanMap.get(v.ownerUsername || '') || undefined
         }));
 
         return {
@@ -28,11 +45,24 @@ export class WorldController {
     @Get('minimap')
     async getMinimap(): Promise<MinimapResponseDTO> {
         const villages = await this.worldService.getAllVillages();
+        
+        // Look up clan names for each owner
+        const ownerUsernames = [...new Set(villages.map(v => v.ownerUsername).filter(Boolean))];
+        const users = await this.dbAccessorService.getCollection('users').find({
+            username: { $in: ownerUsernames }
+        }).project({ username: 1, clanName: 1 }).toArray();
+        
+        const userClanMap = new Map<string, string>();
+        users.forEach((u: any) => {
+            if (u.clanName) userClanMap.set(u.username, u.clanName);
+        });
+        
         const villagesDTO: VillageOnMapDTO[] = villages.map(v => ({
             x: v.x,
             y: v.y,
             ownerUsername: v.ownerUsername || '',
-            villageName: v.villageName || ''
+            villageName: v.villageName || '',
+            clanName: userClanMap.get(v.ownerUsername || '') || undefined
         }));
 
         return {

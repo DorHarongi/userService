@@ -29,6 +29,10 @@ export class AttackReport implements IAttackReport
     defenderTotalLostTroops: TroopsAmounts;
     supportTotalTroops: TroopsAmounts;
     supportTotalLostTroops: TroopsAmounts;
+    
+    // Read status per user (attacker and defender see separately)
+    readByAttacker: boolean;
+    readByDefender: boolean;
 
     constructor(
         attackerName: string,
@@ -68,5 +72,7 @@ export class AttackReport implements IAttackReport
         this.defenderTotalLostTroops = defenderTotalLostTroops;
         this.supportTotalTroops = supportTotalTroops;
         this.supportTotalLostTroops = supportTotalLostTroops;
+        this.readByAttacker = false;
+        this.readByDefender = false;
     }
 }

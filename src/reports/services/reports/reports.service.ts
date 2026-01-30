@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { InsertOneResult } from 'mongodb';
+import { InsertOneResult, ObjectId } from 'mongodb';
 import { AttackReport } from '../../models/attackReport.entity';
 import { DbAccessorService } from '../../../database/services/db-accessor.service';
 import { AttackReportToClientDTO } from '../../models/attackReportToClientDTO';
@@ -55,7 +55,51 @@ export class ReportsService {
           attackReport.supportTotalTroops = undefined;
           attackReport.supportTotalLostTroops = undefined;
         }
-        return new AttackReportToClientDTO(attackReport); // removes mongoId
+        return new AttackReportToClientDTO(attackReport, username); // removes mongoId, adds read status
       })
+    }
+
+    async getUnreadReportCount(username: string): Promise<number> {
+      // Count reports where user is attacker and not read by attacker
+      // OR user is defender and not read by defender
+      // For backward compatibility, treat undefined readBy fields as read (true)
+      const unreadAsAttacker = await this.dbAccessorService.getCollection(COLLECTION_NAME).countDocuments({
+        attackerName: username,
+        readByAttacker: { $ne: true }
+      });
+      
+      const unreadAsDefender = await this.dbAccessorService.getCollection(COLLECTION_NAME).countDocuments({
+        defenderName: username,
+        readByDefender: { $ne: true }
+      });
+      
+      return unreadAsAttacker + unreadAsDefender;
+    }
+
+    async markReportAsRead(reportId: string, username: string): Promise<{ success: boolean }> {
+      const report = await this.dbAccessorService.getCollection(COLLECTION_NAME).findOne({ _id: new ObjectId(reportId) }) as AttackReport;
+      
+      if (!report) {
+        return { success: false };
+      }
+
+      const updateField: any = {};
+      if (report.attackerName === username) {
+        updateField.readByAttacker = true;
+      }
+      if (report.defenderName === username) {
+        updateField.readByDefender = true;
+      }
+
+      if (Object.keys(updateField).length === 0) {
+        return { success: false };
+      }
+
+      await this.dbAccessorService.getCollection(COLLECTION_NAME).updateOne(
+        { _id: new ObjectId(reportId) },
+        { $set: updateField }
+      );
+
+      return { success: true };
     }
 }
