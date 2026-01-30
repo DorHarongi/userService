@@ -42,14 +42,14 @@ export class WorkersService {
 
         this.addWorkersToVillage(village, workersDTO.resourcesWorkers);
 
-        // Check for quest completion
-        const questCompleted = this.questService.checkAndCompleteQuest(user, {
+        // Check if quest is now claimable (rewards must be claimed manually)
+        const isQuestClaimable = this.questService.checkIfQuestNowClaimable(user, {
             type: 'HIRE_WORKERS',
             totalWorkers: this.calculateTotalWorkers(village)
         }, workersDTO.villageIndex);
 
         const updateResult: UpdateResult = await this.dbAccessorService.getCollection(USER_COLLECTIONS).updateOne({username: workersDTO.username}, {$set: user});
-        return { user: new UserDTO(user), questCompleted };
+        return { user: new UserDTO(user), isQuestClaimable };
     }
 
     addWorkersToVillage(village: Village, resourcesWorkers: ResourcesWorkers): void

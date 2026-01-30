@@ -16,34 +16,31 @@ import {
 export class QuestService {
 
     /**
-     * Check if the given action completes the user's current quest.
-     * If so, apply rewards and advance to next quest.
+     * Check if the given action completes the user's current quest conditions.
+     * NOTE: This no longer auto-claims rewards - it just checks if claimable.
+     * User must manually claim rewards via claimCompletedQuest().
      * 
-     * @param user The user object (will be modified if quest completes)
+     * @param user The user object
      * @param action The action that was performed
      * @param villageIndex The village index where the action occurred
-     * @returns QuestCompletionResult if quest was completed, null otherwise
+     * @returns true if quest is now claimable, false otherwise
      */
-    checkAndCompleteQuest(user: User, action: QuestAction, villageIndex: number): QuestCompletionResult | null {
+    checkIfQuestNowClaimable(user: User, action: QuestAction, villageIndex: number): boolean {
         // Quests only available for first village
-        if (villageIndex !== 0) return null;
+        if (villageIndex !== 0) return false;
         
         // Check if user has valid quest index
         const currentQuestIndex = user.currentQuestIndex || 1;
-        if (currentQuestIndex < 1 || currentQuestIndex > TOTAL_QUESTS) return null;
+        if (currentQuestIndex < 1 || currentQuestIndex > TOTAL_QUESTS) return false;
 
         const currentQuest = getQuestByIndex(currentQuestIndex);
-        if (!currentQuest) return null;
+        if (!currentQuest) return false;
 
         const village = user.villages[0];
-        if (!village) return null;
+        if (!village) return false;
 
         // Check if the action completes the current quest
-        if (this.isQuestCompletedByAction(currentQuest, action, village)) {
-            return this.completeQuest(user, currentQuest);
-        }
-
-        return null;
+        return this.isQuestCompletedByAction(currentQuest, action, village);
     }
 
     /**

@@ -57,14 +57,14 @@ export class TroopsTrainingService {
 
         this.addTroopsToUser(village.troops, trainDTO.troopsAmount);
 
-        // Check for quest completion
-        const questCompleted = this.questService.checkAndCompleteQuest(user, {
+        // Check if quest is now claimable (rewards must be claimed manually)
+        const isQuestClaimable = this.questService.checkIfQuestNowClaimable(user, {
             type: 'TRAIN_TROOPS',
             totalTroops: this.calculateTotalTroops(village)
         }, trainDTO.villageIndex);
 
         const updateResult: UpdateResult = await this.dbAccessorService.getCollection(USER_COLLECTIONS).updateOne({username: trainDTO.username}, {$set: user});
-        return { user: new UserDTO(user), questCompleted };
+        return { user: new UserDTO(user), isQuestClaimable };
     }
 
     foundNegativeNumbersInDTO(trainDTO: TrainDTO)

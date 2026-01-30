@@ -54,15 +54,15 @@ export class BuildingsUpgradingService {
         village.resourcesAmounts.stonesAmount -= materialsCost.stones;
         village.resourcesAmounts.woodAmount -= materialsCost.wood;
 
-        // Check for quest completion
-        const questCompleted = this.questService.checkAndCompleteQuest(user, {
+        // Check if quest is now claimable (rewards must be claimed manually)
+        const isQuestClaimable = this.questService.checkIfQuestNowClaimable(user, {
             type: 'UPGRADE_BUILDING',
             buildingName: upgradeDTO.buildingName,
             newLevel: buildingNextLevel
         }, upgradeDTO.villageIndex);
 
         const updateResult: UpdateResult = await this.dbAccessorService.getCollection(USER_COLLECTIONS).updateOne({username: upgradeDTO.username}, {$set: user});
-        return { user: new UserDTO(user), questCompleted };
+        return { user: new UserDTO(user), isQuestClaimable };
     }
 
     buildUserBuildingsLevelsDictionary(userVillage: Village): {[name: string] : BuildingGetterSetter}
