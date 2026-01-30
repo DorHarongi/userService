@@ -32,3 +32,9 @@ export interface CreateVillageDTO {
     x: number;
     y: number;
 }
+
+export interface RenameVillageDTO {
+    username: string;
+    villageIndex: number;
+    newVillageName: string;
+}

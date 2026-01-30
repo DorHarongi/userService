@@ -15,6 +15,7 @@ export class User implements IUser
     villages: Village[];
     energy: number;
     pendingClanRequests: string[]; // clan names user has requested to join
+    intro: string; // player bio/intro, max 200 characters
 
     constructor(userFromClientDTO: userFromClientDTO, initialLocation: Location = new Location(0, 0))
     {
@@ -25,5 +26,6 @@ export class User implements IUser
         this.villages = [new Village("New Village", initialLocation)];
         this.energy = maxEnergy;
         this.pendingClanRequests = [];
+        this.intro = "";
     }
 }

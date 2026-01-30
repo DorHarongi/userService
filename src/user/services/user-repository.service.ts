@@ -129,4 +129,13 @@ export class UserRepositoryService {
             throw new HttpException("User doesnt exist", HttpStatus.NOT_FOUND);
         return new UserDTO(result);
     }
+
+    async updateIntro(username: string, intro: string): Promise<{ success: boolean }>
+    {
+        const result = await this.dbAccessorService.getCollection(COLLECTION_NAME).updateOne(
+            { username },
+            { $set: { intro } }
+        );
+        return { success: result.modifiedCount === 1 || result.matchedCount === 1 };
+    }
 }

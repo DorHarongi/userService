@@ -192,6 +192,14 @@ export class WorldService {
         return WORLD_SIZE;
     }
 
+    // Update village name on the grid
+    async updateVillageName(x: number, y: number, newVillageName: string): Promise<void> {
+        await this.dbAccessorService.getCollection(GRID_COLLECTION).updateOne(
+            { x, y },
+            { $set: { villageName: newVillageName } }
+        );
+    }
+
     // Reset the world grid (clear all data)
     async resetWorld(): Promise<void> {
         await this.dbAccessorService.getCollection(GRID_COLLECTION).deleteMany({});

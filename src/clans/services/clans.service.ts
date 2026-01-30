@@ -296,4 +296,41 @@ export class ClansService {
 
         return { success: true };
     }
+
+    async updateClanName(oldClanName: string, newClanName: string, leaderUsername: string): Promise<{ success: boolean }> {
+        const clan = await this.dbAccessorService.getCollection(CLANS_COLLECTION).findOne({ clanName: oldClanName }) as Clan;
+        if (!clan) {
+            throw new HttpException("Clan not found", HttpStatus.NOT_FOUND);
+        }
+
+        if (clan.leaderUsername !== leaderUsername) {
+            throw new HttpException("Only the clan leader can update the clan name", HttpStatus.FORBIDDEN);
+        }
+
+        // Check if new name already exists
+        const existingClan = await this.dbAccessorService.getCollection(CLANS_COLLECTION).findOne({ clanName: newClanName });
+        if (existingClan) {
+            throw new HttpException("Clan name already exists", HttpStatus.CONFLICT);
+        }
+
+        // Update clan name
+        await this.dbAccessorService.getCollection(CLANS_COLLECTION).updateOne(
+            { clanName: oldClanName },
+            { $set: { clanName: newClanName } }
+        );
+
+        // Update all members' clanName
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateMany(
+            { clanName: oldClanName },
+            { $set: { clanName: newClanName } }
+        );
+
+        // Update pending clan requests to the new name
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateMany(
+            { pendingClanRequests: oldClanName },
+            { $set: { "pendingClanRequests.$": newClanName } }
+        );
+
+        return { success: true };
+    }
 }

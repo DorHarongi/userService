@@ -9,6 +9,7 @@ export class UserDTO
     villages: VillageDTO[];
     energy: number;
     pendingClanRequests: string[];
+    intro: string;
 
     constructor(user: User)
     {
@@ -17,6 +18,7 @@ export class UserDTO
         this.clanName = user.clanName;
         this.energy = user.energy;
         this.pendingClanRequests = user.pendingClanRequests || [];
+        this.intro = user.intro || '';
         this.villages = [];
         for(let village of user.villages)
         {

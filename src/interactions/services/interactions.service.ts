@@ -216,10 +216,21 @@ export class InteractionsService {
     }
 
     async createNewVillage(dto: CreateVillageDTO): Promise<UserDTO> {
+        const MAX_VILLAGE_NAME_LENGTH = 20;
+
         const user = await this.dbAccessorService.getCollection(USERS_COLLECTION).findOne({ username: dto.username }) as User;
 
         if (!user) {
             throw new HttpException("User not found", HttpStatus.NOT_FOUND);
+        }
+
+        // Validate village name length
+        if (!dto.newVillageName || dto.newVillageName.trim().length === 0) {
+            throw new HttpException("Village name cannot be empty", HttpStatus.BAD_REQUEST);
+        }
+
+        if (dto.newVillageName.length > MAX_VILLAGE_NAME_LENGTH) {
+            throw new HttpException(`Village name cannot exceed ${MAX_VILLAGE_NAME_LENGTH} characters`, HttpStatus.BAD_REQUEST);
         }
 
         const sourceVillage = user.villages[dto.sourceVillageIndex];
@@ -284,6 +295,52 @@ export class InteractionsService {
             { username: dto.username },
             { $set: user }
         );
+
+        return new UserDTO(user);
+    }
+
+    async renameVillage(dto: { username: string; villageIndex: number; newVillageName: string }): Promise<UserDTO> {
+        const MAX_VILLAGE_NAME_LENGTH = 20;
+
+        const user = await this.dbAccessorService.getCollection(USERS_COLLECTION).findOne({ username: dto.username }) as User;
+        if (!user) {
+            throw new HttpException("User not found", HttpStatus.NOT_FOUND);
+        }
+
+        const village = user.villages[dto.villageIndex];
+        if (!village) {
+            throw new HttpException("Village not found", HttpStatus.NOT_FOUND);
+        }
+
+        if (!dto.newVillageName || dto.newVillageName.trim().length === 0) {
+            throw new HttpException("Village name cannot be empty", HttpStatus.BAD_REQUEST);
+        }
+
+        if (dto.newVillageName.length > MAX_VILLAGE_NAME_LENGTH) {
+            throw new HttpException(`Village name cannot exceed ${MAX_VILLAGE_NAME_LENGTH} characters`, HttpStatus.BAD_REQUEST);
+        }
+
+        // Check if name is unique for this user (excluding current village)
+        const isDuplicate = user.villages.some((v, i) => 
+            i !== dto.villageIndex && v.villageName === dto.newVillageName.trim()
+        );
+        if (isDuplicate) {
+            throw new HttpException("You already have a village with this name", HttpStatus.CONFLICT);
+        }
+
+        const oldName = village.villageName;
+        village.villageName = dto.newVillageName.trim();
+
+        // Update user
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username: dto.username },
+            { $set: user }
+        );
+
+        // Update grid cell with new village name
+        if (village.location) {
+            await this.worldService.updateVillageName(village.location.x, village.location.y, dto.newVillageName.trim());
+        }
 
         return new UserDTO(user);
     }

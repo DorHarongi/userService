@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpException, HttpStatus, Param, Post } from '@nestjs/common';
 import { userFromClientDTO } from '../dtos/userFromClientDTO';
 import * as crypto from 'crypto';
 import { UserRepositoryService } from '../services/user-repository.service';
@@ -8,6 +8,8 @@ import { UserVillageRequestDTO } from '../dtos/userVillageRequestDTO';
 import { VillageDTO } from '../dtos/villageDTO';
 import { AuthService } from '../../auth/services/auth.service';
 
+const MAX_INTRO_LENGTH = 200;
+
 export interface LoginResponseDTO {
     user: UserDTO;
     token: string;
@@ -16,6 +18,11 @@ export interface LoginResponseDTO {
 
 export interface RefreshTokenDTO {
     token: string;
+}
+
+export interface UpdateIntroDTO {
+    username: string;
+    intro: string;
 }
 
 @Controller('users')
@@ -100,5 +107,12 @@ export class UserController {
         return await this.userRepositorService.getUser(username);
     }
 
-
+    @Post('update-intro')
+    async updateIntro(@Body() updateIntroDTO: UpdateIntroDTO): Promise<{ success: boolean }>
+    {
+        if (updateIntroDTO.intro && updateIntroDTO.intro.length > MAX_INTRO_LENGTH) {
+            throw new HttpException(`Intro cannot exceed ${MAX_INTRO_LENGTH} characters`, HttpStatus.BAD_REQUEST);
+        }
+        return await this.userRepositorService.updateIntro(updateIntroDTO.username, updateIntroDTO.intro || '');
+    }
 }

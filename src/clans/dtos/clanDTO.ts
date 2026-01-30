@@ -59,3 +59,9 @@ export interface KickMemberDTO {
     leaderUsername: string;
     memberUsername: string;
 }
+
+export interface UpdateClanNameDTO {
+    oldClanName: string;
+    newClanName: string;
+    leaderUsername: string;
+}
