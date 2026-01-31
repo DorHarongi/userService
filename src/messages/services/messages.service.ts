@@ -278,9 +278,7 @@ export class MessagesService {
             username,
             MessageType.BOSS_DEFEATED,
             `Your clan defeated ${bossName}!`,
-            `Congratulations! Your clan has defeated the ${bossName}.\n\n` +
-            `Your reward: ${rewardAmount.toLocaleString()} of each resource.\n\n` +
-            `Click "Claim Rewards" to collect your rewards!`,
+            `Congratulations! Your clan has defeated the ${bossName}. Click "Claim Rewards" to collect your rewards!`,
             true, // actionable - user can claim
             undefined, // no sender
             { bossReward: { bossName, rewardAmount } }

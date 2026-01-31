@@ -1,4 +1,4 @@
-import { User } from "../models/user.entity";
+import { User, PendingBossReward } from "../models/user.entity";
 import { VillageDTO } from "./villageDTO";
 
 export class UserDTO
@@ -11,6 +11,7 @@ export class UserDTO
     pendingClanRequests: string[];
     intro: string;
     currentQuestIndex: number;
+    pendingBossRewards: PendingBossReward[];
 
     constructor(user: User)
     {
@@ -21,6 +22,7 @@ export class UserDTO
         this.pendingClanRequests = user.pendingClanRequests || [];
         this.intro = user.intro || '';
         this.currentQuestIndex = user.currentQuestIndex || 1; // Default to 1 for backwards compatibility
+        this.pendingBossRewards = user.pendingBossRewards || [];
         this.villages = [];
         for(let village of user.villages)
         {
