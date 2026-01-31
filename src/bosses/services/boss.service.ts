@@ -16,7 +16,7 @@ import {
     bossNames,
     bossSpawnWeights,
     bossRewardAmounts,
-    bossDamageBackPercent,
+    bossMaxDamageBack,
     getDistanceDamageMultiplier,
     MAX_BOSSES_ON_MAP,
     BOSS_CLAIM_DURATION_MS,
@@ -304,9 +304,8 @@ export class BossService {
         const actualDamage = Math.floor(rawDamage * distanceMultiplier);
 
         // Calculate troop losses (boss fights back)
-        // Damage back scales with tier - lower tiers have higher % but lower HP
-        const damageBackPercent = bossDamageBackPercent[boss.tier];
-        const bossDamageBack = boss.currentHp * damageBackPercent;
+        // Flat damage cap per tier - predictable losses regardless of boss HP
+        const bossDamageBack = bossMaxDamageBack[boss.tier];
         const damageRatio = Math.min(0.5, bossDamageBack / (rawDamage + 1)); // Max 50% loss
         const lostTroops = this.calculateKilledTroops(dto.troops, damageRatio);
 
