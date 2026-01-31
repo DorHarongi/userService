@@ -62,7 +62,7 @@ export class QuestService {
         if (!village) return null;
 
         // Check if the quest conditions are already met
-        if (this.isQuestConditionMet(currentQuest, village)) {
+        if (this.isQuestConditionMet(currentQuest, village, user)) {
             return this.completeQuest(user, currentQuest);
         }
 
@@ -82,13 +82,13 @@ export class QuestService {
         const village = user.villages[0];
         if (!village) return false;
 
-        return this.isQuestConditionMet(currentQuest, village);
+        return this.isQuestConditionMet(currentQuest, village, user);
     }
 
     /**
      * Check if a quest's conditions are met based on the action and current village state
      */
-    private isQuestCompletedByAction(quest: Quest, action: QuestAction, village: Village): boolean {
+    private isQuestCompletedByAction(quest: Quest, action: QuestAction, village: Village, user?: User): boolean {
         const condition = quest.condition;
 
         switch (condition.type) {
@@ -111,6 +111,10 @@ export class QuestService {
                 const totalWorkers = this.countTotalWorkers(village);
                 return totalWorkers >= (condition.count || 0);
 
+            case QuestCompletionType.JOIN_CLAN:
+                // Action must be joining a clan
+                return action.type === 'JOIN_CLAN';
+
             default:
                 return false;
         }
@@ -119,7 +123,7 @@ export class QuestService {
     /**
      * Check if quest conditions are already met based on current village state (no action required)
      */
-    private isQuestConditionMet(quest: Quest, village: Village): boolean {
+    private isQuestConditionMet(quest: Quest, village: Village, user?: User): boolean {
         const condition = quest.condition;
 
         switch (condition.type) {
@@ -134,6 +138,10 @@ export class QuestService {
             case QuestCompletionType.HIRE_WORKERS:
                 const totalWorkers = this.countTotalWorkers(village);
                 return totalWorkers >= (condition.count || 0);
+
+            case QuestCompletionType.JOIN_CLAN:
+                // User must have a clan name set
+                return !!user?.clanName;
 
             default:
                 return false;
