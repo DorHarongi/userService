@@ -304,8 +304,9 @@ export class BossService {
 
         // Calculate troop losses (boss fights back)
         // Boss deals damage equal to a percentage of remaining HP (capped)
-        const bossDamageBack = Math.min(boss.currentHp * 0.1, 50000); // 10% of HP, max 50k
-        const damageRatio = Math.min(1, bossDamageBack / (rawDamage + 1));
+        // Reduced to encourage participation while still having risk
+        const bossDamageBack = Math.min(boss.currentHp * 0.05, 25000); // 5% of HP, max 25k
+        const damageRatio = Math.min(0.5, bossDamageBack / (rawDamage + 1)); // Max 50% loss
         const lostTroops = this.calculateKilledTroops(dto.troops, damageRatio);
 
         // Update boss HP
