@@ -362,36 +362,49 @@ export class BossService {
             .getCollection(USERS_COLLECTION)
             .updateOne({ username }, { $set: user });
 
-        // Update boss
+        // Update boss - use atomic update with isDefeated: false condition to prevent race conditions
         if (bossDefeated) {
-            await this.dbAccessorService
+            // Try to mark boss as defeated - only succeeds if not already defeated
+            const updateResult = await this.dbAccessorService
                 .getCollection(BOSSES_COLLECTION)
                 .updateOne(
-                    { _id: boss._id },
+                    { _id: boss._id, isDefeated: false },
                     { $set: { currentHp: 0, isDefeated: true, defeatedAt: new Date() } }
                 );
 
-            // Increment clan's total bosses killed
-            await this.dbAccessorService
-                .getCollection(CLANS_COLLECTION)
-                .updateOne(
-                    { clanName: clan.clanName },
-                    { $inc: { totalBossesKilled: 1 } }
-                );
+            // If we actually defeated the boss (not already defeated by another request)
+            if (updateResult.modifiedCount > 0) {
+                // Increment clan's total bosses killed
+                await this.dbAccessorService
+                    .getCollection(CLANS_COLLECTION)
+                    .updateOne(
+                        { clanName: clan.clanName },
+                        { $inc: { totalBossesKilled: 1 } }
+                    );
 
-            // Distribute rewards to all clan members
-            const rewards = await this.distributeRewards(clan, boss.tier);
-            
-            return {
-                report: new RaidReportDTO(raidReport),
-                bossDefeated: true,
-                rewards
-            };
+                // Distribute rewards to all clan members
+                const rewards = await this.distributeRewards(clan, boss.tier);
+                
+                return {
+                    report: new RaidReportDTO(raidReport),
+                    bossDefeated: true,
+                    rewards
+                };
+            } else {
+                // Boss was already defeated by another concurrent attack
+                // Return result without rewards (they were already distributed)
+                return {
+                    report: new RaidReportDTO(raidReport),
+                    bossDefeated: true,
+                    // No rewards - already distributed to clan by the winning attack
+                };
+            }
         } else {
+            // Only update HP if boss is not already defeated
             await this.dbAccessorService
                 .getCollection(BOSSES_COLLECTION)
                 .updateOne(
-                    { _id: boss._id },
+                    { _id: boss._id, isDefeated: false },
                     { $set: { currentHp: bossHpAfter } }
                 );
 
