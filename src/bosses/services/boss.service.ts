@@ -319,7 +319,7 @@ export class BossService {
         // Calculate troop losses (boss fights back)
         // Flat damage cap per tier - predictable losses regardless of boss HP
         const bossDamageBack = bossMaxDamageBack[boss.tier];
-        const damageRatio = Math.min(0.5, bossDamageBack / (rawDamage + 1)); // Max 50% loss
+        const damageRatio = Math.min(0.25, bossDamageBack / (rawDamage + 1)); // Max 25% loss
         const lostTroops = this.calculateKilledTroops(dto.troops, damageRatio);
 
         // Update boss HP
