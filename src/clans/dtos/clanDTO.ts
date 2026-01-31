@@ -8,6 +8,7 @@ export class ClanDTO {
     isOpen: boolean;
     pendingRequests: ClanJoinRequest[];
     createdDate: Date;
+    totalBossesKilled: number;
 
     constructor(clan: Clan) {
         this.clanName = clan.clanName;
@@ -17,6 +18,7 @@ export class ClanDTO {
         this.isOpen = clan.isOpen;
         this.pendingRequests = clan.pendingRequests;
         this.createdDate = clan.createdDate;
+        this.totalBossesKilled = clan.totalBossesKilled || 0;
     }
 }
 
@@ -27,6 +29,12 @@ export interface ClanStatisticDTO {
     memberCount: number;
     totalPopulation: number;
     isOpen: boolean;
+    totalBossesKilled: number;
+}
+
+export interface ClanMemberRaidStatsDTO {
+    username: string;
+    weeklyRaidDamage: number;
 }
 
 export interface CreateClanDTO {

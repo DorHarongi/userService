@@ -1,7 +1,7 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { DbAccessorService } from '../../database/services/db-accessor.service';
 import { Clan, IClan } from '../models/clan.entity';
-import { ClanDTO, ClanStatisticDTO, CreateClanDTO, HandleJoinRequestDTO, JoinClanRequestDTO, LeaveClanDTO, ToggleClanOpenDTO } from '../dtos/clanDTO';
+import { ClanDTO, ClanMemberRaidStatsDTO, ClanStatisticDTO, CreateClanDTO, HandleJoinRequestDTO, JoinClanRequestDTO, LeaveClanDTO, ToggleClanOpenDTO } from '../dtos/clanDTO';
 import { User } from '../../user/models/user.entity';
 import { embassyMinimumLevelForClanJoin } from 'utils';
 
@@ -107,12 +107,31 @@ export class ClansService {
                     leaderUsername: 1,
                     memberCount: { $size: "$members" },
                     totalPopulation: 1,
-                    isOpen: 1
+                    isOpen: 1,
+                    totalBossesKilled: { $ifNull: ["$totalBossesKilled", 0] }
                 }
             }
         ]).toArray();
 
         return result as ClanStatisticDTO[];
+    }
+
+    async getClanMemberRaidStats(clanName: string): Promise<ClanMemberRaidStatsDTO[]> {
+        const clan = await this.dbAccessorService.getCollection(CLANS_COLLECTION).findOne({ clanName }) as Clan;
+        if (!clan) {
+            throw new HttpException("Clan not found", HttpStatus.NOT_FOUND);
+        }
+
+        // Get all members' weekly raid damage
+        const members = await this.dbAccessorService.getCollection(USERS_COLLECTION)
+            .find({ username: { $in: clan.members } })
+            .project({ username: 1, weeklyRaidDamage: 1 })
+            .toArray();
+
+        return members.map(m => ({
+            username: m.username,
+            weeklyRaidDamage: m.weeklyRaidDamage || 0
+        })).sort((a, b) => b.weeklyRaidDamage - a.weeklyRaidDamage);
     }
 
     async requestToJoinClan(joinRequest: JoinClanRequestDTO): Promise<{ success: boolean }> {

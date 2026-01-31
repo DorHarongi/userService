@@ -15,6 +15,7 @@ export interface IClan {
     isOpen: boolean;
     pendingRequests: ClanJoinRequest[];
     createdDate: Date;
+    totalBossesKilled: number; // total raid bosses defeated by clan (never resets)
 }
 
 export class Clan implements IClan {
@@ -26,6 +27,7 @@ export class Clan implements IClan {
     isOpen: boolean;
     pendingRequests: ClanJoinRequest[];
     createdDate: Date;
+    totalBossesKilled: number;
 
     constructor(clanName: string, description: string, leaderUsername: string, isOpen: boolean = true) {
         this.clanName = clanName;
@@ -35,5 +37,6 @@ export class Clan implements IClan {
         this.isOpen = isOpen;
         this.pendingRequests = [];
         this.createdDate = new Date();
+        this.totalBossesKilled = 0;
     }
 }

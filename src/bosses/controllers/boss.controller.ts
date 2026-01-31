@@ -78,4 +78,21 @@ export class BossController {
         await this.bossService.markRaidReportAsRead(reportId, username);
         return { success: true };
     }
+
+    // Get pending boss rewards for a user
+    @Get('rewards/pending/:username')
+    async getPendingRewards(
+        @Param('username') username: string
+    ): Promise<{ bossName: string; defeatedAt: Date; rewards: { wood: number; stone: number; crop: number } }[]> {
+        return this.bossService.getPendingRewards(username);
+    }
+
+    // Claim a boss reward
+    @Post('rewards/claim/:username/:rewardIndex')
+    async claimBossReward(
+        @Param('username') username: string,
+        @Param('rewardIndex') rewardIndex: string
+    ): Promise<{ success: boolean; rewards?: { wood: number; stone: number; crop: number } }> {
+        return this.bossService.claimBossReward(username, parseInt(rewardIndex, 10));
+    }
 }

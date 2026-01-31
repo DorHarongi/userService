@@ -9,7 +9,8 @@ export enum MessageType {
     RESOURCES_SENT = "resources_sent",
     RESOURCES_RECEIVED = "resources_received",
     SUPPORT_SENT = "support_sent",
-    SUPPORT_RECEIVED = "support_received"
+    SUPPORT_RECEIVED = "support_received",
+    BOSS_DEFEATED = "boss_defeated"
 }
 
 export interface ResourcesMetadata {
@@ -32,6 +33,11 @@ export interface TroopsMetadata {
     recipientVillageName?: string;
 }
 
+export interface BossRewardMetadata {
+    bossName: string;
+    rewardAmount: number;
+}
+
 export interface IMessage {
     _id?: ObjectId;
     recipientUsername: string;
@@ -47,6 +53,7 @@ export interface IMessage {
         requestUsername?: string;
         resources?: ResourcesMetadata;
         troops?: TroopsMetadata;
+        bossReward?: BossRewardMetadata;
     };
 }
 
@@ -65,6 +72,7 @@ export class Message implements IMessage {
         requestUsername?: string;
         resources?: ResourcesMetadata;
         troops?: TroopsMetadata;
+        bossReward?: BossRewardMetadata;
     };
 
     constructor(
@@ -79,6 +87,7 @@ export class Message implements IMessage {
             requestUsername?: string;
             resources?: ResourcesMetadata;
             troops?: TroopsMetadata;
+            bossReward?: BossRewardMetadata;
         }
     ) {
         this.recipientUsername = recipientUsername;

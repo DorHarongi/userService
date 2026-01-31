@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ClansService } from '../services/clans.service';
-import { ClanDTO, ClanStatisticDTO, CreateClanDTO, HandleJoinRequestDTO, JoinClanRequestDTO, LeaveClanDTO, KickMemberDTO, UpdateClanNameDTO, ToggleClanOpenDTO } from '../dtos/clanDTO';
+import { ClanDTO, ClanMemberRaidStatsDTO, ClanStatisticDTO, CreateClanDTO, HandleJoinRequestDTO, JoinClanRequestDTO, LeaveClanDTO, KickMemberDTO, UpdateClanNameDTO, ToggleClanOpenDTO } from '../dtos/clanDTO';
 import { MessagesService } from '../../messages/services/messages.service';
 
 @Controller('clans')
@@ -111,6 +111,11 @@ export class ClansController {
     @Get(':clanName/members')
     async getClanMembers(@Param('clanName') clanName: string): Promise<string[]> {
         return await this.clansService.getClanMembers(clanName);
+    }
+
+    @Get(':clanName/raid-stats')
+    async getClanMemberRaidStats(@Param('clanName') clanName: string): Promise<ClanMemberRaidStatsDTO[]> {
+        return await this.clansService.getClanMemberRaidStats(clanName);
     }
 
     @Post('update-name')

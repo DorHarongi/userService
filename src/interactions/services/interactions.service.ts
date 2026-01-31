@@ -225,49 +225,43 @@ export class InteractionsService {
             throw new HttpException("Recipient village not found", HttpStatus.NOT_FOUND);
         }
 
-        // Validate sender has enough resources
-        if (senderVillage.resourcesAmounts.woodAmount < dto.resources.woodAmount) {
-            throw new HttpException(`You only have ${Math.floor(senderVillage.resourcesAmounts.woodAmount)} wood`, HttpStatus.BAD_REQUEST);
-        }
-        if (senderVillage.resourcesAmounts.stonesAmount < dto.resources.stonesAmount) {
-            throw new HttpException(`You only have ${Math.floor(senderVillage.resourcesAmounts.stonesAmount)} stone`, HttpStatus.BAD_REQUEST);
-        }
-        if (senderVillage.resourcesAmounts.cropAmount < dto.resources.cropAmount) {
-            throw new HttpException(`You only have ${Math.floor(senderVillage.resourcesAmounts.cropAmount)} crop`, HttpStatus.BAD_REQUEST);
-        }
-
-        // Validate recipient has enough storage space
-        const maxWood = warehouseStorageByLevel[recipientVillage.buildingsLevels.woodWarehouseLevel];
-        const maxStone = warehouseStorageByLevel[recipientVillage.buildingsLevels.stoneWarehouseLevel];
-        const maxCrop = warehouseStorageByLevel[recipientVillage.buildingsLevels.cropWarehouseLevel];
-
-        const woodSpace = maxWood - recipientVillage.resourcesAmounts.woodAmount;
-        const stoneSpace = maxStone - recipientVillage.resourcesAmounts.stonesAmount;
-        const cropSpace = maxCrop - recipientVillage.resourcesAmounts.cropAmount;
-
-        if (dto.resources.woodAmount > woodSpace) {
-            throw new HttpException(`Recipient only has space for ${Math.floor(woodSpace)} wood`, HttpStatus.BAD_REQUEST);
-        }
-        if (dto.resources.stonesAmount > stoneSpace) {
-            throw new HttpException(`Recipient only has space for ${Math.floor(stoneSpace)} stone`, HttpStatus.BAD_REQUEST);
-        }
-        if (dto.resources.cropAmount > cropSpace) {
-            throw new HttpException(`Recipient only has space for ${Math.floor(cropSpace)} crop`, HttpStatus.BAD_REQUEST);
-        }
-
         // Check if anything is being sent
         if (dto.resources.woodAmount === 0 && dto.resources.stonesAmount === 0 && dto.resources.cropAmount === 0) {
             throw new HttpException("You must send at least some resources", HttpStatus.BAD_REQUEST);
         }
 
-        // Transfer resources
-        senderVillage.resourcesAmounts.woodAmount -= dto.resources.woodAmount;
-        senderVillage.resourcesAmounts.stonesAmount -= dto.resources.stonesAmount;
-        senderVillage.resourcesAmounts.cropAmount -= dto.resources.cropAmount;
+        // Cap requested amounts to what sender actually has
+        const woodToSend = Math.min(dto.resources.woodAmount, senderVillage.resourcesAmounts.woodAmount);
+        const stoneToSend = Math.min(dto.resources.stonesAmount, senderVillage.resourcesAmounts.stonesAmount);
+        const cropToSend = Math.min(dto.resources.cropAmount, senderVillage.resourcesAmounts.cropAmount);
 
-        recipientVillage.resourcesAmounts.woodAmount += dto.resources.woodAmount;
-        recipientVillage.resourcesAmounts.stonesAmount += dto.resources.stonesAmount;
-        recipientVillage.resourcesAmounts.cropAmount += dto.resources.cropAmount;
+        // Calculate recipient's available space
+        const maxWood = warehouseStorageByLevel[recipientVillage.buildingsLevels.woodWarehouseLevel];
+        const maxStone = warehouseStorageByLevel[recipientVillage.buildingsLevels.stoneWarehouseLevel];
+        const maxCrop = warehouseStorageByLevel[recipientVillage.buildingsLevels.cropWarehouseLevel];
+
+        const woodSpace = Math.max(0, maxWood - recipientVillage.resourcesAmounts.woodAmount);
+        const stoneSpace = Math.max(0, maxStone - recipientVillage.resourcesAmounts.stonesAmount);
+        const cropSpace = Math.max(0, maxCrop - recipientVillage.resourcesAmounts.cropAmount);
+
+        // Calculate actual transfer amounts (min of what sender wants to send and recipient can receive)
+        const actualWood = Math.min(woodToSend, woodSpace);
+        const actualStone = Math.min(stoneToSend, stoneSpace);
+        const actualCrop = Math.min(cropToSend, cropSpace);
+
+        // If nothing can be transferred at all, reject
+        if (actualWood === 0 && actualStone === 0 && actualCrop === 0) {
+            throw new HttpException("Recipient has no storage space available for any resources", HttpStatus.BAD_REQUEST);
+        }
+
+        // Transfer resources (only what fits)
+        senderVillage.resourcesAmounts.woodAmount -= actualWood;
+        senderVillage.resourcesAmounts.stonesAmount -= actualStone;
+        senderVillage.resourcesAmounts.cropAmount -= actualCrop;
+
+        recipientVillage.resourcesAmounts.woodAmount += actualWood;
+        recipientVillage.resourcesAmounts.stonesAmount += actualStone;
+        recipientVillage.resourcesAmounts.cropAmount += actualCrop;
 
         // Update both users
         await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
@@ -279,11 +273,11 @@ export class InteractionsService {
             { $set: recipient }
         );
 
-        // Send messages to both parties
+        // Send messages to both parties with ACTUAL amounts transferred
         const resourcesData = {
-            wood: dto.resources.woodAmount,
-            stone: dto.resources.stonesAmount,
-            crop: dto.resources.cropAmount
+            wood: actualWood,
+            stone: actualStone,
+            crop: actualCrop
         };
 
         await this.messagesService.sendResourceTransferMessage(

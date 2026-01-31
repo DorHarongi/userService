@@ -52,6 +52,19 @@ export class BossService {
     // SPAWNING LOGIC
     // =====================
 
+    // Reset weekly raid damage every Sunday at midnight
+    @Cron('0 0 0 * * 0') // Sunday at 00:00:00
+    async resetWeeklyRaidDamage(): Promise<void> {
+        try {
+            await this.dbAccessorService
+                .getCollection(USERS_COLLECTION)
+                .updateMany({}, { $set: { weeklyRaidDamage: 0 } });
+            this.logger.log('Reset weekly raid damage for all users');
+        } catch (error) {
+            this.logger.error('Error resetting weekly raid damage:', error);
+        }
+    }
+
     @Cron('0 */30 * * * *') // Every 30 minutes
     async trySpawnBoss(): Promise<void> {
         try {
@@ -340,9 +353,10 @@ export class BossService {
             .insertOne(raidReport);
         raidReport._id = reportResult.insertedId;
 
-        // Update user (energy and troops)
+        // Update user (energy, troops, and weekly raid damage)
         this.updateRemainingTroops(village.troops, lostTroops);
         user.energy -= 1;
+        user.weeklyRaidDamage = (user.weeklyRaidDamage || 0) + actualDamage;
         
         await this.dbAccessorService
             .getCollection(USERS_COLLECTION)
@@ -355,6 +369,14 @@ export class BossService {
                 .updateOne(
                     { _id: boss._id },
                     { $set: { currentHp: 0, isDefeated: true, defeatedAt: new Date() } }
+                );
+
+            // Increment clan's total bosses killed
+            await this.dbAccessorService
+                .getCollection(CLANS_COLLECTION)
+                .updateOne(
+                    { clanName: clan.clanName },
+                    { $inc: { totalBossesKilled: 1 } }
                 );
 
             // Distribute rewards to all clan members
@@ -386,48 +408,108 @@ export class BossService {
 
     private async distributeRewards(clan: IClan, tier: BossTier): Promise<{ wood: number; stone: number; crop: number }> {
         const rewardAmount = bossRewardAmounts[tier];
+        const bossName = bossNames[tier];
 
-        // Update each clan member's resources
+        // Add pending rewards to each clan member instead of direct deposit
         for (const memberUsername of clan.members) {
             const member = await this.dbAccessorService
                 .getCollection(USERS_COLLECTION)
                 .findOne({ username: memberUsername }) as User;
             
-            if (!member || !member.villages || member.villages.length === 0) continue;
+            if (!member) continue;
 
-            // Add rewards to first village (capped by warehouse)
-            const village = member.villages[0];
-            const maxWood = warehouseStorageByLevel[village.buildingsLevels.woodWarehouseLevel];
-            const maxStone = warehouseStorageByLevel[village.buildingsLevels.stoneWarehouseLevel];
-            const maxCrop = warehouseStorageByLevel[village.buildingsLevels.cropWarehouseLevel];
+            // Initialize pendingBossRewards if not exists
+            if (!member.pendingBossRewards) {
+                member.pendingBossRewards = [];
+            }
 
-            village.resourcesAmounts.woodAmount = Math.min(
-                village.resourcesAmounts.woodAmount + rewardAmount,
-                maxWood
-            );
-            village.resourcesAmounts.stonesAmount = Math.min(
-                village.resourcesAmounts.stonesAmount + rewardAmount,
-                maxStone
-            );
-            village.resourcesAmounts.cropAmount = Math.min(
-                village.resourcesAmounts.cropAmount + rewardAmount,
-                maxCrop
-            );
+            // Add pending reward
+            member.pendingBossRewards.push({
+                bossName: bossName,
+                defeatedAt: new Date(),
+                rewards: {
+                    wood: rewardAmount,
+                    stone: rewardAmount,
+                    crop: rewardAmount
+                }
+            });
 
             await this.dbAccessorService
                 .getCollection(USERS_COLLECTION)
-                .updateOne({ username: memberUsername }, { $set: member });
+                .updateOne({ username: memberUsername }, { $set: { pendingBossRewards: member.pendingBossRewards } });
 
-            // Send message to clan member
-            await this.messagesService.sendClanNotificationMessage(
+            // Send message to clan member with claim info
+            await this.messagesService.sendBossDefeatedMessage(
                 memberUsername,
-                `Your clan defeated ${bossNames[tier]}!`,
-                `Congratulations! Your clan has defeated the ${bossNames[tier]}.\n\n` +
-                `You received ${rewardAmount.toLocaleString()} wood, ${rewardAmount.toLocaleString()} stone, and ${rewardAmount.toLocaleString()} crop!`
+                bossName,
+                rewardAmount
             );
         }
 
         return { wood: rewardAmount, stone: rewardAmount, crop: rewardAmount };
+    }
+
+    // Claim boss rewards for a user
+    async claimBossReward(username: string, rewardIndex: number): Promise<{ success: boolean; rewards?: { wood: number; stone: number; crop: number } }> {
+        const user = await this.dbAccessorService
+            .getCollection(USERS_COLLECTION)
+            .findOne({ username }) as User;
+
+        if (!user) {
+            throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+        }
+
+        if (!user.pendingBossRewards || rewardIndex < 0 || rewardIndex >= user.pendingBossRewards.length) {
+            throw new HttpException('Reward not found', HttpStatus.NOT_FOUND);
+        }
+
+        const reward = user.pendingBossRewards[rewardIndex];
+        const village = user.villages[0];
+        
+        if (!village) {
+            throw new HttpException('Village not found', HttpStatus.NOT_FOUND);
+        }
+
+        // Get warehouse capacities
+        const maxWood = warehouseStorageByLevel[village.buildingsLevels.woodWarehouseLevel];
+        const maxStone = warehouseStorageByLevel[village.buildingsLevels.stoneWarehouseLevel];
+        const maxCrop = warehouseStorageByLevel[village.buildingsLevels.cropWarehouseLevel];
+
+        // Add rewards (capped by warehouse capacity)
+        village.resourcesAmounts.woodAmount = Math.min(
+            village.resourcesAmounts.woodAmount + reward.rewards.wood,
+            maxWood
+        );
+        village.resourcesAmounts.stonesAmount = Math.min(
+            village.resourcesAmounts.stonesAmount + reward.rewards.stone,
+            maxStone
+        );
+        village.resourcesAmounts.cropAmount = Math.min(
+            village.resourcesAmounts.cropAmount + reward.rewards.crop,
+            maxCrop
+        );
+
+        // Remove the claimed reward
+        user.pendingBossRewards.splice(rewardIndex, 1);
+
+        await this.dbAccessorService
+            .getCollection(USERS_COLLECTION)
+            .updateOne({ username }, { $set: user });
+
+        return { success: true, rewards: reward.rewards };
+    }
+
+    // Get pending rewards for a user
+    async getPendingRewards(username: string): Promise<{ bossName: string; defeatedAt: Date; rewards: { wood: number; stone: number; crop: number } }[]> {
+        const user = await this.dbAccessorService
+            .getCollection(USERS_COLLECTION)
+            .findOne({ username }) as User;
+
+        if (!user) {
+            throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+        }
+
+        return user.pendingBossRewards || [];
     }
 
     // =====================
