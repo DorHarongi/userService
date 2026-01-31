@@ -6,6 +6,7 @@ import { Location } from "./location";
 import { maxEnergy, TOTAL_QUESTS } from 'utils'
 
 export interface PendingBossReward {
+    rewardId: string; // Unique ID to match with message
     bossName: string;
     defeatedAt: Date;
     rewards: {

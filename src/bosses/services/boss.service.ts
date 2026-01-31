@@ -422,6 +422,8 @@ export class BossService {
     private async distributeRewards(clan: IClan, tier: BossTier): Promise<{ wood: number; stone: number; crop: number }> {
         const rewardAmount = bossRewardAmounts[tier];
         const bossName = bossNames[tier];
+        // Generate a unique reward ID for this boss defeat - shared across all clan members
+        const rewardId = new ObjectId().toHexString();
 
         // Add pending rewards to each clan member instead of direct deposit
         for (const memberUsername of clan.members) {
@@ -436,8 +438,9 @@ export class BossService {
                 member.pendingBossRewards = [];
             }
 
-            // Add pending reward
+            // Add pending reward with unique ID
             member.pendingBossRewards.push({
+                rewardId: rewardId,
                 bossName: bossName,
                 defeatedAt: new Date(),
                 rewards: {
@@ -451,11 +454,12 @@ export class BossService {
                 .getCollection(USERS_COLLECTION)
                 .updateOne({ username: memberUsername }, { $set: { pendingBossRewards: member.pendingBossRewards } });
 
-            // Send message to clan member with claim info
+            // Send message to clan member with claim info (include rewardId)
             await this.messagesService.sendBossDefeatedMessage(
                 memberUsername,
                 bossName,
-                rewardAmount
+                rewardAmount,
+                rewardId
             );
         }
 

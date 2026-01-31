@@ -34,6 +34,7 @@ export interface TroopsMetadata {
 }
 
 export interface BossRewardMetadata {
+    rewardId: string; // Unique ID to match with pending reward
     bossName: string;
     rewardAmount: number;
 }

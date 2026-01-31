@@ -272,7 +272,8 @@ export class MessagesService {
     async sendBossDefeatedMessage(
         username: string,
         bossName: string,
-        rewardAmount: number
+        rewardAmount: number,
+        rewardId: string
     ): Promise<void> {
         const message = new Message(
             username,
@@ -281,7 +282,7 @@ export class MessagesService {
             `Congratulations! Your clan has defeated the ${bossName}. Click "Claim Rewards" to collect your rewards!`,
             true, // actionable - user can claim
             undefined, // no sender
-            { bossReward: { bossName, rewardAmount } }
+            { bossReward: { bossName, rewardAmount, rewardId } }
         );
 
         await this.dbAccessorService.getCollection(MESSAGES_COLLECTION).insertOne(message);
