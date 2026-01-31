@@ -92,7 +92,8 @@ export class MessagesService {
                 MessageType.RESOURCES_SENT,
                 MessageType.RESOURCES_RECEIVED,
                 MessageType.SUPPORT_SENT,
-                MessageType.SUPPORT_RECEIVED
+                MessageType.SUPPORT_RECEIVED,
+                MessageType.BOSS_DEFEATED
             ] };
         }
 
@@ -119,7 +120,8 @@ export class MessagesService {
                 MessageType.RESOURCES_SENT,
                 MessageType.RESOURCES_RECEIVED,
                 MessageType.SUPPORT_SENT,
-                MessageType.SUPPORT_RECEIVED
+                MessageType.SUPPORT_RECEIVED,
+                MessageType.BOSS_DEFEATED
             ] };
         }
 
