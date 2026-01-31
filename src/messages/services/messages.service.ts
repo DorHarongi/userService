@@ -152,8 +152,9 @@ export class MessagesService {
     }
 
     async markClanRequestAsHandled(leaderUsername: string, requestUsername: string, clanName: string): Promise<void> {
-        // Mark the clan join request message as non-actionable after being handled
-        await this.dbAccessorService.getCollection(MESSAGES_COLLECTION).updateOne(
+        // Mark ALL clan join request messages from this user as non-actionable after being handled
+        // (in case they sent multiple requests)
+        await this.dbAccessorService.getCollection(MESSAGES_COLLECTION).updateMany(
             { 
                 recipientUsername: leaderUsername,
                 type: MessageType.CLAN_JOIN_REQUEST,
