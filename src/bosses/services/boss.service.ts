@@ -15,7 +15,8 @@ import {
     bossHpRanges,
     bossNames,
     bossSpawnWeights,
-    bossRewardWarehouseLevel,
+    bossRewardAmounts,
+    bossDamageBackPercent,
     getDistanceDamageMultiplier,
     MAX_BOSSES_ON_MAP,
     BOSS_CLAIM_DURATION_MS,
@@ -303,9 +304,9 @@ export class BossService {
         const actualDamage = Math.floor(rawDamage * distanceMultiplier);
 
         // Calculate troop losses (boss fights back)
-        // Boss deals damage equal to a percentage of remaining HP (capped)
-        // Reduced to encourage participation while still having risk
-        const bossDamageBack = Math.min(boss.currentHp * 0.05, 25000); // 5% of HP, max 25k
+        // Damage back scales with tier - lower tiers have higher % but lower HP
+        const damageBackPercent = bossDamageBackPercent[boss.tier];
+        const bossDamageBack = boss.currentHp * damageBackPercent;
         const damageRatio = Math.min(0.5, bossDamageBack / (rawDamage + 1)); // Max 50% loss
         const lostTroops = this.calculateKilledTroops(dto.troops, damageRatio);
 
@@ -385,8 +386,7 @@ export class BossService {
     // =====================
 
     private async distributeRewards(clan: IClan, tier: BossTier): Promise<{ wood: number; stone: number; crop: number }> {
-        const rewardLevel = bossRewardWarehouseLevel[tier];
-        const rewardAmount = warehouseStorageByLevel[rewardLevel];
+        const rewardAmount = bossRewardAmounts[tier];
 
         // Update each clan member's resources
         for (const memberUsername of clan.members) {
