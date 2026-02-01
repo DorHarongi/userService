@@ -37,7 +37,7 @@ const USERS_COLLECTION = 'users';
 const CLANS_COLLECTION = 'clans';
 const GRIDS_COLLECTION = 'grids';
 const WORLD_SIZE = 100;
-const PROXIMITY_RANGE = 15; // Bosses spawn within this range of villages
+const PROXIMITY_RANGE = 20; // Bosses spawn within this range of villages
 
 @Injectable()
 export class BossService {
