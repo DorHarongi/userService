@@ -4,4 +4,5 @@ export interface UserStatisticDTO
     clanName: string;
     numberOfVillages: number;
     population: number;
+    beginnerShieldRemainingHours: number;
 }

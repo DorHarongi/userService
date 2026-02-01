@@ -78,6 +78,8 @@ export class UserRepositoryService {
 
     async getUserStatistics(page: number): Promise<Array<UserStatisticDTO>>
     {
+        const BEGINNER_SHIELD_HOURS = 24;
+        
         let result = this.dbAccessorService.getCollection(COLLECTION_NAME).aggregate([
             { "$unwind" : "$villages" },
             { "$group" : {
@@ -85,6 +87,7 @@ export class UserRepositoryService {
                  "totalPopulation": { $sum: "$villages.population" },
                  "username": { $first: "$username" },
                  "clanName": { $first: "$clanName" },
+                 "joinDate": { $first: "$joinDate" },
                  "numberOfVillages": { $sum: 1}
                   
             }},
@@ -97,12 +100,20 @@ export class UserRepositoryService {
             throw new HttpException("No users were found", HttpStatus.NOT_FOUND);
         
         let usersWithMongoId: any =  await result.toArray();
+        const now = new Date();
         let users: UserStatisticDTO[] = usersWithMongoId.map(userWithMongoId =>{
+            let shieldRemaining = 0;
+            if (userWithMongoId.joinDate) {
+                const joinDate = new Date(userWithMongoId.joinDate);
+                const hoursSinceJoin = (now.getTime() - joinDate.getTime()) / (1000 * 60 * 60);
+                shieldRemaining = Math.max(0, BEGINNER_SHIELD_HOURS - hoursSinceJoin);
+            }
             return {
                 'username': userWithMongoId.username,
                 'population': userWithMongoId.totalPopulation,
                 'clanName': userWithMongoId.clanName,
-                'numberOfVillages': userWithMongoId.numberOfVillages
+                'numberOfVillages': userWithMongoId.numberOfVillages,
+                'beginnerShieldRemainingHours': shieldRemaining
             }
         })
 
