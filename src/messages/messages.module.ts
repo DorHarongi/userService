@@ -4,6 +4,7 @@ import { AuthModule } from '../auth/auth.module';
 import { MessagesController } from './controllers/messages.controller';
 import { MessagesService } from './services/messages.service';
 
+// Messages module.
 @Module({
     imports: [DatabaseModule, AuthModule],
     controllers: [MessagesController],
