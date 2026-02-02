@@ -17,7 +17,7 @@ export class InteractionsController {
 
     @Post('withdraw-support')
     async withdrawSupport(@Request() req: any, @Body() dto: WithdrawSupportDTO): Promise<UserDTO> {
-        dto.senderUsername = req.user.username;
+        dto.ownerUsername = req.user.username;
         return await this.interactionsService.withdrawSupport(dto);
     }
 

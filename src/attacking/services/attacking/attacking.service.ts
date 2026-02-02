@@ -127,7 +127,7 @@ export class AttackingService {
         }
 
         // Update attacker reference with the atomically updated document
-        attacker = atomicResult as User;
+        attacker = atomicResult as unknown as User;
 
 
         // everything good -> attack
