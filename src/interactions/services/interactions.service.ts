@@ -251,6 +251,11 @@ export class InteractionsService {
             throw new HttpException("Recipient village not found", HttpStatus.NOT_FOUND);
         }
 
+        // Validate non-negative amounts (prevent stealing via negative values)
+        if (dto.resources.woodAmount < 0 || dto.resources.stonesAmount < 0 || dto.resources.cropAmount < 0) {
+            throw new HttpException("Resource amounts cannot be negative", HttpStatus.BAD_REQUEST);
+        }
+
         // Check if anything is being sent
         if (dto.resources.woodAmount === 0 && dto.resources.stonesAmount === 0 && dto.resources.cropAmount === 0) {
             throw new HttpException("You must send at least some resources", HttpStatus.BAD_REQUEST);
