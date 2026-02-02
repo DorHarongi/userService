@@ -10,6 +10,7 @@ export enum MessageType {
     RESOURCES_RECEIVED = "resources_received",
     SUPPORT_SENT = "support_sent",
     SUPPORT_RECEIVED = "support_received",
+    SUPPORT_WITHDRAWN = "support_withdrawn",
     BOSS_DEFEATED = "boss_defeated"
 }
 

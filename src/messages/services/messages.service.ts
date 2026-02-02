@@ -93,6 +93,7 @@ export class MessagesService {
                 MessageType.RESOURCES_RECEIVED,
                 MessageType.SUPPORT_SENT,
                 MessageType.SUPPORT_RECEIVED,
+                MessageType.SUPPORT_WITHDRAWN,
                 MessageType.BOSS_DEFEATED
             ] };
         }
@@ -121,6 +122,7 @@ export class MessagesService {
                 MessageType.RESOURCES_RECEIVED,
                 MessageType.SUPPORT_SENT,
                 MessageType.SUPPORT_RECEIVED,
+                MessageType.SUPPORT_WITHDRAWN,
                 MessageType.BOSS_DEFEATED
             ] };
         }
@@ -285,6 +287,32 @@ export class MessagesService {
             { bossReward: { bossName, rewardAmount, rewardId } }
         );
 
+        await this.dbAccessorService.getCollection(MESSAGES_COLLECTION).insertOne(message);
+    }
+
+    async sendSupportWithdrawnMessage(
+        ownerUsername: string,
+        recipientUsername: string,
+        ownerVillageName: string,
+        recipientVillageName: string,
+        troops: TroopsMetadata
+    ): Promise<void> {
+        const troopsData: TroopsMetadata = {
+            ...troops,
+            senderVillageName: ownerVillageName,
+            recipientVillageName
+        };
+
+        // Message for recipient (the one who had the support troops)
+        const message = new Message(
+            recipientUsername,
+            MessageType.SUPPORT_WITHDRAWN,
+            `Support troops withdrawn by ${ownerUsername}`,
+            `${ownerUsername} withdrew support troops from ${recipientVillageName}`,
+            false,
+            ownerUsername,
+            { troops: troopsData }
+        );
         await this.dbAccessorService.getCollection(MESSAGES_COLLECTION).insertOne(message);
     }
 }

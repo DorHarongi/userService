@@ -42,7 +42,11 @@ export class InteractionsService {
             throw new HttpException("Sender village not found", HttpStatus.NOT_FOUND);
         }
 
-        const recipientVillage = recipient.villages.find(v => v.villageName === dto.recipientVillageName);
+        // Use case-insensitive and trimmed comparison to handle potential data sync issues
+        const recipientVillageName = dto.recipientVillageName?.trim().toLowerCase();
+        const recipientVillage = recipient.villages.find(v => 
+            v.villageName?.trim().toLowerCase() === recipientVillageName
+        );
         if (!recipientVillage) {
             throw new HttpException("Recipient village not found", HttpStatus.NOT_FOUND);
         }
@@ -199,6 +203,24 @@ export class InteractionsService {
             { $set: recipient }
         );
 
+        // Send withdrawal message to recipient
+        const troopsData = {
+            spearFighters: dto.troops.spearFighters,
+            swordFighters: dto.troops.swordFighters,
+            axeFighters: dto.troops.axeFighters,
+            archers: dto.troops.archers,
+            magicians: dto.troops.magicians,
+            horsemen: dto.troops.horsemen,
+            catapults: dto.troops.catapults
+        };
+        await this.messagesService.sendSupportWithdrawnMessage(
+            dto.ownerUsername,
+            dto.recipientUsername,
+            ownerVillage.villageName,
+            dto.recipientVillageName,
+            troopsData
+        );
+
         return new UserDTO(owner);
     }
 
@@ -220,7 +242,11 @@ export class InteractionsService {
             throw new HttpException("Sender village not found", HttpStatus.NOT_FOUND);
         }
 
-        const recipientVillage = recipient.villages.find(v => v.villageName === dto.recipientVillageName);
+        // Use case-insensitive and trimmed comparison
+        const recipientVillageName = dto.recipientVillageName?.trim().toLowerCase();
+        const recipientVillage = recipient.villages.find(v => 
+            v.villageName?.trim().toLowerCase() === recipientVillageName
+        );
         if (!recipientVillage) {
             throw new HttpException("Recipient village not found", HttpStatus.NOT_FOUND);
         }
