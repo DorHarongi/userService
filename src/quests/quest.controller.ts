@@ -1,9 +1,10 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Request } from '@nestjs/common';
 import { QuestService } from './quest.service';
 import { DbAccessorService } from '../database/services/db-accessor.service';
 import { User } from '../user/models/user.entity';
 import { UserDTO } from '../user/dtos/userDTO';
 import { QuestAwareResponse } from './quest-response.dto';
+import { AuthGuard } from '../auth/guards/auth.guard';
 
 const USERS_COLLECTION = "users";
 
@@ -17,6 +18,7 @@ interface QuestStatusResponse {
 }
 
 @Controller('quests')
+@UseGuards(AuthGuard)
 export class QuestController {
     constructor(
         private questService: QuestService,
@@ -27,9 +29,11 @@ export class QuestController {
      * Check if current quest is claimable (conditions already met)
      */
     @Post('status')
-    async getQuestStatus(@Body() dto: ClaimQuestDTO): Promise<QuestStatusResponse> {
+    async getQuestStatus(@Request() req: any, @Body() dto: ClaimQuestDTO): Promise<QuestStatusResponse> {
+        // Use authenticated username
+        const username = req.user.username;
         const user = await this.dbAccessorService.getCollection(USERS_COLLECTION)
-            .findOne({ username: dto.username }) as User;
+            .findOne({ username }) as User;
 
         if (!user) {
             return { isClaimable: false, user: null as any };
@@ -43,9 +47,11 @@ export class QuestController {
      * Claim rewards for a quest that was already completed before reaching it
      */
     @Post('claim')
-    async claimQuest(@Body() dto: ClaimQuestDTO): Promise<QuestAwareResponse> {
+    async claimQuest(@Request() req: any, @Body() dto: ClaimQuestDTO): Promise<QuestAwareResponse> {
+        // Use authenticated username
+        const username = req.user.username;
         const user = await this.dbAccessorService.getCollection(USERS_COLLECTION)
-            .findOne({ username: dto.username }) as User;
+            .findOne({ username }) as User;
 
         if (!user) {
             return { user: null as any, questCompleted: null };
@@ -56,7 +62,7 @@ export class QuestController {
         if (questCompleted) {
             // Save updated user
             await this.dbAccessorService.getCollection(USERS_COLLECTION)
-                .updateOne({ username: dto.username }, { $set: user });
+                .updateOne({ username }, { $set: user });
         }
 
         return { user: new UserDTO(user), questCompleted };

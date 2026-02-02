@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseGuards, Request } from '@nestjs/common';
 import { ClansService } from '../services/clans.service';
 import { ClanDTO, ClanMemberRaidStatsDTO, ClanStatisticDTO, CreateClanDTO, HandleJoinRequestDTO, JoinClanRequestDTO, LeaveClanDTO, KickMemberDTO, UpdateClanNameDTO, ToggleClanOpenDTO } from '../dtos/clanDTO';
 import { MessagesService } from '../../messages/services/messages.service';
+import { AuthGuard } from '../../auth/guards/auth.guard';
 
 @Controller('clans')
 export class ClansController {
@@ -11,27 +12,34 @@ export class ClansController {
     ) {}
 
     @Post('create')
-    async createClan(@Body() createClanDTO: CreateClanDTO): Promise<ClanDTO> {
+    @UseGuards(AuthGuard)
+    async createClan(@Request() req: any, @Body() createClanDTO: CreateClanDTO): Promise<ClanDTO> {
+        createClanDTO.leaderUsername = req.user.username;
         return await this.clansService.createClan(createClanDTO);
     }
 
+    // Public endpoint - viewing clan info
     @Get(':clanName')
     async getClan(@Param('clanName') clanName: string): Promise<ClanDTO> {
         return await this.clansService.getClan(clanName);
     }
 
+    // Public endpoint - statistics
     @Get('statistics/pages')
     async getNumberOfClanStatisticsPages(): Promise<number> {
         return await this.clansService.getNumberOfClanStatisticsPages();
     }
 
+    // Public endpoint - statistics
     @Get('statistics/page/:page')
     async getClanStatistics(@Param('page') page: number): Promise<ClanStatisticDTO[]> {
         return await this.clansService.getClanStatistics(page);
     }
 
     @Post('join')
-    async requestToJoinClan(@Body() joinRequest: JoinClanRequestDTO): Promise<{ success: boolean }> {
+    @UseGuards(AuthGuard)
+    async requestToJoinClan(@Request() req: any, @Body() joinRequest: JoinClanRequestDTO): Promise<{ success: boolean }> {
+        joinRequest.username = req.user.username;
         const result = await this.clansService.requestToJoinClan(joinRequest);
         
         // If it's an open clan and they joined successfully, notify the leader
@@ -56,7 +64,9 @@ export class ClansController {
     }
 
     @Post('handle-request')
-    async handleJoinRequest(@Body() handleRequest: HandleJoinRequestDTO): Promise<{ success: boolean }> {
+    @UseGuards(AuthGuard)
+    async handleJoinRequest(@Request() req: any, @Body() handleRequest: HandleJoinRequestDTO): Promise<{ success: boolean }> {
+        handleRequest.leaderUsername = req.user.username;
         const result = await this.clansService.handleJoinRequest(handleRequest);
         
         // Send message to the requester about the result
@@ -86,12 +96,16 @@ export class ClansController {
     }
 
     @Post('leave')
-    async leaveClan(@Body() leaveClanDTO: LeaveClanDTO): Promise<{ success: boolean }> {
+    @UseGuards(AuthGuard)
+    async leaveClan(@Request() req: any, @Body() leaveClanDTO: LeaveClanDTO): Promise<{ success: boolean }> {
+        leaveClanDTO.username = req.user.username;
         return await this.clansService.leaveClan(leaveClanDTO);
     }
 
     @Post('kick')
-    async kickMember(@Body() kickMemberDTO: KickMemberDTO): Promise<{ success: boolean }> {
+    @UseGuards(AuthGuard)
+    async kickMember(@Request() req: any, @Body() kickMemberDTO: KickMemberDTO): Promise<{ success: boolean }> {
+        kickMemberDTO.leaderUsername = req.user.username;
         const result = await this.clansService.kickMember(
             kickMemberDTO.clanName,
             kickMemberDTO.leaderUsername,
@@ -108,18 +122,22 @@ export class ClansController {
         return result;
     }
 
+    // Public endpoint - viewing clan members
     @Get(':clanName/members')
     async getClanMembers(@Param('clanName') clanName: string): Promise<string[]> {
         return await this.clansService.getClanMembers(clanName);
     }
 
+    // Public endpoint - viewing raid stats
     @Get(':clanName/raid-stats')
     async getClanMemberRaidStats(@Param('clanName') clanName: string): Promise<ClanMemberRaidStatsDTO[]> {
         return await this.clansService.getClanMemberRaidStats(clanName);
     }
 
     @Post('update-name')
-    async updateClanName(@Body() updateClanNameDTO: UpdateClanNameDTO): Promise<{ success: boolean }> {
+    @UseGuards(AuthGuard)
+    async updateClanName(@Request() req: any, @Body() updateClanNameDTO: UpdateClanNameDTO): Promise<{ success: boolean }> {
+        updateClanNameDTO.leaderUsername = req.user.username;
         return await this.clansService.updateClanName(
             updateClanNameDTO.oldClanName,
             updateClanNameDTO.newClanName,
@@ -128,7 +146,9 @@ export class ClansController {
     }
 
     @Post('toggle-open')
-    async toggleClanOpen(@Body() toggleDTO: ToggleClanOpenDTO): Promise<{ success: boolean }> {
+    @UseGuards(AuthGuard)
+    async toggleClanOpen(@Request() req: any, @Body() toggleDTO: ToggleClanOpenDTO): Promise<{ success: boolean }> {
+        toggleDTO.leaderUsername = req.user.username;
         return await this.clansService.toggleClanOpen(toggleDTO);
     }
 }

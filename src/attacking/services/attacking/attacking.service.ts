@@ -43,11 +43,25 @@ export class AttackingService {
 
     async attack(attackDTO: AttackDTO): Promise<any>{
         if(attackDTO.attackerName == attackDTO.defenderName)
-            throw new HttpException("You cant attack yourself", HttpStatus.BAD_REQUEST) 
+            throw new HttpException("You cant attack yourself", HttpStatus.BAD_REQUEST);
+
+        // Validate village indexes
+        if (attackDTO.attackerVillageIndex < 0 || attackDTO.defenderVillageIndex < 0) {
+            throw new HttpException("Invalid village index", HttpStatus.BAD_REQUEST);
+        }
+ 
         let attacker: User = (await this.dbAccessorService.getCollection(USER_COLLECTIONS).findOne({username: attackDTO.attackerName})) as User;
         let defender: User = (await this.dbAccessorService.getCollection(USER_COLLECTIONS).findOne({username: attackDTO.defenderName})) as User;
         if(!attacker || !defender)
             throw new HttpException("Attacker or defender doesnt exist", HttpStatus.NOT_FOUND);
+
+        // Validate village indexes are in bounds
+        if (attackDTO.attackerVillageIndex >= attacker.villages.length) {
+            throw new HttpException("Invalid attacker village index", HttpStatus.BAD_REQUEST);
+        }
+        if (attackDTO.defenderVillageIndex >= defender.villages.length) {
+            throw new HttpException("Invalid defender village index", HttpStatus.BAD_REQUEST);
+        }
 
         // Beginner shield validation
         if (this.isUnderBeginnerShield(attacker)) {
@@ -67,17 +81,53 @@ export class AttackingService {
         const attackerVillage: Village = attacker.villages[attackDTO.attackerVillageIndex];
         const defenderVillage: Village = defender.villages[attackDTO.defenderVillageIndex];
         if(!attackerVillage || !defenderVillage)
-            throw new HttpException("Attacker or defender village doesnt exist", HttpStatus.NOT_FOUND) 
+            throw new HttpException("Attacker or defender village doesnt exist", HttpStatus.NOT_FOUND);
 
         // Check troops exist and are valid FIRST (before accessing properties)
         if(!attackDTO.attackingTroops || !this.hasTroopsToAttack(attackDTO.attackingTroops))
-            throw new HttpException("You must select at least one troop to attack", HttpStatus.BAD_REQUEST)
+            throw new HttpException("You must select at least one troop to attack", HttpStatus.BAD_REQUEST);
 
         if(!this.doesAttackerActuallyHaveThoseTroops(attackDTO.attackingTroops, attackerVillage.troops))
-            throw new HttpException("You chose more troops than you have", HttpStatus.BAD_REQUEST) 
+            throw new HttpException("You chose more troops than you have", HttpStatus.BAD_REQUEST);
 
         if(!this.doesAttackerHaveEnoughEnergy(attacker.energy))
-            throw new HttpException("You have no energy.", HttpStatus.BAD_REQUEST)
+            throw new HttpException("You have no energy.", HttpStatus.BAD_REQUEST);
+
+        // ATOMIC: Deduct energy and troops atomically to prevent race conditions
+        const troopsPath = `villages.${attackDTO.attackerVillageIndex}.troops`;
+        const atomicResult = await this.dbAccessorService.getCollection(USER_COLLECTIONS).findOneAndUpdate(
+            {
+                username: attackDTO.attackerName,
+                energy: { $gte: 1 },
+                [`${troopsPath}.spearFighters`]: { $gte: attackDTO.attackingTroops.spearFighters },
+                [`${troopsPath}.swordFighters`]: { $gte: attackDTO.attackingTroops.swordFighters },
+                [`${troopsPath}.axeFighters`]: { $gte: attackDTO.attackingTroops.axeFighters },
+                [`${troopsPath}.archers`]: { $gte: attackDTO.attackingTroops.archers },
+                [`${troopsPath}.magicians`]: { $gte: attackDTO.attackingTroops.magicians },
+                [`${troopsPath}.horsemen`]: { $gte: attackDTO.attackingTroops.horsemen },
+                [`${troopsPath}.catapults`]: { $gte: attackDTO.attackingTroops.catapults }
+            },
+            {
+                $inc: {
+                    energy: -1,
+                    [`${troopsPath}.spearFighters`]: -attackDTO.attackingTroops.spearFighters,
+                    [`${troopsPath}.swordFighters`]: -attackDTO.attackingTroops.swordFighters,
+                    [`${troopsPath}.axeFighters`]: -attackDTO.attackingTroops.axeFighters,
+                    [`${troopsPath}.archers`]: -attackDTO.attackingTroops.archers,
+                    [`${troopsPath}.magicians`]: -attackDTO.attackingTroops.magicians,
+                    [`${troopsPath}.horsemen`]: -attackDTO.attackingTroops.horsemen,
+                    [`${troopsPath}.catapults`]: -attackDTO.attackingTroops.catapults
+                }
+            },
+            { returnDocument: 'after' }
+        );
+
+        if (!atomicResult) {
+            throw new HttpException("Attack failed - not enough energy or troops (concurrent modification)", HttpStatus.CONFLICT);
+        }
+
+        // Update attacker reference with the atomically updated document
+        attacker = atomicResult as User;
 
 
         // everything good -> attack
@@ -128,17 +178,71 @@ export class AttackingService {
             
         await this.reportsService.saveAttackReport(attackReport);
 
-        this.updateRemainingTroopsInVillage(attackerVillage.troops, killedAttackerTroops);
+        // Calculate surviving attackers to return
+        const survivingAttackers = new TroopsAmounts(
+            Math.max(0, attackerTroops.spearFighters - killedAttackerTroops.spearFighters),
+            Math.max(0, attackerTroops.swordFighters - killedAttackerTroops.swordFighters),
+            Math.max(0, attackerTroops.axeFighters - killedAttackerTroops.axeFighters),
+            Math.max(0, attackerTroops.archers - killedAttackerTroops.archers),
+            Math.max(0, attackerTroops.magicians - killedAttackerTroops.magicians),
+            Math.max(0, attackerTroops.horsemen - killedAttackerTroops.horsemen),
+            Math.max(0, attackerTroops.catapults - killedAttackerTroops.catapults)
+        );
+
+        // Return surviving troops and add loot to attacker (troops were already deducted atomically)
+        const attackerUpdatePath = `villages.${attackDTO.attackerVillageIndex}`;
+        await this.dbAccessorService.getCollection(USER_COLLECTIONS).updateOne(
+            { username: attackDTO.attackerName },
+            {
+                $inc: {
+                    [`${attackerUpdatePath}.troops.spearFighters`]: survivingAttackers.spearFighters,
+                    [`${attackerUpdatePath}.troops.swordFighters`]: survivingAttackers.swordFighters,
+                    [`${attackerUpdatePath}.troops.axeFighters`]: survivingAttackers.axeFighters,
+                    [`${attackerUpdatePath}.troops.archers`]: survivingAttackers.archers,
+                    [`${attackerUpdatePath}.troops.magicians`]: survivingAttackers.magicians,
+                    [`${attackerUpdatePath}.troops.horsemen`]: survivingAttackers.horsemen,
+                    [`${attackerUpdatePath}.troops.catapults`]: survivingAttackers.catapults,
+                    [`${attackerUpdatePath}.resourcesAmounts.woodAmount`]: loot.woodAmount,
+                    [`${attackerUpdatePath}.resourcesAmounts.cropAmount`]: loot.cropAmount,
+                    [`${attackerUpdatePath}.resourcesAmounts.stonesAmount`]: loot.stonesAmount
+                }
+            }
+        );
+
+        // Update defender - deduct troops and resources
         this.updateRemainingTroopsInVillage(defenceTroops, killedDefenderTroops);
         this.updateRemainingTroopsInVillage(supportTroops, killedSupportTroops);
-        this.decreaseEnergy(attacker);
+        
+        // Ensure no negative values
+        defenceTroops.spearFighters = Math.max(0, defenceTroops.spearFighters);
+        defenceTroops.swordFighters = Math.max(0, defenceTroops.swordFighters);
+        defenceTroops.axeFighters = Math.max(0, defenceTroops.axeFighters);
+        defenceTroops.archers = Math.max(0, defenceTroops.archers);
+        defenceTroops.magicians = Math.max(0, defenceTroops.magicians);
+        defenceTroops.horsemen = Math.max(0, defenceTroops.horsemen);
+        defenceTroops.catapults = Math.max(0, defenceTroops.catapults);
 
-        //update attacker village
-        const attackerUpdateResult: UpdateResult = await this.dbAccessorService.getCollection(USER_COLLECTIONS).updateOne({username: attackDTO.attackerName}, {$set: attacker});
-        //update villager village
-        const DefenderUpdateResult: UpdateResult = await this.dbAccessorService.getCollection(USER_COLLECTIONS).updateOne({username: attackDTO.defenderName}, {$set: defender});
+        supportTroops.spearFighters = Math.max(0, supportTroops.spearFighters);
+        supportTroops.swordFighters = Math.max(0, supportTroops.swordFighters);
+        supportTroops.axeFighters = Math.max(0, supportTroops.axeFighters);
+        supportTroops.archers = Math.max(0, supportTroops.archers);
+        supportTroops.magicians = Math.max(0, supportTroops.magicians);
+        supportTroops.horsemen = Math.max(0, supportTroops.horsemen);
+        supportTroops.catapults = Math.max(0, supportTroops.catapults);
 
-        return new UserDTO(attacker);
+        defenderVillage.resourcesAmounts.woodAmount = Math.max(0, defenderVillage.resourcesAmounts.woodAmount);
+        defenderVillage.resourcesAmounts.cropAmount = Math.max(0, defenderVillage.resourcesAmounts.cropAmount);
+        defenderVillage.resourcesAmounts.stonesAmount = Math.max(0, defenderVillage.resourcesAmounts.stonesAmount);
+
+        // Update defender village
+        await this.dbAccessorService.getCollection(USER_COLLECTIONS).updateOne(
+            { username: attackDTO.defenderName }, 
+            { $set: defender }
+        );
+
+        // Get fresh attacker data for response
+        const updatedAttacker = await this.dbAccessorService.getCollection(USER_COLLECTIONS).findOne({username: attackDTO.attackerName}) as User;
+        return new UserDTO(updatedAttacker);
     }
 
     doesAttackerActuallyHaveThoseTroops(attackingTroops: TroopsAmounts, existingAttackerTroops: TroopsAmounts): boolean

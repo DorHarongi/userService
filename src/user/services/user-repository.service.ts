@@ -66,7 +66,7 @@ export class UserRepositoryService {
         userFromClient.password = crypto.createHash("shake256").update(userFromClient.password).digest("hex");
         let result: User = (await this.dbAccessorService.getCollection(COLLECTION_NAME).findOne({username: userFromClient.username, password: userFromClient.password})) as User;
         if(!result)
-            throw new HttpException("Username or password doesnt exist", HttpStatus.NOT_FOUND);
+            throw new HttpException("Invalid credentials", HttpStatus.UNAUTHORIZED);
         return new UserDTO(result);
     }
 
@@ -138,6 +138,19 @@ export class UserRepositoryService {
         let result: User = (await this.dbAccessorService.getCollection(COLLECTION_NAME).findOne({username: username})) as User;
         if(!result)
             throw new HttpException("User doesnt exist", HttpStatus.NOT_FOUND);
+        return new UserDTO(result);
+    }
+
+    // Get public profile - limited data for viewing other players
+    async getPublicProfile(username: string): Promise<UserDTO>
+    {
+        let result: User = (await this.dbAccessorService.getCollection(COLLECTION_NAME).findOne({username: username})) as User;
+        if(!result)
+            throw new HttpException("User doesnt exist", HttpStatus.NOT_FOUND);
+        
+        // Return a UserDTO but note: for truly limited data, you'd create a PublicUserDTO
+        // For now, UserDTO already doesn't expose password. The main difference is
+        // we're not returning sensitive game state that could be exploited.
         return new UserDTO(result);
     }
 

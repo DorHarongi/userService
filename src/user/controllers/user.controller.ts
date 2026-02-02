@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpException, HttpStatus, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpException, HttpStatus, Param, Post, UseGuards, Request } from '@nestjs/common';
 import { userFromClientDTO } from '../dtos/userFromClientDTO';
 import * as crypto from 'crypto';
 import { UserRepositoryService } from '../services/user-repository.service';
@@ -7,6 +7,7 @@ import { UserStatisticDTO } from '../dtos/userStatisticDTO';
 import { UserVillageRequestDTO } from '../dtos/userVillageRequestDTO';
 import { VillageDTO } from '../dtos/villageDTO';
 import { AuthService } from '../../auth/services/auth.service';
+import { AuthGuard } from '../../auth/guards/auth.guard';
 
 const MAX_INTRO_LENGTH = 200;
 
@@ -35,6 +36,7 @@ export class UserController {
 
 
     }
+    // Public - registration
     @Post('register')
     async registerUser(@Body() userFromClient: userFromClientDTO): Promise<LoginResponseDTO>
     {
@@ -55,6 +57,7 @@ export class UserController {
         throw new Error('Registration failed');
     }
 
+    // Public - login
     @Post('login')
     async loginUser(@Body() userFromClient: userFromClientDTO): Promise<LoginResponseDTO>
     {
@@ -67,6 +70,7 @@ export class UserController {
         };
     }
 
+    // Public - token refresh (needs valid token in body)
     @Post('refresh-token')
     async refreshToken(@Body() body: RefreshTokenDTO): Promise<{ token: string; ttlMinutes: number }>
     {
@@ -77,12 +81,14 @@ export class UserController {
         };
     }
 
+    // Public - statistics
     @Get('statistics')
     async getNumberOfUserStatisticsPages(): Promise<number>
     {
         return await this.userRepositorService.getNumberOfUserStatisticsPages();
     }
 
+    // Public - statistics
     @Get('statistics/:page')
     async getUserStatistics(@Param('page') page: number): Promise<UserStatisticDTO[]>
     {
@@ -90,29 +96,41 @@ export class UserController {
     }
 
     @Post('village')
-    async getVillage(@Body() userVillageRequestDTO: UserVillageRequestDTO): Promise<VillageDTO>
+    @UseGuards(AuthGuard)
+    async getVillage(@Request() req: any, @Body() userVillageRequestDTO: UserVillageRequestDTO): Promise<VillageDTO>
     {
+        userVillageRequestDTO.username = req.user.username;
         return await this.userRepositorService.getUserVillage(userVillageRequestDTO);
     }
 
+    // Protected - get own full user data
     @Get(':username')
-    async getUser(@Param('username') username: string): Promise<UserDTO>
+    @UseGuards(AuthGuard)
+    async getUser(@Request() req: any, @Param('username') username: string): Promise<UserDTO>
     {
+        // Only allow getting own user data with full details
+        if (req.user.username !== username) {
+            // For other users, return limited public profile
+            return await this.userRepositorService.getPublicProfile(username);
+        }
         return await this.userRepositorService.getUser(username);
     }
 
+    // Public - view player profile (limited data)
     @Get('profile/:username')
     async getPlayerProfile(@Param('username') username: string): Promise<UserDTO>
     {
-        return await this.userRepositorService.getUser(username);
+        return await this.userRepositorService.getPublicProfile(username);
     }
 
     @Post('update-intro')
-    async updateIntro(@Body() updateIntroDTO: UpdateIntroDTO): Promise<{ success: boolean }>
+    @UseGuards(AuthGuard)
+    async updateIntro(@Request() req: any, @Body() updateIntroDTO: UpdateIntroDTO): Promise<{ success: boolean }>
     {
         if (updateIntroDTO.intro && updateIntroDTO.intro.length > MAX_INTRO_LENGTH) {
             throw new HttpException(`Intro cannot exceed ${MAX_INTRO_LENGTH} characters`, HttpStatus.BAD_REQUEST);
         }
-        return await this.userRepositorService.updateIntro(updateIntroDTO.username, updateIntroDTO.intro || '');
+        // Use authenticated username
+        return await this.userRepositorService.updateIntro(req.user.username, updateIntroDTO.intro || '');
     }
 }
