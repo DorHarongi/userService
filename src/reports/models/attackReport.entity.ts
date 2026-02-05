@@ -34,6 +34,12 @@ export class AttackReport implements IAttackReport
     readByAttacker: boolean;
     readByDefender: boolean;
 
+    // Trait info
+    attackerTrait?: string;
+    attackerAcademyLevel?: number;
+    defenderTrait?: string;
+    defenderAcademyLevel?: number;
+
     constructor(
         attackerName: string,
         attackerVillageName: string,
@@ -52,7 +58,11 @@ export class AttackReport implements IAttackReport
         defenderTotalTroops: TroopsAmounts,
         defenderTotalLostTroops: TroopsAmounts,
         supportTotalTroops: TroopsAmounts,
-        supportTotalLostTroops: TroopsAmounts)
+        supportTotalLostTroops: TroopsAmounts,
+        attackerTrait?: string,
+        attackerAcademyLevel?: number,
+        defenderTrait?: string,
+        defenderAcademyLevel?: number)
     {
         this.attackerName = attackerName;
         this.attackerVillageName = attackerVillageName;
@@ -74,5 +84,9 @@ export class AttackReport implements IAttackReport
         this.supportTotalLostTroops = supportTotalLostTroops;
         this.readByAttacker = false;
         this.readByDefender = false;
+        this.attackerTrait = attackerTrait;
+        this.attackerAcademyLevel = attackerAcademyLevel;
+        this.defenderTrait = defenderTrait;
+        this.defenderAcademyLevel = defenderAcademyLevel;
     }
 }

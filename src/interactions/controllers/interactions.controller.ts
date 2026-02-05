@@ -1,6 +1,6 @@
 import { Body, Controller, Post, UseGuards, Request } from '@nestjs/common';
 import { InteractionsService } from '../services/interactions.service';
-import { SendSupportDTO, WithdrawSupportDTO, SendResourcesDTO, CreateVillageDTO, RenameVillageDTO, SwitchTraitDTO } from '../dtos/interactionDTO';
+import { SendSupportDTO, WithdrawSupportDTO, SendResourcesDTO, CreateVillageDTO, RenameVillageDTO, LearnTraitDTO } from '../dtos/interactionDTO';
 import { UserDTO } from '../../user/dtos/userDTO';
 import { AuthGuard } from '../../auth/guards/auth.guard';
 
@@ -39,9 +39,9 @@ export class InteractionsController {
         return await this.interactionsService.renameVillage(dto);
     }
 
-    @Post('switch-trait')
-    async switchTrait(@Request() req: any, @Body() dto: SwitchTraitDTO): Promise<UserDTO> {
+    @Post('learn-trait')
+    async learnTrait(@Request() req: any, @Body() dto: LearnTraitDTO): Promise<UserDTO> {
         dto.username = req.user.username;
-        return await this.interactionsService.switchTrait(dto);
+        return await this.interactionsService.learnTrait(dto);
     }
 }

@@ -204,7 +204,8 @@ export class AttackingService {
             defenderVillage.villageName, new Date(), attackWon, loot, attackingPower, villageDefence, 
             this.calculateTroopsDefence(defenceTroops), this.calculateAttackingPower(supportTroops),
             wallDefenseByLevel[wallLevel], attackerTroops, killedAttackerTroops,
-            defenceTroops, killedDefenderTroops, supportTroops, killedSupportTroops);
+            defenceTroops, killedDefenderTroops, supportTroops, killedSupportTroops,
+            attackerTrait, attackerAcademyLevel, defenderTrait, defenderAcademyLevel);
             
         await this.reportsService.saveAttackReport(attackReport);
 

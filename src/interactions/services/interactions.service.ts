@@ -6,7 +6,7 @@ import { TroopsAmounts } from '../../user/models/troopsAmounts';
 import { ResourcesAmounts } from '../../user/models/resourcesAmounts';
 import { Location } from '../../user/models/location';
 import { UserDTO } from '../../user/dtos/userDTO';
-import { SendSupportDTO, WithdrawSupportDTO, SendResourcesDTO, CreateVillageDTO, SwitchTraitDTO } from '../dtos/interactionDTO';
+import { SendSupportDTO, WithdrawSupportDTO, SendResourcesDTO, CreateVillageDTO, LearnTraitDTO } from '../dtos/interactionDTO';
 import { WorldService } from '../../world/services/world.service';
 import { MessagesService } from '../../messages/services/messages.service';
 import { BossService } from '../../bosses/services/boss.service';
@@ -476,7 +476,7 @@ export class InteractionsService {
         return new UserDTO(user);
     }
 
-    async switchTrait(dto: SwitchTraitDTO): Promise<UserDTO> {
+    async learnTrait(dto: LearnTraitDTO): Promise<UserDTO> {
         const user = await this.dbAccessorService.getCollection(USERS_COLLECTION).findOne({ username: dto.username }) as User;
 
         if (!user) {
@@ -493,7 +493,7 @@ export class InteractionsService {
         // Validate academy level
         if (academyLevel < ACADEMY_TRAIT_UNLOCK_LEVEL) {
             throw new HttpException(
-                `Academy must be level ${ACADEMY_TRAIT_UNLOCK_LEVEL} to select a trait`,
+                `Academy must be level ${ACADEMY_TRAIT_UNLOCK_LEVEL} to learn a trait`,
                 HttpStatus.BAD_REQUEST
             );
         }
@@ -507,23 +507,23 @@ export class InteractionsService {
         const currentTrait = village.trait;
         const isFirstSelection = currentTrait === undefined;
 
-        // If not first selection, check if user can afford the switch
+        // If not first selection, check if user can afford to learn new trait
         if (!isFirstSelection) {
-            const switchCost = warehouseStorageByLevel[academyLevel] || 0;
+            const learnCost = warehouseStorageByLevel[academyLevel] || 0;
             
-            if (village.resourcesAmounts.woodAmount < switchCost ||
-                village.resourcesAmounts.cropAmount < switchCost ||
-                village.resourcesAmounts.stonesAmount < switchCost) {
+            if (village.resourcesAmounts.woodAmount < learnCost ||
+                village.resourcesAmounts.cropAmount < learnCost ||
+                village.resourcesAmounts.stonesAmount < learnCost) {
                 throw new HttpException(
-                    `Switching trait costs ${switchCost} of each resource (based on Academy level ${academyLevel})`,
+                    `Learning a new trait requires a significant resource investment`,
                     HttpStatus.BAD_REQUEST
                 );
             }
 
             // Deduct resources
-            village.resourcesAmounts.woodAmount -= switchCost;
-            village.resourcesAmounts.cropAmount -= switchCost;
-            village.resourcesAmounts.stonesAmount -= switchCost;
+            village.resourcesAmounts.woodAmount -= learnCost;
+            village.resourcesAmounts.cropAmount -= learnCost;
+            village.resourcesAmounts.stonesAmount -= learnCost;
         }
 
         // Set new trait

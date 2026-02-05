@@ -30,6 +30,12 @@ export class AttackReportToClientDTO
     
     read: boolean;
 
+    // Trait info
+    attackerTrait?: string;
+    attackerAcademyLevel?: number;
+    defenderTrait?: string;
+    defenderAcademyLevel?: number;
+
     constructor(attackReport: AttackReport, viewingUsername?: string)
     {
         this.id = attackReport._id?.toString() || '';
@@ -61,5 +67,11 @@ export class AttackReportToClientDTO
         } else {
             this.read = true;
         }
+
+        // Trait info
+        this.attackerTrait = attackReport.attackerTrait;
+        this.attackerAcademyLevel = attackReport.attackerAcademyLevel;
+        this.defenderTrait = attackReport.defenderTrait;
+        this.defenderAcademyLevel = attackReport.defenderAcademyLevel;
     }
 }

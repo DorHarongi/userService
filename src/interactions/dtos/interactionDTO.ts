@@ -39,7 +39,7 @@ export interface RenameVillageDTO {
     newVillageName: string;
 }
 
-export interface SwitchTraitDTO {
+export interface LearnTraitDTO {
     username: string;
     villageIndex: number;
     newTrait: string;
