@@ -505,9 +505,15 @@ export class InteractionsService {
         }
 
         const currentTrait = village.trait;
-        const isFirstSelection = currentTrait === undefined;
+        const isFirstSelection = currentTrait === undefined || currentTrait === null;
 
-        // If not first selection, check if user can afford to learn new trait
+        // Build the update object with specific paths
+        const villagePath = `villages.${dto.villageIndex}`;
+        const updateFields: any = {
+            [`${villagePath}.trait`]: dto.newTrait
+        };
+
+        // If not first selection, check if user can afford and deduct resources
         if (!isFirstSelection) {
             const learnCost = warehouseStorageByLevel[academyLevel] || 0;
             
@@ -520,20 +526,26 @@ export class InteractionsService {
                 );
             }
 
-            // Deduct resources
+            // Add resource deductions to update
+            updateFields[`${villagePath}.resourcesAmounts.woodAmount`] = village.resourcesAmounts.woodAmount - learnCost;
+            updateFields[`${villagePath}.resourcesAmounts.cropAmount`] = village.resourcesAmounts.cropAmount - learnCost;
+            updateFields[`${villagePath}.resourcesAmounts.stonesAmount`] = village.resourcesAmounts.stonesAmount - learnCost;
+        }
+
+        // Update user with specific field paths
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username: dto.username },
+            { $set: updateFields }
+        );
+
+        // Update local village object for DTO response
+        village.trait = dto.newTrait as VillageTrait;
+        if (!isFirstSelection) {
+            const learnCost = warehouseStorageByLevel[academyLevel] || 0;
             village.resourcesAmounts.woodAmount -= learnCost;
             village.resourcesAmounts.cropAmount -= learnCost;
             village.resourcesAmounts.stonesAmount -= learnCost;
         }
-
-        // Set new trait
-        village.trait = dto.newTrait as VillageTrait;
-
-        // Update user
-        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
-            { username: dto.username },
-            { $set: user }
-        );
 
         return new UserDTO(user);
     }
