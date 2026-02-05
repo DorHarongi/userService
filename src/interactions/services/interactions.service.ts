@@ -533,10 +533,13 @@ export class InteractionsService {
         }
 
         // Update user with specific field paths
-        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+        const updateResult = await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
             { username: dto.username },
             { $set: updateFields }
         );
+
+        // Log for debugging persistence issues
+        console.log(`[learnTrait] Update result for ${dto.username}: modifiedCount=${updateResult.modifiedCount}, matchedCount=${updateResult.matchedCount}, trait=${dto.newTrait}`);
 
         // Update local village object for DTO response
         village.trait = dto.newTrait as VillageTrait;

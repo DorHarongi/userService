@@ -138,6 +138,12 @@ export class UserRepositoryService {
         let result: User = (await this.dbAccessorService.getCollection(COLLECTION_NAME).findOne({username: username})) as User;
         if(!result)
             throw new HttpException("User doesnt exist", HttpStatus.NOT_FOUND);
+        
+        // Debug: log trait values
+        if (result.villages && result.villages.length > 0) {
+            console.log(`[getUser] ${username} village[0].trait from DB: ${result.villages[0].trait}`);
+        }
+        
         return new UserDTO(result);
     }
 
