@@ -28,7 +28,9 @@ import {
     archerAttackingStat,
     magicianAttackingStat,
     horsemenAttackingStat,
-    catapultsAttackingStat
+    catapultsAttackingStat,
+    VillageTrait,
+    getTraitBonus
 } from 'utils';
 
 const BOSSES_COLLECTION = 'bosses';
@@ -314,12 +316,29 @@ export class BossService {
         const rawDamage = this.calculateAttackingPower(dto.troops);
         const distance = this.calculateDistance(village.location.x, village.location.y, boss.x, boss.y);
         const distanceMultiplier = getDistanceDamageMultiplier(distance);
-        const actualDamage = Math.floor(rawDamage * distanceMultiplier);
+        
+        // Apply Warlord trait bonus to attack damage
+        let damageMultiplier = distanceMultiplier;
+        const villageTrait = village.trait;
+        const academyLevel = village.buildingsLevels?.academyLevel || 1;
+        if (villageTrait === VillageTrait.WARLORD) {
+            const warlordBonus = getTraitBonus(academyLevel);
+            damageMultiplier *= (1 + warlordBonus);
+        }
+        
+        const actualDamage = Math.floor(rawDamage * damageMultiplier);
 
         // Calculate troop losses (boss fights back)
         // Flat damage cap per tier - predictable losses regardless of boss HP
         const bossDamageBack = bossMaxDamageBack[boss.tier];
-        const damageRatio = Math.min(0.25, bossDamageBack / (rawDamage + 1)); // Max 25% loss
+        let damageRatio = Math.min(0.25, bossDamageBack / (rawDamage + 1)); // Max 25% loss
+        
+        // Apply Guardian trait bonus to reduce troop losses
+        if (villageTrait === VillageTrait.GUARDIAN) {
+            const guardianBonus = getTraitBonus(academyLevel);
+            damageRatio = damageRatio * (1 - guardianBonus); // Reduce troop losses
+        }
+        
         const lostTroops = this.calculateKilledTroops(dto.troops, damageRatio);
 
         // Update boss HP

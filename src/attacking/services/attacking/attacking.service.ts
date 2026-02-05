@@ -5,7 +5,7 @@ import { wallDefenseByLevel, spearFighterDefenceStat, swordFighterDefenceStat, a
     archerDefenceStat, magicianDefenceStat, horsemenDefenceStat, catapultsDefenceStat,
     spearFighterAttackingStat, swordFighterAttackingStat, axeFighterAttackingStat, archerAttackingStat,
     magicianAttackingStat, horsemenAttackingStat, catapultsAttackingStat, lootingAbilityOfTroops,
-    warehouseStorageByLevel} from 'utils';
+    warehouseStorageByLevel, VillageTrait, getTraitBonus } from 'utils';
 import { DbAccessorService } from '../../../database/services/db-accessor.service';
 import { User } from '../../../user/models/user.entity';
 import { Village } from '../../../user/models/village.entity';
@@ -135,8 +135,31 @@ export class AttackingService {
         let defenceTroops: TroopsAmounts = defenderVillage.troops;
         let supportTroops: TroopsAmounts = defenderVillage.clanTroops;
         let wallLevel: number = defenderVillage.buildingsLevels.wallLevel;
-        let attackingPower: number = this.calculateAttackingPower(attackDTO.attackingTroops);
-        let villageDefence: number = this.calculateVillageDefence(defenceTroops, supportTroops, wallLevel);
+        
+        // Calculate base attacking power
+        let baseAttackingPower: number = this.calculateAttackingPower(attackDTO.attackingTroops);
+        
+        // Apply Warlord trait bonus to attacking power
+        let attackingPower = baseAttackingPower;
+        const attackerTrait = attackerVillage.trait;
+        const attackerAcademyLevel = attackerVillage.buildingsLevels.academyLevel || 1;
+        if (attackerTrait === VillageTrait.WARLORD) {
+            const warlordBonus = getTraitBonus(attackerAcademyLevel);
+            attackingPower = Math.floor(baseAttackingPower * (1 + warlordBonus));
+        }
+        
+        // Calculate base village defence
+        let baseVillageDefence: number = this.calculateVillageDefence(defenceTroops, supportTroops, wallLevel);
+        
+        // Apply Guardian trait bonus to defender's defence
+        let villageDefence = baseVillageDefence;
+        const defenderTrait = defenderVillage.trait;
+        const defenderAcademyLevel = defenderVillage.buildingsLevels.academyLevel || 1;
+        if (defenderTrait === VillageTrait.GUARDIAN) {
+            const guardianBonus = getTraitBonus(defenderAcademyLevel);
+            villageDefence = Math.floor(baseVillageDefence * (1 + guardianBonus));
+        }
+        
         let attackToDefenceRatio: number = attackingPower / villageDefence;
         let defenceToAttackRatio: number = villageDefence / attackingPower;
 
@@ -158,7 +181,14 @@ export class AttackingService {
             attackWon = true;
             killedDefenderTroops = this.calculateKilledTroopsByRatio(defenceTroops, 1); // kill all defence
             killedSupportTroops = this.calculateKilledTroopsByRatio(supportTroops, 1); // kill all clan defence
-            killedAttackerTroops = this.calculateKilledTroopsByRatio(attackerTroops, defenceToAttackRatio); // kill some of attacker troops
+            
+            // Calculate killed attacker troops with Guardian trait reduction if applicable
+            let killedRatio = defenceToAttackRatio;
+            if (attackerTrait === VillageTrait.GUARDIAN) {
+                const guardianBonus = getTraitBonus(attackerAcademyLevel);
+                killedRatio = killedRatio * (1 - guardianBonus); // Reduce troop losses
+            }
+            killedAttackerTroops = this.calculateKilledTroopsByRatio(attackerTroops, killedRatio); // kill some of attacker troops
         }
 
         // loot resources - increase to attacker, decrease to defender

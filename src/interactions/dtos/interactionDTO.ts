@@ -38,3 +38,9 @@ export interface RenameVillageDTO {
     villageIndex: number;
     newVillageName: string;
 }
+
+export interface SwitchTraitDTO {
+    username: string;
+    villageIndex: number;
+    newTrait: string;
+}

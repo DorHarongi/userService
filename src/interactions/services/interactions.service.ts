@@ -6,11 +6,11 @@ import { TroopsAmounts } from '../../user/models/troopsAmounts';
 import { ResourcesAmounts } from '../../user/models/resourcesAmounts';
 import { Location } from '../../user/models/location';
 import { UserDTO } from '../../user/dtos/userDTO';
-import { SendSupportDTO, WithdrawSupportDTO, SendResourcesDTO, CreateVillageDTO } from '../dtos/interactionDTO';
+import { SendSupportDTO, WithdrawSupportDTO, SendResourcesDTO, CreateVillageDTO, SwitchTraitDTO } from '../dtos/interactionDTO';
 import { WorldService } from '../../world/services/world.service';
 import { MessagesService } from '../../messages/services/messages.service';
 import { BossService } from '../../bosses/services/boss.service';
-import { warehouseStorageByLevel, embassyMaximumDefenseTroopsByLevels } from 'utils';
+import { warehouseStorageByLevel, embassyMaximumDefenseTroopsByLevels, VillageTrait, ACADEMY_TRAIT_UNLOCK_LEVEL } from 'utils';
 
 const USERS_COLLECTION = "users";
 const CENTER_BUILDING_LEVEL_FOR_NEW_VILLAGE = 10;
@@ -471,6 +471,68 @@ export class InteractionsService {
             { "villages.supportSent.recipientUsername": dto.username, "villages.supportSent.recipientVillageName": oldName },
             { $set: { "villages.$[].supportSent.$[elem].recipientVillageName": dto.newVillageName.trim() } },
             { arrayFilters: [{ "elem.recipientUsername": dto.username, "elem.recipientVillageName": oldName }] }
+        );
+
+        return new UserDTO(user);
+    }
+
+    async switchTrait(dto: SwitchTraitDTO): Promise<UserDTO> {
+        const user = await this.dbAccessorService.getCollection(USERS_COLLECTION).findOne({ username: dto.username }) as User;
+
+        if (!user) {
+            throw new HttpException("User not found", HttpStatus.NOT_FOUND);
+        }
+
+        const village = user.villages[dto.villageIndex];
+        if (!village) {
+            throw new HttpException("Village not found", HttpStatus.NOT_FOUND);
+        }
+
+        const academyLevel = village.buildingsLevels.academyLevel || 1;
+
+        // Validate academy level
+        if (academyLevel < ACADEMY_TRAIT_UNLOCK_LEVEL) {
+            throw new HttpException(
+                `Academy must be level ${ACADEMY_TRAIT_UNLOCK_LEVEL} to select a trait`,
+                HttpStatus.BAD_REQUEST
+            );
+        }
+
+        // Validate new trait is a valid trait
+        const validTraits = Object.values(VillageTrait);
+        if (!validTraits.includes(dto.newTrait as VillageTrait)) {
+            throw new HttpException("Invalid trait selected", HttpStatus.BAD_REQUEST);
+        }
+
+        const currentTrait = village.trait;
+        const isFirstSelection = currentTrait === undefined;
+
+        // If not first selection, check if user can afford the switch
+        if (!isFirstSelection) {
+            const switchCost = warehouseStorageByLevel[academyLevel] || 0;
+            
+            if (village.resourcesAmounts.woodAmount < switchCost ||
+                village.resourcesAmounts.cropAmount < switchCost ||
+                village.resourcesAmounts.stonesAmount < switchCost) {
+                throw new HttpException(
+                    `Switching trait costs ${switchCost} of each resource (based on Academy level ${academyLevel})`,
+                    HttpStatus.BAD_REQUEST
+                );
+            }
+
+            // Deduct resources
+            village.resourcesAmounts.woodAmount -= switchCost;
+            village.resourcesAmounts.cropAmount -= switchCost;
+            village.resourcesAmounts.stonesAmount -= switchCost;
+        }
+
+        // Set new trait
+        village.trait = dto.newTrait as VillageTrait;
+
+        // Update user
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username: dto.username },
+            { $set: user }
         );
 
         return new UserDTO(user);
