@@ -68,6 +68,7 @@ export class BuildingsUpgradingService {
     buildUserBuildingsLevelsDictionary(userVillage: Village): {[name: string] : BuildingGetterSetter}
     {
         const userBuildingsLevelsDictionary: {[name: string] : BuildingGetterSetter } = {
+            ["academy"]: {getter: () => {return userVillage.buildingsLevels.academyLevel }, setter: (newLevel) => {userVillage.buildingsLevels.academyLevel = newLevel}},
             ["arsenal"]: {getter: () => {return userVillage.buildingsLevels.arsenalLevel }, setter: (newLevel) => {userVillage.buildingsLevels.arsenalLevel = newLevel}},
             ["centerBuilding"]: {getter: () => {return userVillage.buildingsLevels.centerBuildingLevel }, setter: (newLevel) => {userVillage.buildingsLevels.centerBuildingLevel = newLevel}},
             ["cropFarm"]: {getter: () => {return userVillage.buildingsLevels.cropFarmLevel }, setter: (newLevel) => {userVillage.buildingsLevels.cropFarmLevel = newLevel}},
