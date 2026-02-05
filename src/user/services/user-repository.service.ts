@@ -139,13 +139,6 @@ export class UserRepositoryService {
         if(!result)
             throw new HttpException("User doesnt exist", HttpStatus.NOT_FOUND);
         
-        // Debug: log trait values - show raw data from MongoDB
-        if (result.villages && result.villages.length > 0) {
-            const rawVillage = result.villages[0] as any;
-            console.log(`[getUser] ${username} village[0] keys:`, Object.keys(rawVillage));
-            console.log(`[getUser] ${username} village[0].trait from DB: ${rawVillage.trait}`);
-        }
-        
         return new UserDTO(result);
     }
 
