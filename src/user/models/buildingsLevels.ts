@@ -11,7 +11,8 @@ export class BuildingsLevels
         public quartersLevel: number,
         public wallLevel: number,
         public embassyLevel: number,
-        public academyLevel: number = 1)
+        public academyLevel: number = 1,
+        public stableLevel: number = 0)
         {
             this.centerBuildingLevel = centerBuildingLevel;
             this.woodWarehouseLevel = woodWarehouseLevel;
@@ -25,6 +26,7 @@ export class BuildingsLevels
             this.wallLevel = wallLevel;
             this.embassyLevel = embassyLevel;
             this.academyLevel = academyLevel;
+            this.stableLevel = stableLevel;
         }
 
 }

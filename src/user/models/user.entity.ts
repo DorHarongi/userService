@@ -30,6 +30,19 @@ export class User implements IUser
     currentQuestIndex: number; // 1-15 = on that quest, > TOTAL_QUESTS = completed all (only for first village)
     weeklyRaidDamage: number; // total raid damage done this week (resets every Sunday)
     pendingBossRewards: PendingBossReward[]; // boss rewards waiting to be claimed
+    weeklyStats: {
+        bossDamage: number;
+        resourcesStolen: number;
+        successfulDefenses: number;
+    };
+    totalStats: {
+        lifetimeBossDamage: number;
+        lifetimeResourcesStolen: number;
+        totalBattlesWon: number;
+    };
+    selectedTitle?: string;
+    unlockedAchievements?: string[];
+    theme?: string;
 
     constructor(userFromClientDTO: userFromClientDTO, initialLocation: Location = new Location(0, 0))
     {
@@ -44,5 +57,18 @@ export class User implements IUser
         this.currentQuestIndex = 1; // Start at quest 1
         this.weeklyRaidDamage = 0;
         this.pendingBossRewards = [];
+        this.weeklyStats = {
+            bossDamage: 0,
+            resourcesStolen: 0,
+            successfulDefenses: 0,
+        };
+        this.totalStats = {
+            lifetimeBossDamage: 0,
+            lifetimeResourcesStolen: 0,
+            totalBattlesWon: 0,
+        };
+        this.selectedTitle = undefined;
+        this.unlockedAchievements = [];
+        this.theme = 'default';
     }
 }

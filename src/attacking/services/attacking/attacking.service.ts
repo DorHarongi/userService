@@ -1,11 +1,28 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { AttackDTO } from '../../dtos/attackDTO';
 import { TroopsAmounts } from '../../../user/models/troopsAmounts';
-import { wallDefenseByLevel, spearFighterDefenceStat, swordFighterDefenceStat, axeFighterDefenceStat,
-    archerDefenceStat, magicianDefenceStat, horsemenDefenceStat, catapultsDefenceStat,
-    spearFighterAttackingStat, swordFighterAttackingStat, axeFighterAttackingStat, archerAttackingStat,
-    magicianAttackingStat, horsemenAttackingStat, catapultsAttackingStat, lootingAbilityOfTroops,
-    warehouseStorageByLevel, VillageTrait, getTraitBonus } from 'utils';
+import {
+    wallDefenseByLevel,
+    spearFighterDefenceStat,
+    swordFighterDefenceStat,
+    axeFighterDefenceStat,
+    archerDefenceStat,
+    magicianDefenceStat,
+    horsemenDefenceStat,
+    catapultsDefenceStat,
+    spearFighterAttackingStat,
+    swordFighterAttackingStat,
+    axeFighterAttackingStat,
+    archerAttackingStat,
+    magicianAttackingStat,
+    horsemenAttackingStat,
+    catapultsAttackingStat,
+    lootingAbilityOfTroops,
+    warehouseStorageByLevel,
+    calculateDistance,
+    getArmySpeed,
+    calculateTravelTimeMs,
+} from 'utils';
 import { DbAccessorService } from '../../../database/services/db-accessor.service';
 import { User } from '../../../user/models/user.entity';
 import { Village } from '../../../user/models/village.entity';
@@ -14,6 +31,8 @@ import { UpdateResult } from 'mongodb';
 import { UserDTO } from '../../../user/dtos/userDTO';
 import { AttackReport } from '../../../reports/models/attackReport.entity';
 import { ReportsService } from '../../../reports/services/reports/reports.service';
+
+const MOVEMENTS_COLLECTION = 'movements';
 
 const USER_COLLECTIONS = "users";
 const BEGINNER_SHIELD_HOURS = 24;
@@ -130,146 +149,32 @@ export class AttackingService {
         attacker = atomicResult as unknown as User;
 
 
-        // everything good -> attack
-        let attackerTroops: TroopsAmounts = attackDTO.attackingTroops;
-        let defenceTroops: TroopsAmounts = defenderVillage.troops;
-        let supportTroops: TroopsAmounts = defenderVillage.clanTroops;
-        let wallLevel: number = defenderVillage.buildingsLevels.wallLevel;
-        
-        // Calculate base attacking power
-        let baseAttackingPower: number = this.calculateAttackingPower(attackDTO.attackingTroops);
-        
-        // Apply Warlord trait bonus to attacking power
-        let attackingPower = baseAttackingPower;
-        const attackerTrait = attackerVillage.trait;
-        const attackerAcademyLevel = attackerVillage.buildingsLevels.academyLevel || 1;
-        if (attackerTrait === VillageTrait.WARLORD) {
-            const warlordBonus = getTraitBonus(attackerAcademyLevel);
-            attackingPower = Math.floor(baseAttackingPower * (1 + warlordBonus));
-        }
-        
-        // Calculate base village defence
-        let baseVillageDefence: number = this.calculateVillageDefence(defenceTroops, supportTroops, wallLevel);
-        
-        // Apply Guardian trait bonus to defender's defence
-        let villageDefence = baseVillageDefence;
-        const defenderTrait = defenderVillage.trait;
-        const defenderAcademyLevel = defenderVillage.buildingsLevels.academyLevel || 1;
-        if (defenderTrait === VillageTrait.GUARDIAN) {
-            const guardianBonus = getTraitBonus(defenderAcademyLevel);
-            villageDefence = Math.floor(baseVillageDefence * (1 + guardianBonus));
-        }
-        
-        let attackToDefenceRatio: number = attackingPower / villageDefence;
-        let defenceToAttackRatio: number = villageDefence / attackingPower;
-
-        let killedAttackerTroops: TroopsAmounts;
-        let killedDefenderTroops: TroopsAmounts;
-        let killedSupportTroops: TroopsAmounts;
-
-        let attackWon: boolean;
-
-        if(attackToDefenceRatio <= 1) // LOSE
-        {
-            attackWon = false;
-            killedAttackerTroops = this.calculateKilledTroopsByRatio(attackerTroops, 1); // kill all attackers
-            killedDefenderTroops = this.calculateKilledTroopsByRatio(defenceTroops, attackToDefenceRatio); // kill some of the defence
-            killedSupportTroops = this.calculateKilledTroopsByRatio(supportTroops, attackToDefenceRatio); // kill some of the clan defence
-        }
-        else // WIN
-        {
-            attackWon = true;
-            killedDefenderTroops = this.calculateKilledTroopsByRatio(defenceTroops, 1); // kill all defence
-            killedSupportTroops = this.calculateKilledTroopsByRatio(supportTroops, 1); // kill all clan defence
-            
-            // Calculate killed attacker troops with Guardian trait reduction if applicable
-            let killedRatio = defenceToAttackRatio;
-            if (attackerTrait === VillageTrait.GUARDIAN) {
-                const guardianBonus = getTraitBonus(attackerAcademyLevel);
-                killedRatio = killedRatio * (1 - guardianBonus); // Reduce troop losses
-            }
-            killedAttackerTroops = this.calculateKilledTroopsByRatio(attackerTroops, killedRatio); // kill some of attacker troops
-        }
-
-        // loot resources - increase to attacker, decrease to defender
-        let loot = new ResourcesAmounts(0, 0, 0);
-        if(attackWon)
-        {
-            loot = this.calculateLoot(attackerTroops, defenderVillage.resourcesAmounts);
-            this.addLootToAttacker(loot, attackerVillage);
-            this.decreaseLootFromDefender(loot, defenderVillage);
-        }
-
-        const attackReport = new AttackReport(attackDTO.attackerName, attackerVillage.villageName, attackDTO.defenderName,
-            defenderVillage.villageName, new Date(), attackWon, loot, attackingPower, villageDefence, 
-            this.calculateTroopsDefence(defenceTroops), this.calculateAttackingPower(supportTroops),
-            wallDefenseByLevel[wallLevel], attackerTroops, killedAttackerTroops,
-            defenceTroops, killedDefenderTroops, supportTroops, killedSupportTroops,
-            attackerTrait, attackerAcademyLevel, defenderTrait, defenderAcademyLevel);
-            
-        await this.reportsService.saveAttackReport(attackReport);
-
-        // Calculate surviving attackers to return
-        const survivingAttackers = new TroopsAmounts(
-            Math.max(0, attackerTroops.spearFighters - killedAttackerTroops.spearFighters),
-            Math.max(0, attackerTroops.swordFighters - killedAttackerTroops.swordFighters),
-            Math.max(0, attackerTroops.axeFighters - killedAttackerTroops.axeFighters),
-            Math.max(0, attackerTroops.archers - killedAttackerTroops.archers),
-            Math.max(0, attackerTroops.magicians - killedAttackerTroops.magicians),
-            Math.max(0, attackerTroops.horsemen - killedAttackerTroops.horsemen),
-            Math.max(0, attackerTroops.catapults - killedAttackerTroops.catapults)
+        // Create movement entry for delayed attack
+        const distance = calculateDistance(
+            attackerVillage.location.x,
+            attackerVillage.location.y,
+            defenderVillage.location.x,
+            defenderVillage.location.y,
         );
+        const armySpeed = getArmySpeed(attackDTO.attackingTroops as any);
+        const quickStepBonus = 0; // Skill integration will be added with the Skill Tree (Chunk 1)
+        const travelTimeMs = calculateTravelTimeMs(distance, armySpeed, quickStepBonus);
+        const departureTime = new Date();
+        const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
 
-        // Return surviving troops and add loot to attacker (troops were already deducted atomically)
-        const attackerUpdatePath = `villages.${attackDTO.attackerVillageIndex}`;
-        await this.dbAccessorService.getCollection(USER_COLLECTIONS).updateOne(
-            { username: attackDTO.attackerName },
-            {
-                $inc: {
-                    [`${attackerUpdatePath}.troops.spearFighters`]: survivingAttackers.spearFighters,
-                    [`${attackerUpdatePath}.troops.swordFighters`]: survivingAttackers.swordFighters,
-                    [`${attackerUpdatePath}.troops.axeFighters`]: survivingAttackers.axeFighters,
-                    [`${attackerUpdatePath}.troops.archers`]: survivingAttackers.archers,
-                    [`${attackerUpdatePath}.troops.magicians`]: survivingAttackers.magicians,
-                    [`${attackerUpdatePath}.troops.horsemen`]: survivingAttackers.horsemen,
-                    [`${attackerUpdatePath}.troops.catapults`]: survivingAttackers.catapults,
-                    [`${attackerUpdatePath}.resourcesAmounts.woodAmount`]: loot.woodAmount,
-                    [`${attackerUpdatePath}.resourcesAmounts.cropAmount`]: loot.cropAmount,
-                    [`${attackerUpdatePath}.resourcesAmounts.stonesAmount`]: loot.stonesAmount
-                }
-            }
-        );
+        const movement = {
+            type: 'attack',
+            senderUsername: attackDTO.attackerName,
+            senderVillageName: attackerVillage.villageName,
+            targetUsername: attackDTO.defenderName,
+            targetVillageName: defenderVillage.villageName,
+            troops: attackDTO.attackingTroops,
+            departureTime,
+            arrivalTime,
+            status: 'in_transit',
+        };
 
-        // Update defender - deduct troops and resources
-        this.updateRemainingTroopsInVillage(defenceTroops, killedDefenderTroops);
-        this.updateRemainingTroopsInVillage(supportTroops, killedSupportTroops);
-        
-        // Ensure no negative values
-        defenceTroops.spearFighters = Math.max(0, defenceTroops.spearFighters);
-        defenceTroops.swordFighters = Math.max(0, defenceTroops.swordFighters);
-        defenceTroops.axeFighters = Math.max(0, defenceTroops.axeFighters);
-        defenceTroops.archers = Math.max(0, defenceTroops.archers);
-        defenceTroops.magicians = Math.max(0, defenceTroops.magicians);
-        defenceTroops.horsemen = Math.max(0, defenceTroops.horsemen);
-        defenceTroops.catapults = Math.max(0, defenceTroops.catapults);
-
-        supportTroops.spearFighters = Math.max(0, supportTroops.spearFighters);
-        supportTroops.swordFighters = Math.max(0, supportTroops.swordFighters);
-        supportTroops.axeFighters = Math.max(0, supportTroops.axeFighters);
-        supportTroops.archers = Math.max(0, supportTroops.archers);
-        supportTroops.magicians = Math.max(0, supportTroops.magicians);
-        supportTroops.horsemen = Math.max(0, supportTroops.horsemen);
-        supportTroops.catapults = Math.max(0, supportTroops.catapults);
-
-        defenderVillage.resourcesAmounts.woodAmount = Math.max(0, defenderVillage.resourcesAmounts.woodAmount);
-        defenderVillage.resourcesAmounts.cropAmount = Math.max(0, defenderVillage.resourcesAmounts.cropAmount);
-        defenderVillage.resourcesAmounts.stonesAmount = Math.max(0, defenderVillage.resourcesAmounts.stonesAmount);
-
-        // Update defender village
-        await this.dbAccessorService.getCollection(USER_COLLECTIONS).updateOne(
-            { username: attackDTO.defenderName }, 
-            { $set: defender }
-        );
+        await this.dbAccessorService.getCollection(MOVEMENTS_COLLECTION).insertOne(movement);
 
         // Get fresh attacker data for response
         const updatedAttacker = await this.dbAccessorService.getCollection(USER_COLLECTIONS).findOne({username: attackDTO.attackerName}) as User;

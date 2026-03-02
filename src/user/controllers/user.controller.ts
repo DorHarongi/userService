@@ -8,6 +8,7 @@ import { UserVillageRequestDTO } from '../dtos/userVillageRequestDTO';
 import { VillageDTO } from '../dtos/villageDTO';
 import { AuthService } from '../../auth/services/auth.service';
 import { AuthGuard } from '../../auth/guards/auth.guard';
+import { MovementService } from '../../attacking/services/movement.service';
 
 const MAX_INTRO_LENGTH = 200;
 
@@ -26,11 +27,21 @@ export interface UpdateIntroDTO {
     intro: string;
 }
 
+export interface UpdateTitleDTO {
+    username: string;
+    title: string | null;
+}
+
+export interface UpdateThemeDTO {
+    theme: string;
+}
+
 @Controller('users')
 export class UserController {
     constructor(
         private userRepositorService: UserRepositoryService,
-        private authService: AuthService
+        private authService: AuthService,
+        private movementService: MovementService
     )
     {
 
@@ -95,12 +106,37 @@ export class UserController {
         return await this.userRepositorService.getUserStatistics(page);
     }
 
+    // Public - player leaderboard by weekly stat category
+    @Get('leaderboard/:category')
+    async getUserLeaderboard(@Param('category') category: string): Promise<any[]>
+    {
+        return await this.userRepositorService.getUserLeaderboard(category);
+    }
+
+    // Public - clan leaderboard by weekly stat category
+    @Get('/clans/leaderboard/:category')
+    async getClanLeaderboard(@Param('category') category: string): Promise<any[]>
+    {
+        return await this.userRepositorService.getClanLeaderboard(category);
+    }
+
     @Post('village')
     @UseGuards(AuthGuard)
     async getVillage(@Request() req: any, @Body() userVillageRequestDTO: UserVillageRequestDTO): Promise<VillageDTO>
     {
         userVillageRequestDTO.username = req.user.username;
         return await this.userRepositorService.getUserVillage(userVillageRequestDTO);
+    }
+
+    // Protected - get active movements for current user
+    @Get('movements/:username')
+    @UseGuards(AuthGuard)
+    async getMovements(@Request() req: any, @Param('username') username: string): Promise<any[]>
+    {
+        if (req.user.username !== username) {
+            throw new HttpException('You can only view your own movements', HttpStatus.FORBIDDEN);
+        }
+        return await this.movementService.getUserMovements(username);
     }
 
     // Protected - get own full user data
@@ -132,5 +168,18 @@ export class UserController {
         }
         // Use authenticated username
         return await this.userRepositorService.updateIntro(req.user.username, updateIntroDTO.intro || '');
+    }
+
+    @Post('title')
+    @UseGuards(AuthGuard)
+    async updateTitle(@Request() req: any, @Body() body: UpdateTitleDTO): Promise<{ success: boolean }> {
+        const title = body.title || null;
+        return await this.userRepositorService.updateTitle(req.user.username, title);
+    }
+
+    @Post('theme')
+    @UseGuards(AuthGuard)
+    async updateTheme(@Request() req: any, @Body() body: UpdateThemeDTO): Promise<{ success: boolean }> {
+        return await this.userRepositorService.updateTheme(req.user.username, body.theme || 'default');
     }
 }

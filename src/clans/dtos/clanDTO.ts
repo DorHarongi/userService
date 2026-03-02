@@ -30,6 +30,7 @@ export interface ClanStatisticDTO {
     totalPopulation: number;
     isOpen: boolean;
     totalBossesKilled: number;
+    heldRelicIds?: string[];
 }
 
 export interface ClanMemberRaidStatsDTO {

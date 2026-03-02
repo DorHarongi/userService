@@ -3,15 +3,22 @@ import { DbAccessorService } from '../../database/services/db-accessor.service';
 import { Clan, IClan } from '../models/clan.entity';
 import { ClanDTO, ClanMemberRaidStatsDTO, ClanStatisticDTO, CreateClanDTO, HandleJoinRequestDTO, JoinClanRequestDTO, LeaveClanDTO, ToggleClanOpenDTO } from '../dtos/clanDTO';
 import { User } from '../../user/models/user.entity';
-import { embassyMinimumLevelForClanJoin } from 'utils';
+import { embassyMinimumLevelForClanJoin, RELIC_NAMES } from 'utils';
+import { RelicsService } from '../../relics/relics.service';
+import { AnnouncementsService } from '../../announcements/announcements.service';
 
 const CLANS_COLLECTION = "clans";
 const USERS_COLLECTION = "users";
+const RELICS_COLLECTION = "relics";
 const MAX_CLANS_IN_EACH_STATISTICS_PAGE = 10;
 
 @Injectable()
 export class ClansService {
-    constructor(private dbAccessorService: DbAccessorService) {}
+    constructor(
+        private dbAccessorService: DbAccessorService,
+        private relicsService: RelicsService,
+        private announcementsService: AnnouncementsService,
+    ) {}
 
     async createClan(createClanDTO: CreateClanDTO): Promise<ClanDTO> {
         // Check if clan name already exists
@@ -101,6 +108,17 @@ export class ClansService {
             { $skip: MAX_CLANS_IN_EACH_STATISTICS_PAGE * (page - 1) },
             { $limit: MAX_CLANS_IN_EACH_STATISTICS_PAGE },
             {
+                $lookup: {
+                    from: RELICS_COLLECTION,
+                    let: { cn: "$clanName" },
+                    pipeline: [
+                        { $match: { $expr: { $eq: ["$holderClanName", "$$cn"] } } },
+                        { $project: { relicId: 1 } }
+                    ],
+                    as: "relicDocs"
+                }
+            },
+            {
                 $project: {
                     clanName: 1,
                     description: 1,
@@ -108,7 +126,8 @@ export class ClansService {
                     memberCount: { $size: "$members" },
                     totalPopulation: 1,
                     isOpen: 1,
-                    totalBossesKilled: { $ifNull: ["$totalBossesKilled", 0] }
+                    totalBossesKilled: { $ifNull: ["$totalBossesKilled", 0] },
+                    heldRelicIds: { $map: { input: "$relicDocs", as: "r", in: "$$r.relicId" } }
                 }
             }
         ]).toArray();
@@ -224,6 +243,18 @@ export class ClansService {
                 $pull: { pendingClanRequests: clanName }
             } as any
         );
+
+        // Update relic holder clan; if they hold relics, create announcement
+        await this.relicsService.updateHolderClanForUser(username, clanName);
+        const heldRelicIds = await this.relicsService.getRelicIdsHeldByUser(username);
+        for (const relicId of heldRelicIds) {
+            const relicDef = RELIC_NAMES.find((r) => r.id === relicId);
+            await this.announcementsService.createAnnouncement(
+                'relic_joined_clan',
+                `Notice: ${username} has joined clan **${clanName}** and they now hold the **${relicDef?.name ?? relicId}**.`,
+                { username, clanName, relicId, relicName: relicDef?.name },
+            );
+        }
     }
 
     async leaveClan(leaveClanDTO: LeaveClanDTO): Promise<{ success: boolean }> {
@@ -264,6 +295,18 @@ export class ClansService {
             { username: leaveClanDTO.username },
             { $set: { clanName: "" } }
         );
+
+        // Betrayal: if leaving player holds relics, create announcement and update holder clan
+        const heldRelicIds = await this.relicsService.getRelicIdsHeldByUser(leaveClanDTO.username);
+        await this.relicsService.updateHolderClanForUser(leaveClanDTO.username, null);
+        for (const relicId of heldRelicIds) {
+            const relicDef = RELIC_NAMES.find((r) => r.id === relicId);
+            await this.announcementsService.createAnnouncement(
+                'relic_left_clan',
+                `Notice: ${leaveClanDTO.username} from clan **${leaveClanDTO.clanName}** left with the **${relicDef?.name ?? relicId}**.`,
+                { username: leaveClanDTO.username, clanName: leaveClanDTO.clanName, relicId, relicName: relicDef?.name },
+            );
+        }
 
         return { success: true };
     }

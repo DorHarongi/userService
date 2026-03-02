@@ -1,4 +1,5 @@
 import { HttpException, HttpStatus, Injectable, Inject, forwardRef } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { InsertOneResult } from 'mongodb';
 import { DbAccessorService } from '../../database/services/db-accessor.service';
 import { User } from '../models/user.entity';
@@ -76,6 +77,23 @@ export class UserRepositoryService {
         return Math.ceil(numberOfUsers / MAX_USERS_IN_EACH_STATISTICS_PAGE);
     }
 
+    // Reset weekly stats every Monday at 00:00
+    @Cron('0 0 * * 1')
+    async resetWeeklyStats(): Promise<void> {
+        await this.dbAccessorService
+            .getCollection(COLLECTION_NAME)
+            .updateMany(
+                {},
+                {
+                    $set: {
+                        'weeklyStats.bossDamage': 0,
+                        'weeklyStats.resourcesStolen': 0,
+                        'weeklyStats.successfulDefenses': 0,
+                    },
+                },
+            );
+    }
+
     async getUserStatistics(page: number): Promise<Array<UserStatisticDTO>>
     {
         const BEGINNER_SHIELD_HOURS = 24;
@@ -120,6 +138,66 @@ export class UserRepositoryService {
         return users;
     }
 
+    async getUserLeaderboard(category: string): Promise<any[]> {
+        const fieldMap: Record<string, string> = {
+            bossDamage: 'weeklyStats.bossDamage',
+            resourcesStolen: 'weeklyStats.resourcesStolen',
+            successfulDefenses: 'weeklyStats.successfulDefenses',
+        };
+
+        const field = fieldMap[category];
+        if (!field) {
+            throw new HttpException('Invalid leaderboard category', HttpStatus.BAD_REQUEST);
+        }
+
+        const pipeline = [
+            {
+                $project: {
+                    username: 1,
+                    clanName: 1,
+                    stat: { $ifNull: [`$${field}`, 0] },
+                },
+            },
+            { $sort: { stat: -1, username: 1 } },
+            { $limit: 50 },
+        ];
+
+        const cursor = this.dbAccessorService.getCollection(COLLECTION_NAME).aggregate(pipeline);
+        return cursor.toArray();
+    }
+
+    async getClanLeaderboard(category: string): Promise<any[]> {
+        const fieldMap: Record<string, string> = {
+            bossDamage: 'weeklyStats.bossDamage',
+            resourcesStolen: 'weeklyStats.resourcesStolen',
+            successfulDefenses: 'weeklyStats.successfulDefenses',
+        };
+
+        const field = fieldMap[category];
+        if (!field) {
+            throw new HttpException('Invalid leaderboard category', HttpStatus.BAD_REQUEST);
+        }
+
+        const pipeline = [
+            {
+                $match: {
+                    clanName: { $nin: [null, ''] },
+                },
+            },
+            {
+                $group: {
+                    _id: '$clanName',
+                    totalStat: { $sum: { $ifNull: [`$${field}`, 0] } },
+                },
+            },
+            { $sort: { totalStat: -1, _id: 1 } },
+            { $limit: 50 },
+        ];
+
+        const cursor = this.dbAccessorService.getCollection(COLLECTION_NAME).aggregate(pipeline);
+        return cursor.toArray();
+    }
+
     async getUserVillage(userVillageRequestDTO: UserVillageRequestDTO): Promise<VillageDTO>
     {
         let user: User = (await this.dbAccessorService.getCollection(COLLECTION_NAME).findOne({username: userVillageRequestDTO.username})) as User;
@@ -160,6 +238,64 @@ export class UserRepositoryService {
         const result = await this.dbAccessorService.getCollection(COLLECTION_NAME).updateOne(
             { username },
             { $set: { intro } }
+        );
+        return { success: result.modifiedCount === 1 || result.matchedCount === 1 };
+    }
+
+    async updateTitle(username: string, title: string | null): Promise<{ success: boolean }> {
+        const user = await this.dbAccessorService.getCollection(COLLECTION_NAME).findOne({ username }) as User;
+        if (!user) {
+            throw new HttpException("User doesnt exist", HttpStatus.NOT_FOUND);
+        }
+
+        if (!title) {
+            const result = await this.dbAccessorService.getCollection(COLLECTION_NAME).updateOne(
+                { username },
+                { $set: { selectedTitle: null } }
+            );
+            return { success: result.modifiedCount === 1 || result.matchedCount === 1 };
+        }
+
+        // Basic title gating based on stats (can be refined later)
+        const stats = user.totalStats || {
+            lifetimeBossDamage: 0,
+            lifetimeResourcesStolen: 0,
+            totalBattlesWon: 0,
+        };
+
+        let allowed = false;
+        switch (title) {
+            case 'Boss Slayer':
+                allowed = stats.lifetimeBossDamage >= 1_000_000;
+                break;
+            case 'Raider':
+                allowed = stats.lifetimeResourcesStolen >= 1_000_000;
+                break;
+            case 'Iron Wall':
+                allowed = stats.totalBattlesWon >= 25; // proxy: assumes many wins from defenses
+                break;
+            case 'Warlord':
+                allowed = stats.totalBattlesWon >= 100;
+                break;
+            default:
+                allowed = false;
+        }
+
+        if (!allowed) {
+            throw new HttpException('Title not unlocked yet', HttpStatus.BAD_REQUEST);
+        }
+
+        const result = await this.dbAccessorService.getCollection(COLLECTION_NAME).updateOne(
+            { username },
+            { $set: { selectedTitle: title } }
+        );
+        return { success: result.modifiedCount === 1 || result.matchedCount === 1 };
+    }
+
+    async updateTheme(username: string, theme: string): Promise<{ success: boolean }> {
+        const result = await this.dbAccessorService.getCollection(COLLECTION_NAME).updateOne(
+            { username },
+            { $set: { theme: theme || 'default' } }
         );
         return { success: result.modifiedCount === 1 || result.matchedCount === 1 };
     }

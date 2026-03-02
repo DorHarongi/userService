@@ -1,11 +1,10 @@
 import { User, PendingBossReward } from "../models/user.entity";
 import { VillageDTO } from "./villageDTO";
-import { VillageTrait, getTraitBonus } from 'utils';
+import { getSkillBonus, SkillCategory } from 'utils';
 
 const BEGINNER_SHIELD_HOURS = 24;
 
-export class UserDTO
-{
+export class UserDTO {
     username: string;
     joinDate: Date;
     clanName: string;
@@ -17,9 +16,21 @@ export class UserDTO
     pendingBossRewards: PendingBossReward[];
     beginnerShieldRemainingHours: number;
     energyProductionMultiplier: number;
+    weeklyStats?: {
+        bossDamage: number;
+        resourcesStolen: number;
+        successfulDefenses: number;
+    };
+    totalStats?: {
+        lifetimeBossDamage: number;
+        lifetimeResourcesStolen: number;
+        totalBattlesWon: number;
+    };
+    selectedTitle?: string;
+    unlockedAchievements?: string[];
+    theme?: string;
 
-    constructor(user: User)
-    {
+    constructor(user: User) {
         this.username = user.username;
         this.joinDate = user.joinDate;
         this.clanName = user.clanName;
@@ -30,9 +41,13 @@ export class UserDTO
         this.pendingBossRewards = user.pendingBossRewards || [];
         this.beginnerShieldRemainingHours = this.calculateBeginnerShieldRemaining(user);
         this.energyProductionMultiplier = this.calculateEnergyProductionMultiplier(user);
+        this.weeklyStats = user.weeklyStats;
+        this.totalStats = user.totalStats;
+        this.selectedTitle = user.selectedTitle;
+        this.unlockedAchievements = user.unlockedAchievements || [];
+        this.theme = user.theme ?? 'default';
         this.villages = [];
-        for(let village of user.villages)
-        {
+        for (const village of user.villages) {
             this.villages.push(new VillageDTO(village));
         }
     }
@@ -45,22 +60,19 @@ export class UserDTO
         return Math.max(0, BEGINNER_SHIELD_HOURS - hoursSinceJoin);
     }
 
-    // Calculate energy production multiplier from best Vanguard village (if any)
+    // Calculate energy production multiplier from Adrenaline Surge skill on any village (best one wins)
     private calculateEnergyProductionMultiplier(user: User): number {
         let bestMultiplier = 1.0;
-        
+
         for (const village of user.villages) {
-            if (village.trait === VillageTrait.VANGUARD) {
-                const academyLevel = village.buildingsLevels?.academyLevel || 1;
-                const vanguardBonus = getTraitBonus(academyLevel);
-                const multiplier = 1 + vanguardBonus;
-                if (multiplier > bestMultiplier) {
-                    bestMultiplier = multiplier;
-                }
+            if (!village.skills) continue;
+            const adrenalineBonus = getSkillBonus(village.skills, SkillCategory.ADRENALINE_SURGE);
+            const multiplier = 1 + adrenalineBonus;
+            if (multiplier > bestMultiplier) {
+                bestMultiplier = multiplier;
             }
         }
-        
+
         return bestMultiplier;
     }
 }
-

@@ -83,6 +83,7 @@ export class BuildingsUpgradingService {
             ["wall"]: {getter: () => {return userVillage.buildingsLevels.wallLevel }, setter: (newLevel) => {userVillage.buildingsLevels.wallLevel = newLevel}},
             ["woodFactory"]: {getter: () => {return userVillage.buildingsLevels.woodFactoryLevel }, setter: (newLevel) => {userVillage.buildingsLevels.woodFactoryLevel = newLevel}},
             ["woodWarehouse"]: {getter: () => {return userVillage.buildingsLevels.woodWarehouseLevel }, setter: (newLevel) => {userVillage.buildingsLevels.woodWarehouseLevel = newLevel}},
+            ["stable"]: {getter: () => {return userVillage.buildingsLevels.stableLevel }, setter: (newLevel) => {userVillage.buildingsLevels.stableLevel = newLevel}},
         };
         return userBuildingsLevelsDictionary;
     }

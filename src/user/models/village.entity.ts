@@ -4,32 +4,38 @@ import { ResourcesAmounts } from "./resourcesAmounts";
 import { ResourcesWorkers } from "./resourcesWorkers";
 import { SupportSentEntry } from "./supportSent";
 import { TroopsAmounts } from "./troopsAmounts";
-import { warehouseStorageByLevel, quartersPopulationByLevel, VillageTrait } from 'utils';
+import { warehouseStorageByLevel, quartersPopulationByLevel, Skills, EMPTY_SKILLS } from 'utils';
 
-export class Village
-{
+export class Village {
     villageName: string;
     resourcesAmounts: ResourcesAmounts;
     buildingsLevels: BuildingsLevels;
     population: number;
     resourcesWorkers: ResourcesWorkers;
-    troops: TroopsAmounts; 
+    troops: TroopsAmounts;
     clanTroops: TroopsAmounts;
     location: Location;
     supportSent: SupportSentEntry[];
-    trait?: VillageTrait;
-    
-    constructor(villageName: string = "New Village", location: Location = new Location(0, 0))
-    {
+    skills: Skills;
+    aliveSpies: number;
+    spyDeathTimestamps: Date[];
+
+    constructor(villageName: string = "New Village", location: Location = new Location(0, 0)) {
         this.villageName = villageName;
         this.location = location;
-        this.resourcesAmounts = new ResourcesAmounts(warehouseStorageByLevel[1], warehouseStorageByLevel[1], warehouseStorageByLevel[1]);
+        this.resourcesAmounts = new ResourcesAmounts(
+            warehouseStorageByLevel[1],
+            warehouseStorageByLevel[1],
+            warehouseStorageByLevel[1],
+        );
         this.buildingsLevels = new BuildingsLevels(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1);
         this.population = quartersPopulationByLevel[1];
-        this.resourcesWorkers = new ResourcesWorkers(0, 0 , 0);
+        this.resourcesWorkers = new ResourcesWorkers(0, 0, 0);
         this.troops = new TroopsAmounts(0, 0, 0, 0, 0, 0, 0);
         this.clanTroops = new TroopsAmounts(0, 0, 0, 0, 0, 0, 0);
         this.supportSent = [];
-        this.trait = undefined; // No trait until Academy level 3
+        this.skills = { ...EMPTY_SKILLS };
+        this.aliveSpies = 0;
+        this.spyDeathTimestamps = [];
     }
 }

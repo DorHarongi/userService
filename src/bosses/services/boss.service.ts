@@ -21,6 +21,8 @@ import {
     MAX_BOSSES_ON_MAP,
     BOSS_CLAIM_DURATION_MS,
     BOSS_UNCLAIMED_DESPAWN_MS,
+    MYTHIC_BOSS_DAILY_SPAWN_CHANCE,
+    RELIC_NAMES,
     warehouseStorageByLevel,
     spearFighterAttackingStat,
     swordFighterAttackingStat,
@@ -29,11 +31,14 @@ import {
     magicianAttackingStat,
     horsemenAttackingStat,
     catapultsAttackingStat,
-    VillageTrait,
-    getTraitBonus
+    getSkillBonus,
+    SkillCategory,
 } from 'utils';
+import { RelicsService } from '../../relics/relics.service';
+import { AnnouncementsService } from '../../announcements/announcements.service';
 
 const BOSSES_COLLECTION = 'bosses';
+const MYTHIC_BOSS_DAMAGE_COLLECTION = 'mythicBossDamage';
 const RAID_REPORTS_COLLECTION = 'raidReports';
 const USERS_COLLECTION = 'users';
 const CLANS_COLLECTION = 'clans';
@@ -47,7 +52,9 @@ export class BossService {
 
     constructor(
         private dbAccessorService: DbAccessorService,
-        private messagesService: MessagesService
+        private messagesService: MessagesService,
+        private relicsService: RelicsService,
+        private announcementsService: AnnouncementsService,
     ) {}
 
     // =====================
@@ -65,6 +72,24 @@ export class BossService {
         } catch (error) {
             this.logger.error('Error resetting weekly raid damage:', error);
         }
+    }
+
+    @Cron('0 0 * * * *') // Every day at midnight (hour 0)
+    async trySpawnMythicBoss(): Promise<void> {
+        if (Math.random() >= MYTHIC_BOSS_DAILY_SPAWN_CHANCE) return;
+        const currentMythic = await this.dbAccessorService
+            .getCollection(BOSSES_COLLECTION)
+            .countDocuments({ isDefeated: false, tier: BossTier.MYTHIC });
+        if (currentMythic > 0) return; // only one mythic at a time
+        const location = await this.findSpawnLocation();
+        if (!location) return;
+        await this.spawnBoss(BossTier.MYTHIC, location.x, location.y);
+        this.logger.log(`Mythic boss spawned at (${location.x}, ${location.y})`);
+        await this.announcementsService.createAnnouncement(
+            'mythic_spawn',
+            `⚡ A Mythic Boss has appeared at (${location.x}, ${location.y})!`,
+            { x: location.x, y: location.y },
+        );
     }
 
     @Cron('0 */30 * * * *') // Every 30 minutes
@@ -184,22 +209,24 @@ export class BossService {
     private async cleanupExpiredBosses(): Promise<void> {
         const now = new Date();
 
-        // Remove unclaimed bosses older than 24 hours
+        // Remove unclaimed bosses older than 24 hours (never delete Mythic - no despawn)
         const unclaimedExpiry = new Date(now.getTime() - BOSS_UNCLAIMED_DESPAWN_MS);
         await this.dbAccessorService
             .getCollection(BOSSES_COLLECTION)
             .deleteMany({
                 isDefeated: false,
+                tier: { $ne: BossTier.MYTHIC },
                 claimedByClanId: { $exists: false },
                 spawnedAt: { $lt: unclaimedExpiry }
             });
 
-        // Remove claimed bosses where claim expired (48 hours)
+        // Remove claimed bosses where claim expired (48 hours) - never delete Mythic
         const claimedExpiry = new Date(now.getTime() - BOSS_CLAIM_DURATION_MS);
         await this.dbAccessorService
             .getCollection(BOSSES_COLLECTION)
             .deleteMany({
                 isDefeated: false,
+                tier: { $ne: BossTier.MYTHIC },
                 claimedAt: { $lt: claimedExpiry }
             });
     }
@@ -288,28 +315,28 @@ export class BossService {
             throw new HttpException('Boss not found or already defeated', HttpStatus.NOT_FOUND);
         }
 
-        // Check if boss is claimed by another clan
-        if (boss.claimedByClanId && boss.claimedByClanId !== clan._id?.toHexString()) {
-            throw new HttpException('This boss is claimed by another clan', HttpStatus.FORBIDDEN);
-        }
-
-        // Claim boss for this clan if not already claimed
-        if (!boss.claimedByClanId) {
-            await this.dbAccessorService
-                .getCollection(BOSSES_COLLECTION)
-                .updateOne(
-                    { _id: boss._id },
-                    { 
-                        $set: { 
-                            claimedByClanId: clan._id?.toHexString(),
-                            claimedByClanName: clan.clanName,
-                            claimedAt: new Date()
+        // Mythic bosses are open to all clans; normal bosses can be claimed
+        if (boss.tier !== BossTier.MYTHIC) {
+            if (boss.claimedByClanId && boss.claimedByClanId !== clan._id?.toHexString()) {
+                throw new HttpException('This boss is claimed by another clan', HttpStatus.FORBIDDEN);
+            }
+            if (!boss.claimedByClanId) {
+                await this.dbAccessorService
+                    .getCollection(BOSSES_COLLECTION)
+                    .updateOne(
+                        { _id: boss._id },
+                        { 
+                            $set: { 
+                                claimedByClanId: clan._id?.toHexString(),
+                                claimedByClanName: clan.clanName,
+                                claimedAt: new Date()
+                            }
                         }
-                    }
-                );
-            boss.claimedByClanId = clan._id?.toHexString();
-            boss.claimedByClanName = clan.clanName;
-            boss.claimedAt = new Date();
+                    );
+                boss.claimedByClanId = clan._id?.toHexString();
+                boss.claimedByClanName = clan.clanName;
+                boss.claimedAt = new Date();
+            }
         }
 
         // Calculate damage
@@ -317,26 +344,33 @@ export class BossService {
         const distance = this.calculateDistance(village.location.x, village.location.y, boss.x, boss.y);
         const distanceMultiplier = getDistanceDamageMultiplier(distance);
         
-        // Apply Warlord trait bonus to attack damage
+        // Apply Sharper Blades skill bonus to attack damage
         let damageMultiplier = distanceMultiplier;
-        const villageTrait = village.trait;
-        const academyLevel = village.buildingsLevels?.academyLevel || 1;
-        if (villageTrait === VillageTrait.WARLORD) {
-            const warlordBonus = getTraitBonus(academyLevel);
-            damageMultiplier *= (1 + warlordBonus);
+        const sharperBladesBonus = getSkillBonus(village.skills, SkillCategory.SHARPER_BLADES);
+        if (sharperBladesBonus > 0) {
+            damageMultiplier *= (1 + sharperBladesBonus);
         }
         
         const actualDamage = Math.floor(rawDamage * damageMultiplier);
+
+        // Track per-clan damage on Mythic boss for relic assignment
+        if (boss.tier === BossTier.MYTHIC) {
+            await this.dbAccessorService.getCollection(MYTHIC_BOSS_DAMAGE_COLLECTION).updateOne(
+                { bossId: boss._id!.toHexString(), username },
+                { $setOnInsert: { bossId: boss._id!.toHexString(), clanName: user.clanName, username, villageName: dto.villageName }, $inc: { damage: actualDamage } },
+                { upsert: true },
+            );
+        }
 
         // Calculate troop losses (boss fights back)
         // Flat damage cap per tier - predictable losses regardless of boss HP
         const bossDamageBack = bossMaxDamageBack[boss.tier];
         let damageRatio = Math.min(0.25, bossDamageBack / (rawDamage + 1)); // Max 25% loss
-        
-        // Apply Guardian trait bonus to reduce troop losses
-        if (villageTrait === VillageTrait.GUARDIAN) {
-            const guardianBonus = getTraitBonus(academyLevel);
-            damageRatio = damageRatio * (1 - guardianBonus); // Reduce troop losses
+
+        // Self Defense skill always reduces troop losses in boss fights
+        const selfDefenseBonus = getSkillBonus(village.skills, SkillCategory.SELF_DEFENSE);
+        if (selfDefenseBonus > 0) {
+            damageRatio = damageRatio * (1 - selfDefenseBonus);
         }
         
         const lostTroops = this.calculateKilledTroops(dto.troops, damageRatio);
@@ -372,11 +406,25 @@ export class BossService {
             .insertOne(raidReport);
         raidReport._id = reportResult.insertedId;
 
-        // Update user (energy, troops, and weekly raid damage)
+        // Update user (energy, troops, weekly raid damage, and stats)
         this.updateRemainingTroops(village.troops, lostTroops);
         user.energy -= 1;
         user.weeklyRaidDamage = (user.weeklyRaidDamage || 0) + actualDamage;
-        
+
+        user.weeklyStats = user.weeklyStats || {
+            bossDamage: 0,
+            resourcesStolen: 0,
+            successfulDefenses: 0,
+        };
+        user.totalStats = user.totalStats || {
+            lifetimeBossDamage: 0,
+            lifetimeResourcesStolen: 0,
+            totalBattlesWon: 0,
+        };
+
+        user.weeklyStats.bossDamage += actualDamage;
+        user.totalStats.lifetimeBossDamage += actualDamage;
+
         await this.dbAccessorService
             .getCollection(USERS_COLLECTION)
             .updateOne({ username }, { $set: user });
@@ -393,6 +441,48 @@ export class BossService {
 
             // If we actually defeated the boss (not already defeated by another request)
             if (updateResult.modifiedCount > 0) {
+                if (boss.tier === BossTier.MYTHIC) {
+                    // Mythic defeat: assign relic to clan with most total damage
+                    const damageDocs = await this.dbAccessorService
+                        .getCollection(MYTHIC_BOSS_DAMAGE_COLLECTION)
+                        .find({ bossId: boss._id!.toHexString() })
+                        .toArray() as unknown as { clanName: string; username: string; villageName: string; damage: number }[];
+                    const byClan: Record<string, number> = {};
+                    for (const d of damageDocs) {
+                        byClan[d.clanName] = (byClan[d.clanName] ?? 0) + d.damage;
+                    }
+                    const topClanEntry = Object.entries(byClan).sort((a, b) => b[1] - a[1])[0];
+                    let winnerUsername: string | null = null;
+                    let winnerVillageName: string | null = null;
+                    if (topClanEntry) {
+                        const [topClanName] = topClanEntry;
+                        const topUser = damageDocs
+                            .filter((d) => d.clanName === topClanName)
+                            .sort((a, b) => b.damage - a.damage)[0];
+                        if (topUser) {
+                            winnerUsername = topUser.username;
+                            winnerVillageName = topUser.villageName;
+                        }
+                    }
+                    if (winnerUsername && winnerVillageName && topClanEntry) {
+                        const allRelics = await this.relicsService.getAllRelics();
+                        const unassigned = allRelics.find((r) => !r.holderUsername);
+                        const relicId = unassigned?.relicId;
+                        if (relicId) {
+                        const relicName = await this.relicsService.assignRelicToClan(relicId, topClanEntry[0], winnerUsername, winnerVillageName);
+                        await this.announcementsService.createAnnouncement(
+                            'relic_obtained',
+                            `👑 Clan **${topClanEntry[0]}** has obtained **${relicName}**!`,
+                            { relicId, relicName, clanName: topClanEntry[0] },
+                        );
+                        }
+                    }
+                    return {
+                        report: new RaidReportDTO(raidReport),
+                        bossDefeated: true,
+                    };
+                }
+
                 // Increment clan's total bosses killed
                 await this.dbAccessorService
                     .getCollection(CLANS_COLLECTION)

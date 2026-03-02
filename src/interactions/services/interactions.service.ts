@@ -6,11 +6,26 @@ import { TroopsAmounts } from '../../user/models/troopsAmounts';
 import { ResourcesAmounts } from '../../user/models/resourcesAmounts';
 import { Location } from '../../user/models/location';
 import { UserDTO } from '../../user/dtos/userDTO';
-import { SendSupportDTO, WithdrawSupportDTO, SendResourcesDTO, CreateVillageDTO, LearnTraitDTO } from '../dtos/interactionDTO';
+import { SendSupportDTO, WithdrawSupportDTO, SendResourcesDTO, CreateVillageDTO, LearnSkillDTO, ResetSkillsDTO } from '../dtos/interactionDTO';
 import { WorldService } from '../../world/services/world.service';
 import { MessagesService } from '../../messages/services/messages.service';
 import { BossService } from '../../bosses/services/boss.service';
-import { warehouseStorageByLevel, embassyMaximumDefenseTroopsByLevels, VillageTrait, ACADEMY_TRAIT_UNLOCK_LEVEL } from 'utils';
+import {
+    warehouseStorageByLevel,
+    embassyMaximumDefenseTroopsByLevels,
+    calculateDistance,
+    getArmySpeed,
+    calculateTravelTimeMs,
+    MERCHANT_SPEED,
+    Skills,
+    SkillCategory,
+    SkillTier,
+    SKILL_TIER_COSTS,
+    getSkillPointsByAcademyLevel,
+    getUsedSkillPoints,
+    canLearnSkill,
+    getResetCost,
+} from 'utils';
 
 const USERS_COLLECTION = "users";
 const CENTER_BUILDING_LEVEL_FOR_NEW_VILLAGE = 10;
@@ -76,11 +91,8 @@ export class InteractionsService {
             );
         }
 
-        // Deduct troops from sender
+        // Deduct troops from sender (troops are in transit)
         this.subtractTroops(senderVillage.troops, dto.troops);
-
-        // Add to clanTroops of recipient (support troops don't count towards population)
-        this.addTroops(recipientVillage.clanTroops, dto.troops);
 
         // Track supportSent for withdrawal
         const existingSupport = senderVillage.supportSent?.find(
@@ -98,15 +110,36 @@ export class InteractionsService {
             });
         }
 
-        // Update both users
+        // Update sender (recipient will be updated when support arrives)
         await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
             { username: dto.senderUsername },
             { $set: sender }
         );
-        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
-            { username: dto.recipientUsername },
-            { $set: recipient }
+
+        // Create support movement
+        const distance = calculateDistance(
+            senderVillage.location.x,
+            senderVillage.location.y,
+            recipientVillage.location.x,
+            recipientVillage.location.y,
         );
+        const armySpeed = getArmySpeed(dto.troops as any);
+        const quickStepBonus = 0; // Skill integration will be handled with Skill Tree
+        const travelTimeMs = calculateTravelTimeMs(distance, armySpeed, quickStepBonus);
+        const departureTime = new Date();
+        const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
+
+        await this.dbAccessorService.getCollection('movements').insertOne({
+            type: 'support',
+            senderUsername: dto.senderUsername,
+            senderVillageName: senderVillage.villageName,
+            targetUsername: dto.recipientUsername,
+            targetVillageName: recipientVillage.villageName,
+            troops: dto.troops,
+            departureTime,
+            arrivalTime,
+            status: 'in_transit',
+        });
 
         // Send messages to both parties
         const troopsData = {
@@ -285,24 +318,43 @@ export class InteractionsService {
             throw new HttpException("Recipient has no storage space available for any resources", HttpStatus.BAD_REQUEST);
         }
 
-        // Transfer resources (only what fits)
+        // Transfer resources from sender now (recipient receives on arrival)
         senderVillage.resourcesAmounts.woodAmount -= actualWood;
         senderVillage.resourcesAmounts.stonesAmount -= actualStone;
         senderVillage.resourcesAmounts.cropAmount -= actualCrop;
 
-        recipientVillage.resourcesAmounts.woodAmount += actualWood;
-        recipientVillage.resourcesAmounts.stonesAmount += actualStone;
-        recipientVillage.resourcesAmounts.cropAmount += actualCrop;
-
-        // Update both users
         await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
             { username: dto.senderUsername },
             { $set: sender }
         );
-        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
-            { username: dto.recipientUsername },
-            { $set: recipient }
+
+        // Create resources movement
+        const distance = calculateDistance(
+            senderVillage.location.x,
+            senderVillage.location.y,
+            recipientVillage.location.x,
+            recipientVillage.location.y,
         );
+        const speed = MERCHANT_SPEED;
+        const travelTimeMs = calculateTravelTimeMs(distance, speed, 0);
+        const departureTime = new Date();
+        const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
+
+        await this.dbAccessorService.getCollection('movements').insertOne({
+            type: 'resources',
+            senderUsername: dto.senderUsername,
+            senderVillageName: senderVillage.villageName,
+            targetUsername: dto.recipientUsername,
+            targetVillageName: recipientVillage.villageName,
+            resources: {
+                woodAmount: actualWood,
+                stonesAmount: actualStone,
+                cropAmount: actualCrop,
+            },
+            departureTime,
+            arrivalTime,
+            status: 'in_transit',
+        });
 
         // Send messages to both parties with ACTUAL amounts transferred
         const resourcesData = {
@@ -476,7 +528,7 @@ export class InteractionsService {
         return new UserDTO(user);
     }
 
-    async learnTrait(dto: LearnTraitDTO): Promise<UserDTO> {
+    async learnSkill(dto: LearnSkillDTO): Promise<UserDTO> {
         const user = await this.dbAccessorService.getCollection(USERS_COLLECTION).findOne({ username: dto.username }) as User;
 
         if (!user) {
@@ -490,62 +542,93 @@ export class InteractionsService {
 
         const academyLevel = village.buildingsLevels.academyLevel || 1;
 
-        // Validate academy level
-        if (academyLevel < ACADEMY_TRAIT_UNLOCK_LEVEL) {
-            throw new HttpException(
-                `Academy must be level ${ACADEMY_TRAIT_UNLOCK_LEVEL} to learn a trait`,
-                HttpStatus.BAD_REQUEST
-            );
+        const category = dto.category as SkillCategory;
+        const tier = dto.tier as SkillTier;
+
+        if (!Object.values(SkillCategory).includes(category)) {
+            throw new HttpException("Invalid skill category", HttpStatus.BAD_REQUEST);
+        }
+        if (!Object.values(SkillTier).includes(tier)) {
+            throw new HttpException("Invalid skill tier", HttpStatus.BAD_REQUEST);
         }
 
-        // Validate new trait is a valid trait
-        const validTraits = Object.values(VillageTrait);
-        if (!validTraits.includes(dto.newTrait as VillageTrait)) {
-            throw new HttpException("Invalid trait selected", HttpStatus.BAD_REQUEST);
+        const canLearn = canLearnSkill(academyLevel, village.skills as Skills, category, tier);
+        if (!canLearn) {
+            throw new HttpException("Cannot learn this skill (missing prerequisites or points)", HttpStatus.BAD_REQUEST);
         }
 
-        const currentTrait = village.trait;
-        const isFirstSelection = currentTrait === undefined || currentTrait === null;
+        const totalPoints = getSkillPointsByAcademyLevel(academyLevel);
+        const usedPoints = getUsedSkillPoints(village.skills as Skills);
+        const cost = SKILL_TIER_COSTS[tier];
 
-        // Build the update object with specific paths
-        const villagePath = `villages.${dto.villageIndex}`;
-        const updateFields: any = {
-            [`${villagePath}.trait`]: dto.newTrait
-        };
-
-        // If not first selection, check if user can afford and deduct resources
-        if (!isFirstSelection) {
-            const learnCost = warehouseStorageByLevel[academyLevel] || 0;
-            
-            if (village.resourcesAmounts.woodAmount < learnCost ||
-                village.resourcesAmounts.cropAmount < learnCost ||
-                village.resourcesAmounts.stonesAmount < learnCost) {
-                throw new HttpException(
-                    `Learning a new trait requires a significant resource investment`,
-                    HttpStatus.BAD_REQUEST
-                );
-            }
-
-            // Add resource deductions to update
-            updateFields[`${villagePath}.resourcesAmounts.woodAmount`] = village.resourcesAmounts.woodAmount - learnCost;
-            updateFields[`${villagePath}.resourcesAmounts.cropAmount`] = village.resourcesAmounts.cropAmount - learnCost;
-            updateFields[`${villagePath}.resourcesAmounts.stonesAmount`] = village.resourcesAmounts.stonesAmount - learnCost;
+        if (usedPoints + cost > totalPoints) {
+            throw new HttpException("Not enough skill points", HttpStatus.BAD_REQUEST);
         }
 
-        // Update user with specific field paths
+        const villagePath = `villages.${dto.villageIndex}.skills.${category}`;
+
         await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
             { username: dto.username },
-            { $set: updateFields }
+            { $set: { [villagePath]: tier } }
         );
 
-        // Update local village object for DTO response
-        village.trait = dto.newTrait as VillageTrait;
-        if (!isFirstSelection) {
-            const learnCost = warehouseStorageByLevel[academyLevel] || 0;
-            village.resourcesAmounts.woodAmount -= learnCost;
-            village.resourcesAmounts.cropAmount -= learnCost;
-            village.resourcesAmounts.stonesAmount -= learnCost;
+        village.skills[category] = tier;
+
+        return new UserDTO(user);
+    }
+
+    async resetSkills(dto: ResetSkillsDTO): Promise<UserDTO> {
+        const user = await this.dbAccessorService.getCollection(USERS_COLLECTION).findOne({ username: dto.username }) as User;
+
+        if (!user) {
+            throw new HttpException("User not found", HttpStatus.NOT_FOUND);
         }
+
+        const village = user.villages[dto.villageIndex];
+        if (!village) {
+            throw new HttpException("Village not found", HttpStatus.NOT_FOUND);
+        }
+
+        const academyLevel = village.buildingsLevels.academyLevel || 1;
+        const usedPoints = getUsedSkillPoints(village.skills as Skills);
+
+        if (usedPoints <= 0) {
+            return new UserDTO(user);
+        }
+
+        const cost = getResetCost(usedPoints);
+
+        if (
+            village.resourcesAmounts.woodAmount < cost.wood ||
+            village.resourcesAmounts.stonesAmount < cost.stones ||
+            village.resourcesAmounts.cropAmount < cost.crop
+        ) {
+            throw new HttpException("Not enough resources to reset skills", HttpStatus.BAD_REQUEST);
+        }
+
+        // Deduct resources
+        village.resourcesAmounts.woodAmount -= cost.wood;
+        village.resourcesAmounts.stonesAmount -= cost.stones;
+        village.resourcesAmounts.cropAmount -= cost.crop;
+
+        // Reset all skills to null
+        const clearedSkills: Skills = {} as Skills;
+        for (const key of Object.keys(village.skills) as Array<keyof Skills>) {
+            clearedSkills[key] = null;
+        }
+        village.skills = clearedSkills;
+
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username: dto.username },
+            {
+                $set: {
+                    [`villages.${dto.villageIndex}.skills`]: clearedSkills,
+                    [`villages.${dto.villageIndex}.resourcesAmounts.woodAmount`]: village.resourcesAmounts.woodAmount,
+                    [`villages.${dto.villageIndex}.resourcesAmounts.stonesAmount`]: village.resourcesAmounts.stonesAmount,
+                    [`villages.${dto.villageIndex}.resourcesAmounts.cropAmount`]: village.resourcesAmounts.cropAmount,
+                },
+            }
+        );
 
         return new UserDTO(user);
     }

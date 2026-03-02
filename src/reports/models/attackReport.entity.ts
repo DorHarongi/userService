@@ -2,9 +2,9 @@ import { ObjectId } from "mongodb";
 import { ResourcesAmounts } from "../../user/models/resourcesAmounts";
 import { TroopsAmounts } from "../../user/models/troopsAmounts";
 import { IAttackReport } from "./IAttackReport.interface";
+import { BossReportType } from "utils";
 
-export class AttackReport implements IAttackReport
-{
+export class AttackReport implements IAttackReport {
     _id: ObjectId;
 
     attackerName: string;
@@ -14,31 +14,34 @@ export class AttackReport implements IAttackReport
     defenderVillageName: string;
 
     date: Date;
-    attackerWon: boolean; 
+    attackerWon: boolean;
     lootedResources: ResourcesAmounts;
 
     attackerTotalAttack: number;
-    defenderTotalDefence: number; // defenderTotalArmyDefence + defenderTotalSupportArmyDefence + wallDefence 
+    defenderTotalDefence: number; // defenderTotalArmyDefence + defenderTotalSupportArmyDefence + wallDefence
     defenderTotalArmyDefence: number;
     defenderTotalSupportArmyDefence: number;
     wallDefence: number;
 
     attackerTroops: TroopsAmounts;
     attackerLostTroops: TroopsAmounts;
-    defenderTotalTroops:TroopsAmounts;
+    defenderTotalTroops: TroopsAmounts;
     defenderTotalLostTroops: TroopsAmounts;
     supportTotalTroops: TroopsAmounts;
     supportTotalLostTroops: TroopsAmounts;
-    
+
     // Read status per user (attacker and defender see separately)
     readByAttacker: boolean;
     readByDefender: boolean;
 
-    // Trait info
-    attackerTrait?: string;
-    attackerAcademyLevel?: number;
-    defenderTrait?: string;
-    defenderAcademyLevel?: number;
+    // Report metadata
+    reportType: BossReportType;
+    bossName?: string;
+    bossTier?: string;
+    bossHpBefore?: number;
+    bossHpAfter?: number;
+    bossDamageDealt?: number;
+    bossReward?: ResourcesAmounts;
 
     constructor(
         attackerName: string,
@@ -59,11 +62,14 @@ export class AttackReport implements IAttackReport
         defenderTotalLostTroops: TroopsAmounts,
         supportTotalTroops: TroopsAmounts,
         supportTotalLostTroops: TroopsAmounts,
-        attackerTrait?: string,
-        attackerAcademyLevel?: number,
-        defenderTrait?: string,
-        defenderAcademyLevel?: number)
-    {
+        reportType: BossReportType = 'pvp',
+        bossName?: string,
+        bossTier?: string,
+        bossHpBefore?: number,
+        bossHpAfter?: number,
+        bossDamageDealt?: number,
+        bossReward?: ResourcesAmounts,
+    ) {
         this.attackerName = attackerName;
         this.attackerVillageName = attackerVillageName;
         this.defenderName = defenderName;
@@ -72,7 +78,7 @@ export class AttackReport implements IAttackReport
         this.attackerWon = attackerWon;
         this.lootedResources = lootedResources;
         this.attackerTotalAttack = attackerTotalAttack;
-        this.defenderTotalDefence = defenderTotalDefence
+        this.defenderTotalDefence = defenderTotalDefence;
         this.defenderTotalArmyDefence = defenderTotalArmyDefence;
         this.defenderTotalSupportArmyDefence = defenderTotalSupportArmyDefence;
         this.wallDefence = wallDefence;
@@ -84,9 +90,15 @@ export class AttackReport implements IAttackReport
         this.supportTotalLostTroops = supportTotalLostTroops;
         this.readByAttacker = false;
         this.readByDefender = false;
-        this.attackerTrait = attackerTrait;
-        this.attackerAcademyLevel = attackerAcademyLevel;
-        this.defenderTrait = defenderTrait;
-        this.defenderAcademyLevel = defenderAcademyLevel;
+        this.reportType = reportType;
+        this.bossName = bossName;
+        this.bossTier = bossTier;
+        this.bossHpBefore = bossHpBefore;
+        this.bossHpAfter = bossHpAfter;
+        this.bossDamageDealt = bossDamageDealt;
+
+        if (bossReward) {
+            this.bossReward = bossReward;
+        }
     }
 }

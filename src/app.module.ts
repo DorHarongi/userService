@@ -18,6 +18,11 @@ import { InteractionsModule } from './interactions/interactions.module';
 import { AuthModule } from './auth/auth.module';
 import { QuestModule } from './quests/quest.module';
 import { BossesModule } from './bosses/bosses.module';
+import { ChatModule } from './chat/chat.module';
+import { ScoutingModule } from './scouting/scouting.module';
+import { RelicsModule } from './relics/relics.module';
+import { AnnouncementsModule } from './announcements/announcements.module';
+import { ServerModule } from './server/server.module';
 
 @Module({
   imports: [
@@ -40,7 +45,12 @@ import { BossesModule } from './bosses/bosses.module';
     InteractionsModule, 
     AuthModule, 
     QuestModule,
-    BossesModule
+    BossesModule,
+    ChatModule,
+    ScoutingModule,
+    RelicsModule,
+    AnnouncementsModule,
+    ServerModule,
   ],
   controllers: [AppController],
   providers: [

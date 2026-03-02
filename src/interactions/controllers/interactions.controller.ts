@@ -1,6 +1,6 @@
 import { Body, Controller, Post, UseGuards, Request } from '@nestjs/common';
 import { InteractionsService } from '../services/interactions.service';
-import { SendSupportDTO, WithdrawSupportDTO, SendResourcesDTO, CreateVillageDTO, RenameVillageDTO, LearnTraitDTO } from '../dtos/interactionDTO';
+import { SendSupportDTO, WithdrawSupportDTO, SendResourcesDTO, CreateVillageDTO, RenameVillageDTO, LearnSkillDTO, ResetSkillsDTO } from '../dtos/interactionDTO';
 import { UserDTO } from '../../user/dtos/userDTO';
 import { AuthGuard } from '../../auth/guards/auth.guard';
 
@@ -39,9 +39,15 @@ export class InteractionsController {
         return await this.interactionsService.renameVillage(dto);
     }
 
-    @Post('learn-trait')
-    async learnTrait(@Request() req: any, @Body() dto: LearnTraitDTO): Promise<UserDTO> {
+    @Post('learn-skill')
+    async learnSkill(@Request() req: any, @Body() dto: LearnSkillDTO): Promise<UserDTO> {
         dto.username = req.user.username;
-        return await this.interactionsService.learnTrait(dto);
+        return await this.interactionsService.learnSkill(dto);
+    }
+
+    @Post('reset-skills')
+    async resetSkills(@Request() req: any, @Body() dto: ResetSkillsDTO): Promise<UserDTO> {
+        dto.username = req.user.username;
+        return await this.interactionsService.resetSkills(dto);
     }
 }

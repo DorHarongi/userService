@@ -1,9 +1,9 @@
 import { ResourcesAmounts } from "../../user/models/resourcesAmounts";
 import { TroopsAmounts } from "../../user/models/troopsAmounts";
 import { AttackReport } from "./attackReport.entity";
+import { BossReportType } from "utils";
 
-export class AttackReportToClientDTO
-{
+export class AttackReportToClientDTO {
     id: string;
     attackerName: string;
     attackerVillageName: string;
@@ -12,32 +12,33 @@ export class AttackReportToClientDTO
     defenderVillageName: string;
 
     date: Date;
-    attackerWon: boolean; 
+    attackerWon: boolean;
     lootedResources: ResourcesAmounts;
 
     attackerTotalAttack: number;
-    defenderTotalDefence: number; // defenderTotalArmyDefence + defenderTotalSupportArmyDefence + wallDefence 
+    defenderTotalDefence: number; // defenderTotalArmyDefence + defenderTotalSupportArmyDefence + wallDefence
     defenderTotalArmyDefence: number;
     defenderTotalSupportArmyDefence: number;
     wallDefence: number;
 
     attackerTroops: TroopsAmounts;
     attackerLostTroops: TroopsAmounts;
-    defenderTotalTroops:TroopsAmounts;
+    defenderTotalTroops: TroopsAmounts;
     defenderTotalLostTroops: TroopsAmounts;
     supportTotalTroops: TroopsAmounts;
     supportTotalLostTroops: TroopsAmounts;
-    
+
     read: boolean;
 
-    // Trait info
-    attackerTrait?: string;
-    attackerAcademyLevel?: number;
-    defenderTrait?: string;
-    defenderAcademyLevel?: number;
+    reportType: BossReportType;
+    bossName?: string;
+    bossTier?: string;
+    bossHpBefore?: number;
+    bossHpAfter?: number;
+    bossDamageDealt?: number;
+    bossReward?: ResourcesAmounts;
 
-    constructor(attackReport: AttackReport, viewingUsername?: string)
-    {
+    constructor(attackReport: AttackReport, viewingUsername?: string) {
         this.id = attackReport._id?.toString() || '';
         this.attackerName = attackReport.attackerName;
         this.attackerVillageName = attackReport.attackerVillageName;
@@ -47,7 +48,7 @@ export class AttackReportToClientDTO
         this.attackerWon = attackReport.attackerWon;
         this.lootedResources = attackReport.lootedResources;
         this.attackerTotalAttack = attackReport.attackerTotalAttack;
-        this.defenderTotalDefence = attackReport.defenderTotalDefence
+        this.defenderTotalDefence = attackReport.defenderTotalDefence;
         this.defenderTotalArmyDefence = attackReport.defenderTotalArmyDefence;
         this.defenderTotalSupportArmyDefence = attackReport.defenderTotalSupportArmyDefence;
         this.wallDefence = attackReport.wallDefence;
@@ -57,7 +58,7 @@ export class AttackReportToClientDTO
         this.defenderTotalLostTroops = attackReport.defenderTotalLostTroops;
         this.supportTotalTroops = attackReport.supportTotalTroops;
         this.supportTotalLostTroops = attackReport.supportTotalLostTroops;
-        
+
         // Determine read status based on viewing user
         // For backward compatibility, treat undefined as read (true)
         if (viewingUsername === attackReport.attackerName) {
@@ -68,10 +69,12 @@ export class AttackReportToClientDTO
             this.read = true;
         }
 
-        // Trait info
-        this.attackerTrait = attackReport.attackerTrait;
-        this.attackerAcademyLevel = attackReport.attackerAcademyLevel;
-        this.defenderTrait = attackReport.defenderTrait;
-        this.defenderAcademyLevel = attackReport.defenderAcademyLevel;
+        this.reportType = attackReport.reportType;
+        this.bossName = attackReport.bossName;
+        this.bossTier = attackReport.bossTier;
+        this.bossHpBefore = attackReport.bossHpBefore;
+        this.bossHpAfter = attackReport.bossHpAfter;
+        this.bossDamageDealt = attackReport.bossDamageDealt;
+        this.bossReward = attackReport.bossReward;
     }
 }

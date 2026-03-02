@@ -39,8 +39,14 @@ export interface RenameVillageDTO {
     newVillageName: string;
 }
 
-export interface LearnTraitDTO {
+export interface LearnSkillDTO {
     username: string;
     villageIndex: number;
-    newTrait: string;
+    category: string;
+    tier: string;
+}
+
+export interface ResetSkillsDTO {
+    username: string;
+    villageIndex: number;
 }

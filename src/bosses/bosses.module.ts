@@ -4,9 +4,11 @@ import { BossService } from './services/boss.service';
 import { DatabaseModule } from '../database/database.module';
 import { MessagesModule } from '../messages/messages.module';
 import { AuthModule } from '../auth/auth.module';
+import { RelicsModule } from '../relics/relics.module';
+import { AnnouncementsModule } from '../announcements/announcements.module';
 
 @Module({
-    imports: [DatabaseModule, MessagesModule, AuthModule],
+    imports: [DatabaseModule, MessagesModule, AuthModule, RelicsModule, AnnouncementsModule],
     controllers: [BossController],
     providers: [BossService],
     exports: [BossService]
