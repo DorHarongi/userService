@@ -422,8 +422,10 @@ export class BossService {
             totalBattlesWon: 0,
         };
 
-        user.weeklyStats.bossDamage += actualDamage;
-        user.totalStats.lifetimeBossDamage += actualDamage;
+        if (boss.tier === BossTier.MYTHIC) {
+            user.weeklyStats.bossDamage += actualDamage;
+            user.totalStats.lifetimeBossDamage += actualDamage;
+        }
 
         await this.dbAccessorService
             .getCollection(USERS_COLLECTION)
