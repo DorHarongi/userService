@@ -515,7 +515,11 @@ export class BossService {
           village.skills,
         );
       } else {
-        await this.returnTroopsToVillage(username, movement.senderVillageName, movement.troops);
+        await this.returnTroopsToVillage(
+          username,
+          movement.senderVillageName,
+          movement.troops,
+        );
       }
       return;
     }
@@ -911,62 +915,75 @@ export class BossService {
   // Claim boss rewards for a user
   async claimBossReward(
     username: string,
-    rewardIndex: number,
+    rewardId: string,
   ): Promise<{
     success: boolean;
     rewards?: { wood: number; stone: number; crop: number };
   }> {
-    const user = (await this.dbAccessorService
+    // Atomically pull the reward by rewardId — prevents double-claim
+    const result = await this.dbAccessorService
       .getCollection(USERS_COLLECTION)
-      .findOne({ username })) as User;
+      .findOneAndUpdate(
+        { username, 'pendingBossRewards.rewardId': rewardId },
+        { $pull: { pendingBossRewards: { rewardId } } } as any,
+        { returnDocument: 'before' },
+      ) as any;
 
-    if (!user) {
-      throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+    if (!result) {
+      throw new HttpException('Reward not found or already claimed', HttpStatus.NOT_FOUND);
     }
 
-    if (
-      !user.pendingBossRewards ||
-      rewardIndex < 0 ||
-      rewardIndex >= user.pendingBossRewards.length
-    ) {
-      throw new HttpException('Reward not found', HttpStatus.NOT_FOUND);
+    const user = result as User;
+    const reward = user.pendingBossRewards?.find((r) => r.rewardId === rewardId);
+    if (!reward) {
+      throw new HttpException('Reward not found or already claimed', HttpStatus.NOT_FOUND);
     }
 
-    const reward = user.pendingBossRewards[rewardIndex];
     const village = user.villages[0];
-
     if (!village) {
       throw new HttpException('Village not found', HttpStatus.NOT_FOUND);
     }
 
-    // Get warehouse capacities
-    const maxWood =
-      warehouseStorageByLevel[village.buildingsLevels.woodWarehouseLevel];
-    const maxStone =
-      warehouseStorageByLevel[village.buildingsLevels.stoneWarehouseLevel];
-    const maxCrop =
-      warehouseStorageByLevel[village.buildingsLevels.cropWarehouseLevel];
+    const maxWood = warehouseStorageByLevel[village.buildingsLevels.woodWarehouseLevel];
+    const maxStone = warehouseStorageByLevel[village.buildingsLevels.stoneWarehouseLevel];
+    const maxCrop = warehouseStorageByLevel[village.buildingsLevels.cropWarehouseLevel];
 
-    // Add rewards (capped by warehouse capacity)
-    village.resourcesAmounts.woodAmount = Math.min(
-      village.resourcesAmounts.woodAmount + reward.rewards.wood,
-      maxWood,
-    );
-    village.resourcesAmounts.stonesAmount = Math.min(
-      village.resourcesAmounts.stonesAmount + reward.rewards.stone,
-      maxStone,
-    );
-    village.resourcesAmounts.cropAmount = Math.min(
-      village.resourcesAmounts.cropAmount + reward.rewards.crop,
-      maxCrop,
-    );
+    // Reject if all warehouses are completely full
+    if (
+      village.resourcesAmounts.woodAmount >= maxWood &&
+      village.resourcesAmounts.stonesAmount >= maxStone &&
+      village.resourcesAmounts.cropAmount >= maxCrop
+    ) {
+      // Put the reward back since we already pulled it
+      await this.dbAccessorService
+        .getCollection(USERS_COLLECTION)
+        .updateOne(
+          { username },
+          { $push: { pendingBossRewards: reward } } as any,
+        );
+      throw new HttpException('All warehouses are full. Free up space before claiming.', HttpStatus.BAD_REQUEST);
+    }
 
-    // Remove the claimed reward
-    user.pendingBossRewards.splice(rewardIndex, 1);
-
-    await this.dbAccessorService
-      .getCollection(USERS_COLLECTION)
-      .updateOne({ username }, { $set: user });
+    // Deposit resources (capped by warehouse capacity)
+    await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+      { username },
+      {
+        $set: {
+          'villages.0.resourcesAmounts.woodAmount': Math.min(
+            village.resourcesAmounts.woodAmount + reward.rewards.wood,
+            maxWood,
+          ),
+          'villages.0.resourcesAmounts.stonesAmount': Math.min(
+            village.resourcesAmounts.stonesAmount + reward.rewards.stone,
+            maxStone,
+          ),
+          'villages.0.resourcesAmounts.cropAmount': Math.min(
+            village.resourcesAmounts.cropAmount + reward.rewards.crop,
+            maxCrop,
+          ),
+        },
+      },
+    );
 
     return { success: true, rewards: reward.rewards };
   }

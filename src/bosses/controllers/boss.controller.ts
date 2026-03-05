@@ -116,14 +116,14 @@ export class BossController {
     }
 
     // Claim a boss reward
-    @Post('rewards/claim/:username/:rewardIndex')
+    @Post('rewards/claim/:username/:rewardId')
     @UseGuards(ServerStatusGuard)
     async claimBossReward(
         @Request() req: any,
         @Param('username') username: string,
-        @Param('rewardIndex') rewardIndex: string
+        @Param('rewardId') rewardId: string
     ): Promise<{ success: boolean; rewards?: { wood: number; stone: number; crop: number } }> {
         // Use authenticated username
-        return this.bossService.claimBossReward(req.user.username, parseInt(rewardIndex, 10));
+        return this.bossService.claimBossReward(req.user.username, rewardId);
     }
 }
