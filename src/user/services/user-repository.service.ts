@@ -12,6 +12,7 @@ import { UserVillageRequestDTO } from '../dtos/userVillageRequestDTO';
 import { VillageDTO } from '../dtos/villageDTO';
 import { WorldService } from '../../world/services/world.service';
 import { Location } from '../models/location';
+import { ACHIEVEMENTS } from 'utils';
 
 const MAX_USERS_IN_EACH_STATISTICS_PAGE = 10;
 const COLLECTION_NAME = "users";
@@ -42,12 +43,13 @@ export class UserRepositoryService {
         // Find a location using proximity-based placement
         const location: Location = await this.worldService.findLocationForNewVillage();
         
+        const defaultVillageName = "New Village";
         // Try to reserve the grid cell FIRST before creating user
-        const reserved = await this.worldService.reserveGridForVillage(location.x, location.y, userFromClient.username, "Village");
+        const reserved = await this.worldService.reserveGridForVillage(location.x, location.y, userFromClient.username, defaultVillageName);
         if (!reserved) {
             // Retry with a different location
             const retryLocation = await this.worldService.findLocationForNewVillage();
-            const retryReserved = await this.worldService.reserveGridForVillage(retryLocation.x, retryLocation.y, userFromClient.username, "Village");
+            const retryReserved = await this.worldService.reserveGridForVillage(retryLocation.x, retryLocation.y, userFromClient.username, defaultVillageName);
             if (!retryReserved) {
                 throw new HttpException("Could not find available location for village", HttpStatus.SERVICE_UNAVAILABLE);
             }
@@ -67,7 +69,7 @@ export class UserRepositoryService {
         userFromClient.password = crypto.createHash("shake256").update(userFromClient.password).digest("hex");
         let result: User = (await this.dbAccessorService.getCollection(COLLECTION_NAME).findOne({username: userFromClient.username, password: userFromClient.password})) as User;
         if(!result)
-            throw new HttpException("Invalid credentials", HttpStatus.UNAUTHORIZED);
+            throw new HttpException("Username or password is incorrect. Please try again.", HttpStatus.UNAUTHORIZED);
         return new UserDTO(result);
     }
 
@@ -77,9 +79,34 @@ export class UserRepositoryService {
         return Math.ceil(numberOfUsers / MAX_USERS_IN_EACH_STATISTICS_PAGE);
     }
 
-    // Reset weekly stats every Monday at 00:00
+    // Reset weekly stats every Monday at 00:00; archive previous week's leaderboards first
     @Cron('0 0 * * 1')
     async resetWeeklyStats(): Promise<void> {
+        const archiveColl = this.dbAccessorService.getCollection('leaderboardArchive');
+        const weekEnding = new Date(); // Monday 00:00 = end of previous week
+
+        try {
+            const [playerBossDamage, playerResourcesStolen, playerSuccessfulDefenses, clanBossDamage, clanResourcesStolen, clanSuccessfulDefenses] = await Promise.all([
+                this.getUserLeaderboard('bossDamage'),
+                this.getUserLeaderboard('resourcesStolen'),
+                this.getUserLeaderboard('successfulDefenses'),
+                this.getClanLeaderboard('bossDamage'),
+                this.getClanLeaderboard('resourcesStolen'),
+                this.getClanLeaderboard('successfulDefenses'),
+            ]);
+            await archiveColl.insertOne({
+                weekEnding,
+                playerBossDamage,
+                playerResourcesStolen,
+                playerSuccessfulDefenses,
+                clanBossDamage,
+                clanResourcesStolen,
+                clanSuccessfulDefenses,
+            });
+        } catch (e) {
+            console.error('Leaderboard archive failed (continuing reset):', e);
+        }
+
         await this.dbAccessorService
             .getCollection(COLLECTION_NAME)
             .updateMany(
@@ -92,6 +119,34 @@ export class UserRepositoryService {
                     },
                 },
             );
+    }
+
+    async getLeaderboardArchive(): Promise<{
+        weekEnding: string;
+        playerBossDamage: any[];
+        playerResourcesStolen: any[];
+        playerSuccessfulDefenses: any[];
+        clanBossDamage: any[];
+        clanResourcesStolen: any[];
+        clanSuccessfulDefenses: any[];
+    } | null> {
+        const doc = await this.dbAccessorService
+            .getCollection('leaderboardArchive')
+            .find({})
+            .sort({ weekEnding: -1 })
+            .limit(1)
+            .toArray();
+        if (!doc || doc.length === 0) return null;
+        const d = doc[0] as any;
+        return {
+            weekEnding: d.weekEnding ? new Date(d.weekEnding).toISOString() : '',
+            playerBossDamage: d.playerBossDamage || [],
+            playerResourcesStolen: d.playerResourcesStolen || [],
+            playerSuccessfulDefenses: d.playerSuccessfulDefenses || [],
+            clanBossDamage: d.clanBossDamage || [],
+            clanResourcesStolen: d.clanResourcesStolen || [],
+            clanSuccessfulDefenses: d.clanSuccessfulDefenses || [],
+        };
     }
 
     async getUserStatistics(page: number): Promise<Array<UserStatisticDTO>>
@@ -256,32 +311,10 @@ export class UserRepositoryService {
             return { success: result.modifiedCount === 1 || result.matchedCount === 1 };
         }
 
-        // Basic title gating based on stats (can be refined later)
-        const stats = user.totalStats || {
-            lifetimeBossDamage: 0,
-            lifetimeResourcesStolen: 0,
-            totalBattlesWon: 0,
-        };
-
-        let allowed = false;
-        switch (title) {
-            case 'Boss Slayer':
-                allowed = stats.lifetimeBossDamage >= 1_000_000;
-                break;
-            case 'Raider':
-                allowed = stats.lifetimeResourcesStolen >= 1_000_000;
-                break;
-            case 'Iron Wall':
-                allowed = stats.totalBattlesWon >= 25; // proxy: assumes many wins from defenses
-                break;
-            case 'Warlord':
-                allowed = stats.totalBattlesWon >= 100;
-                break;
-            default:
-                allowed = false;
-        }
-
-        if (!allowed) {
+        // Title must be an achievement id that the user has unlocked
+        const achievement = ACHIEVEMENTS.find((a) => a.id === title);
+        const unlocked = (user.unlockedAchievements || []) as string[];
+        if (!achievement || !unlocked.includes(title)) {
             throw new HttpException('Title not unlocked yet', HttpStatus.BAD_REQUEST);
         }
 

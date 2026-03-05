@@ -12,7 +12,7 @@ export class BuildingsLevels
         public wallLevel: number,
         public embassyLevel: number,
         public academyLevel: number = 1,
-        public stableLevel: number = 0)
+        public stableLevel: number = 1)
         {
             this.centerBuildingLevel = centerBuildingLevel;
             this.woodWarehouseLevel = woodWarehouseLevel;

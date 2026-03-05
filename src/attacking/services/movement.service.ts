@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ObjectId } from 'mongodb';
 import { DbAccessorService } from '../../database/services/db-accessor.service';
@@ -7,6 +7,7 @@ import { User } from '../../user/models/user.entity';
 import { Village } from '../../user/models/village.entity';
 import { TroopsAmounts } from '../../user/models/troopsAmounts';
 import { ResourcesAmounts } from '../../user/models/resourcesAmounts';
+import { BossService } from '../../bosses/services/boss.service';
 import {
     wallDefenseByLevel,
     spearFighterDefenceStat,
@@ -34,12 +35,14 @@ import {
 import { AttackReport } from '../../reports/models/attackReport.entity';
 import { RelicsService } from '../../relics/relics.service';
 import { AnnouncementsService } from '../../announcements/announcements.service';
+import { MessagesService } from '../../messages/services/messages.service';
+import { unlockAchievements } from '../../user/services/achievement-utils';
 const USERS_COLLECTION = 'users';
 const MOVEMENTS_COLLECTION = 'movements';
 
 export interface Movement {
     _id?: ObjectId;
-    type: 'attack' | 'support' | 'resources' | 'return';
+    type: 'attack' | 'support' | 'resources' | 'return' | 'boss_attack';
     senderUsername: string;
     senderVillageName: string;
     targetUsername: string;
@@ -49,6 +52,7 @@ export interface Movement {
     departureTime: Date;
     arrivalTime: Date;
     status: 'in_transit' | 'completed';
+    bossId?: string;
 }
 
 @Injectable()
@@ -60,6 +64,8 @@ export class MovementService {
         private reportsService: ReportsService,
         private relicsService: RelicsService,
         private announcementsService: AnnouncementsService,
+        private messagesService: MessagesService,
+        @Inject(forwardRef(() => BossService)) private bossService: BossService,
     ) {}
 
     @Cron('*/10 * * * * *')
@@ -74,6 +80,8 @@ export class MovementService {
             try {
                 if (movement.type === 'attack') {
                     await this.resolveAttackMovement(movement);
+                } else if (movement.type === 'boss_attack') {
+                    await this.bossService.resolveBossAttack(movement as any);
                 } else if (movement.type === 'support') {
                     await this.resolveSupportMovement(movement);
                 } else if (movement.type === 'resources') {
@@ -92,15 +100,35 @@ export class MovementService {
         }
     }
 
-    async getUserMovements(username: string): Promise<Movement[]> {
-        const collection = this.dbAccessorService.getCollection(MOVEMENTS_COLLECTION);
-        return collection
+    async getUserMovements(username: string): Promise<any[]> {
+        const movements = await this.dbAccessorService.getCollection(MOVEMENTS_COLLECTION)
             .find({
                 status: 'in_transit',
                 $or: [{ senderUsername: username }, { targetUsername: username }],
             })
             .sort({ arrivalTime: 1 })
-            .toArray() as Promise<Movement[]>;
+            .toArray() as Movement[];
+
+        const spyMissions = await this.dbAccessorService.getCollection('spyMissions')
+            .find({
+                attackerUsername: username,
+                status: { $in: ['in_transit', 'returning'] },
+            })
+            .sort({ arrivalTime: 1 })
+            .toArray() as any[];
+
+        const spyAsMovements = spyMissions.map((m: any) => ({
+            type: m.status === 'returning' ? 'spy_return' : 'spy',
+            senderUsername: m.attackerUsername,
+            senderVillageName: m.attackerVillageName,
+            targetUsername: m.defenderUsername,
+            targetVillageName: m.defenderVillageName,
+            departureTime: m.departureTime,
+            arrivalTime: m.arrivalTime,
+            status: 'in_transit',
+        }));
+
+        return [...movements, ...spyAsMovements];
     }
 
     private async resolveAttackMovement(movement: Movement): Promise<void> {
@@ -159,6 +187,13 @@ export class MovementService {
             killedAttackerTroops = this.calculateKilledTroopsByRatio(attackerTroops, 1);
             killedDefenderTroops = this.calculateKilledTroopsByRatio(defenceTroops, attackToDefenceRatio);
             killedSupportTroops = this.calculateKilledTroopsByRatio(supportTroops, attackToDefenceRatio);
+            // Self Defense (defender wins): reduce defender losses by defender's bonus
+            const defenderSelfDefenseBonus = getSkillBonus(defenderSkills, SkillCategory.SELF_DEFENSE);
+            if (defenderSelfDefenseBonus > 0) {
+                const reduce = 1 - defenderSelfDefenseBonus;
+                killedDefenderTroops = this.scaleTroopsAmounts(killedDefenderTroops, reduce);
+                killedSupportTroops = this.scaleTroopsAmounts(killedSupportTroops, reduce);
+            }
         } else {
             attackWon = true;
             killedDefenderTroops = this.calculateKilledTroopsByRatio(defenceTroops, 1);
@@ -244,10 +279,9 @@ export class MovementService {
                 attacker.clanName || null,
             );
             for (const relicName of stolenNames) {
-                await this.announcementsService.createAnnouncement(
-                    'relic_stolen',
-                    `⚔️ Clan **${attacker.clanName || 'Unknown'}** stole **${relicName}** from ${defender.username} of clan **${defender.clanName || 'None'}**!`,
-                    { relicName, attackerClan: attacker.clanName, defenderUsername: defender.username, defenderClan: defender.clanName },
+                await this.messagesService.sendGlobalInboxMessage(
+                    `A Divine Relic has been stolen!`,
+                    `Clan ${attacker.clanName || 'Unknown'} seized the ${relicName} from ${defender.username} of clan ${defender.clanName || 'None'}. The balance of power shifts.`,
                 );
             }
         }
@@ -306,18 +340,32 @@ export class MovementService {
             totalBattlesWon: 0,
         };
 
+        const attackerTroopsKilled =
+            killedAttackerTroops.spearFighters + killedAttackerTroops.swordFighters +
+            killedAttackerTroops.axeFighters + killedAttackerTroops.archers +
+            killedAttackerTroops.magicians + killedAttackerTroops.horsemen +
+            killedAttackerTroops.catapults;
+
+        defender.weeklyStats.successfulDefenses += attackerTroopsKilled;
+
         if (attackWon) {
             attacker.weeklyStats.resourcesStolen += lootTotal;
             attacker.totalStats.lifetimeResourcesStolen += lootTotal;
             attacker.totalStats.totalBattlesWon += 1;
+            unlockAchievements(attacker, ['totalStats.lifetimeResourcesStolen', 'totalStats.totalBattlesWon']);
         } else {
-            defender.weeklyStats.successfulDefenses += 1;
             defender.totalStats.totalBattlesWon += 1;
+            unlockAchievements(defender, ['weeklyStats.successfulDefenses', 'totalStats.totalBattlesWon']);
         }
 
         await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
             { username: attacker.username },
             { $set: attacker },
+        );
+
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username: defender.username },
+            { $set: { weeklyStats: defender.weeklyStats, totalStats: defender.totalStats, unlockedAchievements: (defender as any).unlockedAchievements } },
         );
 
         // Create return movement with surviving troops and loot
@@ -338,7 +386,7 @@ export class MovementService {
                 defenderVillage.location.y,
             );
             const armySpeed = getArmySpeed(survivingAttackers as any);
-            const quickStepBonus = 0; // Skill integration to be added in Chunk 1
+            const quickStepBonus = getSkillBonus(attackerVillage.skills, SkillCategory.QUICK_STEP);
             const travelTimeMs = calculateTravelTimeMs(distance, armySpeed, quickStepBonus);
             const departureTime = new Date();
             const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
@@ -467,6 +515,20 @@ export class MovementService {
         await this.dbAccessorService
             .getCollection(USERS_COLLECTION)
             .updateOne({ username: recipient.username }, { $set: recipient });
+
+        // Notify recipient that resources have arrived
+        await this.messagesService.sendResourceTransferMessage(
+            movement.senderUsername,
+            movement.targetUsername,
+            movement.senderVillageName,
+            movement.targetVillageName,
+            {
+                wood: movement.resources.woodAmount,
+                stone: movement.resources.stonesAmount,
+                crop: movement.resources.cropAmount,
+            },
+            false, // recipient message
+        );
     }
 
     private calculateAttackingPower(attackingTroops: TroopsAmounts): number {
@@ -516,6 +578,19 @@ export class MovementService {
         killedTroops.catapults = Math.floor(ratio * troops.catapults);
 
         return killedTroops;
+    }
+
+    /** Scale troop counts by a factor (e.g. for Self Defense loss reduction). */
+    private scaleTroopsAmounts(troops: TroopsAmounts, factor: number): TroopsAmounts {
+        const out = new TroopsAmounts(0, 0, 0, 0, 0, 0, 0);
+        out.spearFighters = Math.floor(troops.spearFighters * factor);
+        out.swordFighters = Math.floor(troops.swordFighters * factor);
+        out.axeFighters = Math.floor(troops.axeFighters * factor);
+        out.archers = Math.floor(troops.archers * factor);
+        out.magicians = Math.floor(troops.magicians * factor);
+        out.horsemen = Math.floor(troops.horsemen * factor);
+        out.catapults = Math.floor(troops.catapults * factor);
+        return out;
     }
 
     private updateRemainingTroopsInVillage(villageTroops: TroopsAmounts, killedTroops: TroopsAmounts): void {

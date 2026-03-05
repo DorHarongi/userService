@@ -7,6 +7,7 @@ import { Boss, IBoss } from '../models/boss.entity';
 import { RaidReport } from '../models/raidReport.entity';
 import { BossDTO, RaidReportDTO, AttackBossDTO, BossAttackResultDTO } from '../dtos/bossDTO';
 import { TroopsAmounts } from '../../user/models/troopsAmounts';
+import { ResourcesAmounts } from '../../user/models/resourcesAmounts';
 import { User } from '../../user/models/user.entity';
 import { Village } from '../../user/models/village.entity';
 import { IClan } from '../../clans/models/clan.entity';
@@ -33,9 +34,15 @@ import {
     catapultsAttackingStat,
     getSkillBonus,
     SkillCategory,
+    getArmySpeed,
+    calculateDistance,
+    calculateTravelTimeMs,
 } from 'utils';
 import { RelicsService } from '../../relics/relics.service';
 import { AnnouncementsService } from '../../announcements/announcements.service';
+import { AttackReport } from '../../reports/models/attackReport.entity';
+import { ReportsService } from '../../reports/services/reports/reports.service';
+import { unlockAchievements } from '../../user/services/achievement-utils';
 
 const BOSSES_COLLECTION = 'bosses';
 const MYTHIC_BOSS_DAMAGE_COLLECTION = 'mythicBossDamage';
@@ -43,6 +50,7 @@ const RAID_REPORTS_COLLECTION = 'raidReports';
 const USERS_COLLECTION = 'users';
 const CLANS_COLLECTION = 'clans';
 const GRIDS_COLLECTION = 'grids';
+const MOVEMENTS_COLLECTION = 'movements';
 const WORLD_SIZE = 100;
 const PROXIMITY_RANGE = 20; // Bosses spawn within this range of villages
 
@@ -55,6 +63,7 @@ export class BossService {
         private messagesService: MessagesService,
         private relicsService: RelicsService,
         private announcementsService: AnnouncementsService,
+        private reportsService: ReportsService,
     ) {}
 
     // =====================
@@ -194,11 +203,23 @@ export class BossService {
         const name = bossNames[tier];
 
         const boss = new Boss(tier, name, x, y, hp);
+        const doc: any = { ...boss };
+
+        // Mythic: bind a relic at spawn (prefer unheld; if all held, pick any - winner takes it)
+        if (tier === BossTier.MYTHIC) {
+            const allRelics = await this.relicsService.getAllRelics();
+            const available = allRelics.filter((r) => !r.holderUsername);
+            const pool = available.length > 0 ? available : allRelics;
+            const chosen = pool[Math.floor(Math.random() * pool.length)];
+            doc.relicId = chosen.relicId;
+        }
+
         const result = await this.dbAccessorService
             .getCollection(BOSSES_COLLECTION)
-            .insertOne(boss);
-        
+            .insertOne(doc);
+
         boss._id = result.insertedId;
+        (boss as any).relicId = doc.relicId;
         return new BossDTO(boss);
     }
 
@@ -264,8 +285,7 @@ export class BossService {
     // ATTACK LOGIC
     // =====================
 
-    async attackBoss(username: string, dto: AttackBossDTO): Promise<BossAttackResultDTO> {
-        // Get user and validate
+    async attackBoss(username: string, dto: AttackBossDTO): Promise<{ travelTimeMs: number }> {
         const user = await this.dbAccessorService
             .getCollection(USERS_COLLECTION)
             .findOne({ username }) as User;
@@ -278,7 +298,6 @@ export class BossService {
             throw new HttpException('You must be in a clan to attack bosses', HttpStatus.BAD_REQUEST);
         }
 
-        // Get clan
         const clan = await this.dbAccessorService
             .getCollection(CLANS_COLLECTION)
             .findOne({ clanName: user.clanName }) as IClan;
@@ -287,13 +306,12 @@ export class BossService {
             throw new HttpException('Clan not found', HttpStatus.NOT_FOUND);
         }
 
-        // Get village
-        const village = user.villages.find(v => v.villageName === dto.villageName);
-        if (!village) {
+        const villageIndex = user.villages.findIndex(v => v.villageName === dto.villageName);
+        const village = user.villages[villageIndex];
+        if (!village || villageIndex < 0) {
             throw new HttpException('Village not found', HttpStatus.NOT_FOUND);
         }
 
-        // Validate troops
         if (!dto.troops || !this.hasTroopsToAttack(dto.troops)) {
             throw new HttpException('You must select at least one troop to attack', HttpStatus.BAD_REQUEST);
         }
@@ -306,7 +324,6 @@ export class BossService {
             throw new HttpException('You have no energy', HttpStatus.BAD_REQUEST);
         }
 
-        // Get boss
         const boss = await this.dbAccessorService
             .getCollection(BOSSES_COLLECTION)
             .findOne({ _id: new ObjectId(dto.bossId), isDefeated: false }) as IBoss;
@@ -315,7 +332,6 @@ export class BossService {
             throw new HttpException('Boss not found or already defeated', HttpStatus.NOT_FOUND);
         }
 
-        // Mythic bosses are open to all clans; normal bosses can be claimed
         if (boss.tier !== BossTier.MYTHIC) {
             if (boss.claimedByClanId && boss.claimedByClanId !== clan._id?.toHexString()) {
                 throw new HttpException('This boss is claimed by another clan', HttpStatus.FORBIDDEN);
@@ -333,18 +349,100 @@ export class BossService {
                             }
                         }
                     );
-                boss.claimedByClanId = clan._id?.toHexString();
-                boss.claimedByClanName = clan.clanName;
-                boss.claimedAt = new Date();
             }
         }
 
-        // Calculate damage
-        const rawDamage = this.calculateAttackingPower(dto.troops);
+        // Atomically deduct energy and troops
+        const troopsPath = `villages.${villageIndex}.troops`;
+        const atomicResult = await this.dbAccessorService.getCollection(USERS_COLLECTION).findOneAndUpdate(
+            {
+                username,
+                energy: { $gte: 1 },
+                [`${troopsPath}.spearFighters`]: { $gte: dto.troops.spearFighters },
+                [`${troopsPath}.swordFighters`]: { $gte: dto.troops.swordFighters },
+                [`${troopsPath}.axeFighters`]: { $gte: dto.troops.axeFighters },
+                [`${troopsPath}.archers`]: { $gte: dto.troops.archers },
+                [`${troopsPath}.magicians`]: { $gte: dto.troops.magicians },
+                [`${troopsPath}.horsemen`]: { $gte: dto.troops.horsemen },
+                [`${troopsPath}.catapults`]: { $gte: dto.troops.catapults },
+            },
+            {
+                $inc: {
+                    energy: -1,
+                    [`${troopsPath}.spearFighters`]: -dto.troops.spearFighters,
+                    [`${troopsPath}.swordFighters`]: -dto.troops.swordFighters,
+                    [`${troopsPath}.axeFighters`]: -dto.troops.axeFighters,
+                    [`${troopsPath}.archers`]: -dto.troops.archers,
+                    [`${troopsPath}.magicians`]: -dto.troops.magicians,
+                    [`${troopsPath}.horsemen`]: -dto.troops.horsemen,
+                    [`${troopsPath}.catapults`]: -dto.troops.catapults,
+                },
+            },
+            { returnDocument: 'after' },
+        );
+
+        if (!atomicResult) {
+            throw new HttpException('Attack failed - not enough energy or troops', HttpStatus.CONFLICT);
+        }
+
+        const distance = calculateDistance(village.location.x, village.location.y, boss.x, boss.y);
+        const armySpeed = getArmySpeed(dto.troops as any);
+        const quickStepBonus = getSkillBonus(village.skills, SkillCategory.QUICK_STEP);
+        const travelTimeMs = calculateTravelTimeMs(distance, armySpeed, quickStepBonus);
+        const departureTime = new Date();
+        const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
+
+        const movement = {
+            type: 'boss_attack',
+            senderUsername: username,
+            senderVillageName: village.villageName,
+            targetUsername: 'boss',
+            targetVillageName: boss.name,
+            troops: dto.troops,
+            bossId: dto.bossId,
+            departureTime,
+            arrivalTime,
+            status: 'in_transit',
+        };
+
+        await this.dbAccessorService.getCollection(MOVEMENTS_COLLECTION).insertOne(movement);
+
+        return { travelTimeMs };
+    }
+
+    /**
+     * Called by MovementService when a boss_attack movement arrives.
+     * Resolves damage, troop losses, boss HP, rewards, and reports.
+     */
+    async resolveBossAttack(movement: { senderUsername: string; senderVillageName: string; troops: any; bossId: string }): Promise<void> {
+        const username = movement.senderUsername;
+        const user = await this.dbAccessorService
+            .getCollection(USERS_COLLECTION)
+            .findOne({ username }) as User;
+        if (!user) return;
+
+        const village = user.villages.find(v => v.villageName === movement.senderVillageName);
+        if (!village) return;
+
+        const boss = await this.dbAccessorService
+            .getCollection(BOSSES_COLLECTION)
+            .findOne({ _id: new ObjectId(movement.bossId), isDefeated: false }) as IBoss;
+
+        if (!boss) {
+            // Boss already defeated or expired - return troops
+            this.returnTroopsToVillage(username, movement.senderVillageName, movement.troops);
+            return;
+        }
+
+        const clan = user.clanName
+            ? await this.dbAccessorService.getCollection(CLANS_COLLECTION).findOne({ clanName: user.clanName }) as IClan
+            : null;
+
+        const dto = movement.troops;
+        const rawDamage = this.calculateAttackingPower(dto);
         const distance = this.calculateDistance(village.location.x, village.location.y, boss.x, boss.y);
         const distanceMultiplier = getDistanceDamageMultiplier(distance);
         
-        // Apply Sharper Blades skill bonus to attack damage
         let damageMultiplier = distanceMultiplier;
         const sharperBladesBonus = getSkillBonus(village.skills, SkillCategory.SHARPER_BLADES);
         if (sharperBladesBonus > 0) {
@@ -353,34 +451,28 @@ export class BossService {
         
         const actualDamage = Math.floor(rawDamage * damageMultiplier);
 
-        // Track per-clan damage on Mythic boss for relic assignment
         if (boss.tier === BossTier.MYTHIC) {
             await this.dbAccessorService.getCollection(MYTHIC_BOSS_DAMAGE_COLLECTION).updateOne(
                 { bossId: boss._id!.toHexString(), username },
-                { $setOnInsert: { bossId: boss._id!.toHexString(), clanName: user.clanName, username, villageName: dto.villageName }, $inc: { damage: actualDamage } },
+                { $setOnInsert: { bossId: boss._id!.toHexString(), clanName: user.clanName, username, villageName: movement.senderVillageName }, $inc: { damage: actualDamage } },
                 { upsert: true },
             );
         }
 
-        // Calculate troop losses (boss fights back)
-        // Flat damage cap per tier - predictable losses regardless of boss HP
         const bossDamageBack = bossMaxDamageBack[boss.tier];
-        let damageRatio = Math.min(0.25, bossDamageBack / (rawDamage + 1)); // Max 25% loss
+        let damageRatio = Math.min(0.25, bossDamageBack / (rawDamage + 1));
 
-        // Self Defense skill always reduces troop losses in boss fights
         const selfDefenseBonus = getSkillBonus(village.skills, SkillCategory.SELF_DEFENSE);
         if (selfDefenseBonus > 0) {
             damageRatio = damageRatio * (1 - selfDefenseBonus);
         }
         
-        const lostTroops = this.calculateKilledTroops(dto.troops, damageRatio);
+        const lostTroops = this.calculateKilledTroops(dto, damageRatio);
 
-        // Update boss HP
         const bossHpBefore = boss.currentHp;
         const bossHpAfter = Math.max(0, boss.currentHp - actualDamage);
         const bossDefeated = bossHpAfter <= 0;
 
-        // Create raid report
         const raidReport = new RaidReport(
             username,
             village.villageName,
@@ -390,7 +482,7 @@ export class BossService {
             boss.tier,
             boss.x,
             boss.y,
-            dto.troops,
+            dto,
             lostTroops,
             rawDamage,
             distanceMultiplier,
@@ -398,51 +490,84 @@ export class BossService {
             bossHpBefore,
             bossHpAfter,
             boss.maxHp,
-            distance
+            distance,
         );
 
-        const reportResult = await this.dbAccessorService
-            .getCollection(RAID_REPORTS_COLLECTION)
-            .insertOne(raidReport);
-        raidReport._id = reportResult.insertedId;
+        await this.dbAccessorService.getCollection(RAID_REPORTS_COLLECTION).insertOne(raidReport);
 
-        // Update user (energy, troops, weekly raid damage, and stats)
-        this.updateRemainingTroops(village.troops, lostTroops);
-        user.energy -= 1;
-        user.weeklyRaidDamage = (user.weeklyRaidDamage || 0) + actualDamage;
+        const emptyTroops = new TroopsAmounts(0, 0, 0, 0, 0, 0, 0);
+        const emptyLoot = new ResourcesAmounts(0, 0, 0);
+        const bossReport = new AttackReport(
+            username,
+            village.villageName,
+            boss.name,
+            'Boss',
+            new Date(),
+            bossDefeated,
+            emptyLoot,
+            Math.floor(rawDamage * distanceMultiplier),
+            0, 0, 0, 0,
+            dto,
+            lostTroops,
+            emptyTroops, emptyTroops, emptyTroops, emptyTroops,
+            'boss',
+            boss.name,
+            boss.tier,
+            bossHpBefore,
+            bossHpAfter,
+            actualDamage,
+            undefined,
+        );
+        if (boss.tier === BossTier.MYTHIC && (boss as any).relicId) {
+            const relicDef = RELIC_NAMES.find((r) => r.id === (boss as any).relicId);
+            bossReport.bossRelicId = (boss as any).relicId;
+            bossReport.bossRelicName = relicDef?.name ?? (boss as any).relicId;
+        }
+        await this.reportsService.saveAttackReport(bossReport);
 
-        user.weeklyStats = user.weeklyStats || {
-            bossDamage: 0,
-            resourcesStolen: 0,
-            successfulDefenses: 0,
-        };
-        user.totalStats = user.totalStats || {
-            lifetimeBossDamage: 0,
-            lifetimeResourcesStolen: 0,
-            totalBattlesWon: 0,
-        };
+        // Return surviving troops
+        const survivingTroops = new TroopsAmounts(
+            Math.max(0, (dto.spearFighters || 0) - (lostTroops.spearFighters || 0)),
+            Math.max(0, (dto.swordFighters || 0) - (lostTroops.swordFighters || 0)),
+            Math.max(0, (dto.axeFighters || 0) - (lostTroops.axeFighters || 0)),
+            Math.max(0, (dto.archers || 0) - (lostTroops.archers || 0)),
+            Math.max(0, (dto.magicians || 0) - (lostTroops.magicians || 0)),
+            Math.max(0, (dto.horsemen || 0) - (lostTroops.horsemen || 0)),
+            Math.max(0, (dto.catapults || 0) - (lostTroops.catapults || 0)),
+        );
+        await this.returnTroopsToVillage(username, movement.senderVillageName, survivingTroops);
 
-        user.weeklyStats.bossDamage += actualDamage;
-        user.totalStats.lifetimeBossDamage += actualDamage;
+        // Update weekly/total stats
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username },
+            {
+                $inc: {
+                    weeklyRaidDamage: actualDamage,
+                    'weeklyStats.bossDamage': actualDamage,
+                    'totalStats.lifetimeBossDamage': actualDamage,
+                },
+            },
+        );
 
-        await this.dbAccessorService
-            .getCollection(USERS_COLLECTION)
-            .updateOne({ username }, { $set: user });
+        const updatedUser = await this.dbAccessorService.getCollection(USERS_COLLECTION)
+            .findOne({ username }) as unknown as User;
+        if (updatedUser && unlockAchievements(updatedUser, ['weeklyStats.bossDamage', 'totalStats.lifetimeBossDamage'])) {
+            await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+                { username },
+                { $set: { unlockedAchievements: (updatedUser as any).unlockedAchievements } },
+            );
+        }
 
-        // Update boss - use atomic update with isDefeated: false condition to prevent race conditions
         if (bossDefeated) {
-            // Try to mark boss as defeated - only succeeds if not already defeated
             const updateResult = await this.dbAccessorService
                 .getCollection(BOSSES_COLLECTION)
                 .updateOne(
                     { _id: boss._id, isDefeated: false },
-                    { $set: { currentHp: 0, isDefeated: true, defeatedAt: new Date() } }
+                    { $set: { currentHp: 0, isDefeated: true, defeatedAt: new Date() } },
                 );
 
-            // If we actually defeated the boss (not already defeated by another request)
             if (updateResult.modifiedCount > 0) {
                 if (boss.tier === BossTier.MYTHIC) {
-                    // Mythic defeat: assign relic to clan with most total damage
                     const damageDocs = await this.dbAccessorService
                         .getCollection(MYTHIC_BOSS_DAMAGE_COLLECTION)
                         .find({ bossId: boss._id!.toHexString() })
@@ -465,63 +590,57 @@ export class BossService {
                         }
                     }
                     if (winnerUsername && winnerVillageName && topClanEntry) {
-                        const allRelics = await this.relicsService.getAllRelics();
-                        const unassigned = allRelics.find((r) => !r.holderUsername);
-                        const relicId = unassigned?.relicId;
+                        const relicId = (boss as any).relicId;
                         if (relicId) {
-                        const relicName = await this.relicsService.assignRelicToClan(relicId, topClanEntry[0], winnerUsername, winnerVillageName);
-                        await this.announcementsService.createAnnouncement(
-                            'relic_obtained',
-                            `👑 Clan **${topClanEntry[0]}** has obtained **${relicName}**!`,
-                            { relicId, relicName, clanName: topClanEntry[0] },
-                        );
+                            const relicName = await this.relicsService.assignRelicToClan(relicId, topClanEntry[0], winnerUsername, winnerVillageName);
+                            await this.messagesService.sendGlobalInboxMessage(
+                                `The Mythic Beast has fallen!`,
+                                `The world trembles — Clan ${topClanEntry[0]} has slain the ${boss.name} and claimed the ${relicName}. Their power grows beyond measure.`,
+                            );
                         }
                     }
-                    return {
-                        report: new RaidReportDTO(raidReport),
-                        bossDefeated: true,
-                    };
+                    return;
                 }
 
-                // Increment clan's total bosses killed
-                await this.dbAccessorService
-                    .getCollection(CLANS_COLLECTION)
-                    .updateOne(
-                        { clanName: clan.clanName },
-                        { $inc: { totalBossesKilled: 1 } }
-                    );
+                if (clan) {
+                    await this.dbAccessorService
+                        .getCollection(CLANS_COLLECTION)
+                        .updateOne(
+                            { clanName: clan.clanName },
+                            { $inc: { totalBossesKilled: 1 } },
+                        );
 
-                // Distribute rewards to all clan members
-                const rewards = await this.distributeRewards(clan, boss.tier);
-                
-                return {
-                    report: new RaidReportDTO(raidReport),
-                    bossDefeated: true,
-                    rewards
-                };
-            } else {
-                // Boss was already defeated by another concurrent attack
-                // Return result without rewards (they were already distributed)
-                return {
-                    report: new RaidReportDTO(raidReport),
-                    bossDefeated: true,
-                    // No rewards - already distributed to clan by the winning attack
-                };
+                    await this.distributeRewards(clan, boss.tier);
+                }
             }
         } else {
-            // Only update HP if boss is not already defeated
             await this.dbAccessorService
                 .getCollection(BOSSES_COLLECTION)
                 .updateOne(
                     { _id: boss._id, isDefeated: false },
-                    { $set: { currentHp: bossHpAfter } }
+                    { $set: { currentHp: bossHpAfter } },
                 );
-
-            return {
-                report: new RaidReportDTO(raidReport),
-                bossDefeated: false
-            };
         }
+    }
+
+    private async returnTroopsToVillage(username: string, villageName: string, troops: any): Promise<void> {
+        const user = await this.dbAccessorService.getCollection(USERS_COLLECTION).findOne({ username }) as User;
+        if (!user) return;
+        const village = user.villages.find(v => v.villageName === villageName);
+        if (!village) return;
+
+        village.troops.spearFighters += (troops.spearFighters || 0);
+        village.troops.swordFighters += (troops.swordFighters || 0);
+        village.troops.axeFighters += (troops.axeFighters || 0);
+        village.troops.archers += (troops.archers || 0);
+        village.troops.magicians += (troops.magicians || 0);
+        village.troops.horsemen += (troops.horsemen || 0);
+        village.troops.catapults += (troops.catapults || 0);
+
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username },
+            { $set: { villages: user.villages } },
+        );
     }
 
     // =====================
@@ -676,6 +795,37 @@ export class BossService {
         return await this.dbAccessorService
             .getCollection(RAID_REPORTS_COLLECTION)
             .countDocuments({ attackerUsername: username, read: false });
+    }
+
+    // =====================
+    // BOSS DAMAGE LEADERBOARD
+    // =====================
+
+    async getBossDamageLeaderboard(bossId: string): Promise<{ clanName: string; totalDamage: number; players: { username: string; damage: number }[] }[]> {
+        const raidReports = await this.dbAccessorService
+            .getCollection(RAID_REPORTS_COLLECTION)
+            .find({ bossId })
+            .toArray() as RaidReport[];
+
+        const byClan: Record<string, { totalDamage: number; players: Record<string, number> }> = {};
+        for (const r of raidReports) {
+            const clan = r.attackerClanName || 'No Clan';
+            if (!byClan[clan]) {
+                byClan[clan] = { totalDamage: 0, players: {} };
+            }
+            byClan[clan].totalDamage += r.actualDamage;
+            byClan[clan].players[r.attackerUsername] = (byClan[clan].players[r.attackerUsername] || 0) + r.actualDamage;
+        }
+
+        return Object.entries(byClan)
+            .map(([clanName, data]) => ({
+                clanName,
+                totalDamage: data.totalDamage,
+                players: Object.entries(data.players)
+                    .map(([username, damage]) => ({ username, damage }))
+                    .sort((a, b) => b.damage - a.damage),
+            }))
+            .sort((a, b) => b.totalDamage - a.totalDamage);
     }
 
     // =====================

@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Post, UseGuards, Request } from '@nestjs/common';
 import { AuthGuard } from '../../auth/guards/auth.guard';
+import { ServerStatusGuard } from '../../server/server-status.guard';
 import { BossService } from '../services/boss.service';
 import { AttackBossDTO, BossAttackResultDTO, BossDTO, RaidReportDTO } from '../dtos/bossDTO';
 
@@ -14,7 +15,11 @@ export class BossController {
         return this.bossService.getAllActiveBosses();
     }
 
-    // Get specific boss details
+    @Get('damage-leaderboard/:bossId')
+    async getBossDamageLeaderboard(@Param('bossId') bossId: string) {
+        return this.bossService.getBossDamageLeaderboard(bossId);
+    }
+
     @Get(':bossId')
     async getBoss(@Param('bossId') bossId: string): Promise<BossDTO | null> {
         return this.bossService.getBossById(bossId);
@@ -33,14 +38,12 @@ export class BossController {
         return { hasBoss };
     }
 
-    // Attack a boss
     @Post('attack/:username')
     async attackBoss(
         @Request() req: any,
         @Param('username') username: string,
         @Body() dto: AttackBossDTO
-    ): Promise<BossAttackResultDTO> {
-        // Use authenticated username instead of URL param
+    ): Promise<{ travelTimeMs: number }> {
         return this.bossService.attackBoss(req.user.username, dto);
     }
 
@@ -88,6 +91,7 @@ export class BossController {
 
     // Mark raid report as read
     @Post('reports/read/:reportId/:username')
+    @UseGuards(ServerStatusGuard)
     async markRaidReportAsRead(
         @Request() req: any,
         @Param('reportId') reportId: string,
@@ -113,6 +117,7 @@ export class BossController {
 
     // Claim a boss reward
     @Post('rewards/claim/:username/:rewardIndex')
+    @UseGuards(ServerStatusGuard)
     async claimBossReward(
         @Request() req: any,
         @Param('username') username: string,

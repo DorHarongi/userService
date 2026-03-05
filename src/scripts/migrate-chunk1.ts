@@ -27,8 +27,15 @@ async function run() {
                                         skills: {
                                             $ifNull: ['$$v.skills', EMPTY_SKILLS],
                                         },
-                                        'buildingsLevels.stableLevel': {
-                                            $ifNull: ['$$v.buildingsLevels.stableLevel', 0],
+                                        buildingsLevels: {
+                                            $mergeObjects: [
+                                                { $ifNull: ['$$v.buildingsLevels', {}] },
+                                                {
+                                                    stableLevel: {
+                                                        $ifNull: ['$$v.buildingsLevels.stableLevel', 1],
+                                                    },
+                                                },
+                                            ],
                                         },
                                         aliveSpies: {
                                             $ifNull: ['$$v.aliveSpies', 0],

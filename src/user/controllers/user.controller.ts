@@ -8,7 +8,9 @@ import { UserVillageRequestDTO } from '../dtos/userVillageRequestDTO';
 import { VillageDTO } from '../dtos/villageDTO';
 import { AuthService } from '../../auth/services/auth.service';
 import { AuthGuard } from '../../auth/guards/auth.guard';
+import { ServerStatusGuard } from '../../server/server-status.guard';
 import { MovementService } from '../../attacking/services/movement.service';
+import { ServerService } from '../../server/server.service';
 
 const MAX_INTRO_LENGTH = 200;
 
@@ -41,7 +43,8 @@ export class UserController {
     constructor(
         private userRepositorService: UserRepositoryService,
         private authService: AuthService,
-        private movementService: MovementService
+        private movementService: MovementService,
+        private serverService: ServerService,
     )
     {
 
@@ -49,8 +52,13 @@ export class UserController {
     }
     // Public - registration
     @Post('register')
-    async registerUser(@Body() userFromClient: userFromClientDTO): Promise<LoginResponseDTO>
+    async registerUser(@Body() userFromClient: userFromClientDTO, @Request() req: any): Promise<LoginResponseDTO>
     {
+        const serverId = (req as any)?.serverId ?? 1;
+        const closed = await this.serverService.isRegistrationClosed(serverId);
+        if (closed) {
+            throw new HttpException('Registration is closed for this server', HttpStatus.BAD_REQUEST);
+        }
         userFromClient.password = crypto.createHash("shake256")
         .update(userFromClient.password)
         .digest("hex");
@@ -120,6 +128,12 @@ export class UserController {
         return await this.userRepositorService.getClanLeaderboard(category);
     }
 
+    // Public - previous week's leaderboard archive
+    @Get('leaderboard-archive')
+    async getLeaderboardArchive(): Promise<any> {
+        return await this.userRepositorService.getLeaderboardArchive();
+    }
+
     @Post('village')
     @UseGuards(AuthGuard)
     async getVillage(@Request() req: any, @Body() userVillageRequestDTO: UserVillageRequestDTO): Promise<VillageDTO>
@@ -171,14 +185,14 @@ export class UserController {
     }
 
     @Post('title')
-    @UseGuards(AuthGuard)
+    @UseGuards(AuthGuard, ServerStatusGuard)
     async updateTitle(@Request() req: any, @Body() body: UpdateTitleDTO): Promise<{ success: boolean }> {
         const title = body.title || null;
         return await this.userRepositorService.updateTitle(req.user.username, title);
     }
 
     @Post('theme')
-    @UseGuards(AuthGuard)
+    @UseGuards(AuthGuard, ServerStatusGuard)
     async updateTheme(@Request() req: any, @Body() body: UpdateThemeDTO): Promise<{ success: boolean }> {
         return await this.userRepositorService.updateTheme(req.user.username, body.theme || 'default');
     }

@@ -1,4 +1,4 @@
-import { BossTier } from "utils";
+import { BossTier, RELIC_NAMES } from "utils";
 import { IBoss } from "../models/boss.entity";
 import { IRaidReport } from "../models/raidReport.entity";
 import { TroopsAmounts } from "../../user/models/troopsAmounts";
@@ -17,6 +17,8 @@ export class BossDTO {
     claimedAt?: Date;
     isDefeated: boolean;
     expiresAt?: Date; // When the boss will despawn/expire
+    relicId?: string;  // Mythic only: relic bound at spawn
+    relicName?: string;
 
     constructor(boss: IBoss) {
         this.id = boss._id?.toHexString() || '';
@@ -31,6 +33,11 @@ export class BossDTO {
         this.claimedByClanName = boss.claimedByClanName;
         this.claimedAt = boss.claimedAt;
         this.isDefeated = boss.isDefeated;
+        this.relicId = boss.relicId;
+        if (boss.relicId) {
+            const def = RELIC_NAMES.find((r) => r.id === boss.relicId);
+            this.relicName = def?.name ?? boss.relicId;
+        }
         
         // Calculate expiration time
         if (boss.claimedAt) {

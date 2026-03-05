@@ -3,9 +3,10 @@ import { TrainDTO } from '../dtos/trainDTO';
 import { TroopsTrainingService } from './services/troops-training-service/troops-training.service';
 import { QuestAwareResponse } from '../../quests/quest-response.dto';
 import { AuthGuard } from '../../auth/guards/auth.guard';
+import { ServerStatusGuard } from '../../server/server-status.guard';
 
 @Controller('troops-training')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, ServerStatusGuard)
 export class TroopsTrainingController {
     constructor(private troopsTrainingService: TroopsTrainingService) {}
     

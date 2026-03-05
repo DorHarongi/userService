@@ -2,7 +2,7 @@ import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { DbAccessorService } from '../../../database/services/db-accessor.service';
 import { User } from '../../../user/models/user.entity';
 import { upgradeDTO } from '../../dtos/upgradeDTO';
-import { buildingLevelUpMaterialCostsByName, MaterialsCost, quartersPopulationByLevel } from 'utils';
+import { buildingLevelUpMaterialCostsByName, MaterialsCost, quartersPopulationByLevel, getMaxSpies } from 'utils';
 import { ResourcesAmounts } from '../../../user/models/resourcesAmounts';
 import { Village } from '../../../user/models/village.entity';
 import { UpdateResult } from 'mongodb';
@@ -83,7 +83,13 @@ export class BuildingsUpgradingService {
             ["wall"]: {getter: () => {return userVillage.buildingsLevels.wallLevel }, setter: (newLevel) => {userVillage.buildingsLevels.wallLevel = newLevel}},
             ["woodFactory"]: {getter: () => {return userVillage.buildingsLevels.woodFactoryLevel }, setter: (newLevel) => {userVillage.buildingsLevels.woodFactoryLevel = newLevel}},
             ["woodWarehouse"]: {getter: () => {return userVillage.buildingsLevels.woodWarehouseLevel }, setter: (newLevel) => {userVillage.buildingsLevels.woodWarehouseLevel = newLevel}},
-            ["stable"]: {getter: () => {return userVillage.buildingsLevels.stableLevel }, setter: (newLevel) => {userVillage.buildingsLevels.stableLevel = newLevel}},
+            ["stable"]: {
+                getter: () => userVillage.buildingsLevels.stableLevel,
+                setter: (newLevel) => {
+                    userVillage.buildingsLevels.stableLevel = newLevel;
+                    userVillage.aliveSpies = getMaxSpies(newLevel);
+                }
+            },
         };
         return userBuildingsLevelsDictionary;
     }

@@ -18,15 +18,20 @@ export class ReportsService {
         return result.acknowledged;
     }
 
+    private buildReportQuery(username: string): object {
+      return {
+        $or: [
+          { attackerName: username },
+          { defenderName: username, reportType: { $ne: 'spy' } },
+          { defenderName: username, reportType: 'spy', attackerWon: false },
+        ],
+      };
+    }
+
     async getNumberOfAttackReportPages(username: string): Promise<number> {
       const numberOfAttackReports: number = await this.dbAccessorService
       .getCollection(COLLECTION_NAME)
-      .countDocuments({
-        $or: [
-          { attackerName: username },
-          { defenderName: username }
-        ]
-      });
+      .countDocuments(this.buildReportQuery(username));
       return Math.ceil(numberOfAttackReports / MAX_ATTACK_REPORTS_IN_EACH_PAGE);
     }
 
@@ -35,35 +40,28 @@ export class ReportsService {
       const skip = MAX_ATTACK_REPORTS_IN_EACH_PAGE * (page - 1);
       const limit = MAX_ATTACK_REPORTS_IN_EACH_PAGE;
 
-      let reportsInPage: AttackReport[] = (await this.dbAccessorService.getCollection(COLLECTION_NAME).find({
-        $or: [
-          { attackerName: username },
-          { defenderName: username }
-        ]
-      }).sort({ date: -1 }).skip(skip).limit(limit).toArray()) as AttackReport[];
+      let reportsInPage: AttackReport[] = (await this.dbAccessorService.getCollection(COLLECTION_NAME).find(
+        this.buildReportQuery(username)
+      ).sort({ date: -1 }).skip(skip).limit(limit).toArray()) as AttackReport[];
 
       return reportsInPage.map((attackReport: AttackReport)=>{
-        // if user attacked and lost the fight, he shouldnt know anything because his army didnt return.
-        if(attackReport.attackerName == username && !attackReport.attackerWon)
-        {
+        // If user attacked and lost (PvP only), hide defender info — army didn't return so no intel.
+        // Boss reports always show full boss HP/damage.
+        if (attackReport.reportType === 'pvp' && attackReport.attackerName === username && !attackReport.attackerWon) {
           attackReport.defenderTotalArmyDefence = 0;
           attackReport.defenderTotalDefence = 0;
-          attackReport.defenderTotalSupportArmyDefence = 0
+          attackReport.defenderTotalSupportArmyDefence = 0;
           attackReport.wallDefence = 0;
           attackReport.defenderTotalTroops = undefined;
           attackReport.defenderTotalLostTroops = undefined;
           attackReport.supportTotalTroops = undefined;
           attackReport.supportTotalLostTroops = undefined;
         }
-        return new AttackReportToClientDTO(attackReport, username); // removes mongoId, adds read status
+        return new AttackReportToClientDTO(attackReport, username);
       })
     }
 
     async getUnreadReportCount(username: string): Promise<number> {
-      // Count reports where user is attacker and not read by attacker
-      // OR user is defender and not read by defender
-      // For backward compatibility, treat undefined/null readBy fields as read (true)
-      // So only count where the field is explicitly false
       const unreadAsAttacker = await this.dbAccessorService.getCollection(COLLECTION_NAME).countDocuments({
         attackerName: username,
         readByAttacker: false
@@ -71,7 +69,11 @@ export class ReportsService {
       
       const unreadAsDefender = await this.dbAccessorService.getCollection(COLLECTION_NAME).countDocuments({
         defenderName: username,
-        readByDefender: false
+        readByDefender: false,
+        $or: [
+          { reportType: { $ne: 'spy' } },
+          { reportType: 'spy', attackerWon: false },
+        ],
       });
       
       return unreadAsAttacker + unreadAsDefender;

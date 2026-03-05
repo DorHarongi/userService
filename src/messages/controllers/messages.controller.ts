@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards, Request }
 import { MessagesService } from '../services/messages.service';
 import { MessageDTO, SendMessageDTO } from '../dtos/messageDTO';
 import { AuthGuard } from '../../auth/guards/auth.guard';
+import { ServerStatusGuard } from '../../server/server-status.guard';
 
 @Controller('messages')
 @UseGuards(AuthGuard)
@@ -9,6 +10,7 @@ export class MessagesController {
     constructor(private messagesService: MessagesService) {}
 
     @Post('send')
+    @UseGuards(ServerStatusGuard)
     async sendMessage(@Request() req: any, @Body() sendMessageDTO: SendMessageDTO): Promise<MessageDTO> {
         sendMessageDTO.senderUsername = req.user.username;
         return await this.messagesService.sendMessage(sendMessageDTO);
@@ -44,12 +46,14 @@ export class MessagesController {
     }
 
     @Post('read')
+    @UseGuards(ServerStatusGuard)
     async markAsRead(@Request() req: any, @Body() body: { messageId: string; username: string }): Promise<{ success: boolean }> {
         // Use authenticated username
         return await this.messagesService.markAsRead(body.messageId, req.user.username);
     }
 
     @Delete(':messageId/:username')
+    @UseGuards(ServerStatusGuard)
     async deleteMessage(
         @Request() req: any,
         @Param('messageId') messageId: string,

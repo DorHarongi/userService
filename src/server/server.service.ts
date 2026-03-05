@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { DbAccessorService } from '../database/services/db-accessor.service';
+import { DbConnectorService } from '../database/services/db-connector.service';
 import { RELIC_NAMES } from 'utils';
 import { AnnouncementsService } from '../announcements/announcements.service';
 
 const SERVER_CONFIG_COLLECTION = 'serverConfig';
 const RELICS_COLLECTION = 'relics';
+const SERVERS_COLLECTION = 'servers';
 
 export interface ServerConfigDocument {
   serverId: number;
@@ -13,10 +15,19 @@ export interface ServerConfigDocument {
   endedAt?: Date;
 }
 
+export interface ServerListItem {
+  serverId: number;
+  name: string;
+  status: string;
+  playerCount?: number;
+  isClosed?: boolean;
+}
+
 @Injectable()
 export class ServerService {
   constructor(
     private dbAccessorService: DbAccessorService,
+    private dbConnectorService: DbConnectorService,
     private announcementsService: AnnouncementsService,
   ) {}
 
@@ -60,5 +71,80 @@ export class ServerService {
     if (winner) {
       await this.endServer(winner[0]);
     }
+  }
+
+  private readonly USERS_COLLECTION = 'users';
+
+  /** List all servers (from accounts DB). Returns [] if accounts DB or servers collection not yet created. */
+  async getServersList(): Promise<ServerListItem[]> {
+    try {
+      const coll = this.dbConnectorService.getAccountsDb().collection(SERVERS_COLLECTION);
+      const docs = await coll.find({}).sort({ serverId: 1 }).toArray() as any[];
+      const list: ServerListItem[] = [];
+      for (const d of docs) {
+        const serverId = d.serverId as number;
+        let playerCount = 0;
+        try {
+          const serverDb = this.dbConnectorService.getServerDb(serverId);
+          playerCount = await serverDb.collection(this.USERS_COLLECTION).countDocuments();
+        } catch {
+          // ignore missing DB
+        }
+        list.push({
+          serverId,
+          name: d.name ?? `Server ${serverId}`,
+          status: d.status ?? 'active',
+          playerCount,
+          isClosed: d.isClosed ?? false,
+        });
+      }
+      return list;
+    } catch {
+      return [];
+    }
+  }
+
+  /** Check if registration should be closed for a given server. */
+  async isRegistrationClosed(serverId: number): Promise<boolean> {
+    try {
+      const coll = this.dbConnectorService.getAccountsDb().collection(SERVERS_COLLECTION);
+      const doc = await coll.findOne({ serverId }) as any;
+      if (!doc) {
+        // If server not defined yet, allow registration by default
+        return false;
+      }
+      if (doc.status === 'ended') {
+        return true;
+      }
+      return !!doc.isClosed;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Record that a player has selected this server (optional: increment playerCount). */
+  async joinServer(username: string, serverId: number): Promise<{ success: boolean }> {
+    const coll = this.dbConnectorService.getAccountsDb().collection(SERVERS_COLLECTION);
+    const server = await coll.findOne({ serverId }) as any;
+    if (!server) {
+      return { success: false };
+    }
+    // For now we do not mutate playerCount here to avoid inaccurate counts.
+    return { success: true };
+  }
+
+  /** Create a new server (e.g. after a server wins). */
+  async createServer(name?: string): Promise<ServerListItem> {
+    const coll = this.dbConnectorService.getAccountsDb().collection(SERVERS_COLLECTION);
+    const max = await coll.find({}).sort({ serverId: -1 }).limit(1).toArray() as any[];
+    const nextId = (max[0]?.serverId ?? 0) + 1;
+    const doc = {
+      serverId: nextId,
+      name: name ?? `Server ${nextId}`,
+      status: 'active',
+      playerCount: 0,
+    };
+    await coll.insertOne(doc);
+    return doc;
   }
 }

@@ -3,9 +3,10 @@ import { WorkersDTO } from '../dtos/workersDTO';
 import { WorkersService } from './workers.service';
 import { QuestAwareResponse } from '../../quests/quest-response.dto';
 import { AuthGuard } from '../../auth/guards/auth.guard';
+import { ServerStatusGuard } from '../../server/server-status.guard';
 
 @Controller('workers')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, ServerStatusGuard)
 export class WorkersController {
 
     constructor(private workersService: WorkersService)

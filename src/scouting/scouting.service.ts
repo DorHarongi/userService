@@ -32,7 +32,7 @@ export class ScoutingService {
         private reportsService: ReportsService,
     ) {}
 
-    async scoutVillage(attackerUsername: string, attackerVillageName: string, defenderUsername: string, defenderVillageName: string): Promise<void> {
+    async scoutVillage(attackerUsername: string, attackerVillageName: string, defenderUsername: string, defenderVillageName: string): Promise<number> {
         if (attackerUsername === defenderUsername) {
             throw new HttpException("You cannot scout your own account", HttpStatus.BAD_REQUEST);
         }
@@ -52,11 +52,14 @@ export class ScoutingService {
             throw new HttpException("You cannot scout villages in your own clan", HttpStatus.BAD_REQUEST);
         }
 
-        const attackerVillage = attacker.villages.find(v => v.villageName === attackerVillageName);
-        const defenderVillage = defender.villages.find(v => v.villageName === defenderVillageName);
+        const attackerVillage = attacker.villages.find(v => v.villageName?.trim() === attackerVillageName?.trim());
+        const defenderVillage = defender.villages.find(v => v.villageName?.trim() === defenderVillageName?.trim());
 
-        if (!attackerVillage || !defenderVillage) {
-            throw new HttpException("Attacker or defender village not found", HttpStatus.NOT_FOUND);
+        if (!attackerVillage) {
+            throw new HttpException("Attacker village not found", HttpStatus.NOT_FOUND);
+        }
+        if (!defenderVillage) {
+            throw new HttpException("Defender village not found", HttpStatus.NOT_FOUND);
         }
 
         if (attackerVillage.buildingsLevels.stableLevel <= 0) {
@@ -66,17 +69,7 @@ export class ScoutingService {
         const maxSpies = getMaxSpies(attackerVillage.buildingsLevels.stableLevel);
         const aliveSpies = attackerVillage.aliveSpies ?? 0;
 
-        const missionsInTransit = await this.dbAccessorService
-            .getCollection(SPY_MISSIONS_COLLECTION)
-            .countDocuments({
-                attackerUsername,
-                attackerVillageName,
-                status: { $in: ['in_transit', 'returning'] },
-            });
-
-        const availableSpies = Math.max(0, Math.min(aliveSpies, maxSpies) - missionsInTransit);
-
-        if (availableSpies <= 0) {
+        if (aliveSpies <= 0) {
             throw new HttpException("No available spies", HttpStatus.BAD_REQUEST);
         }
 
@@ -103,7 +96,14 @@ export class ScoutingService {
             status: 'in_transit',
         };
 
+        attackerVillage.aliveSpies = Math.max(0, (attackerVillage.aliveSpies ?? 0) - 1);
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username: attackerUsername },
+            { $set: { [`villages.${attacker.villages.indexOf(attackerVillage)}.aliveSpies`]: attackerVillage.aliveSpies } },
+        );
+
         await this.dbAccessorService.getCollection(SPY_MISSIONS_COLLECTION).insertOne(mission);
+        return travelTimeMs;
     }
 
     @Cron('*/10 * * * * *')
@@ -158,19 +158,26 @@ export class ScoutingService {
         const collection = this.dbAccessorService.getCollection(SPY_MISSIONS_COLLECTION);
 
         if (roll < detectionChance) {
-            // Spy caught
-            attackerVillage.aliveSpies = Math.max(0, (attackerVillage.aliveSpies ?? 0) - 1);
+            // Spy caught - already decremented on send, just add death timestamp for regen tracking
             attackerVillage.spyDeathTimestamps = attackerVillage.spyDeathTimestamps || [];
             attackerVillage.spyDeathTimestamps.push(new Date());
 
-            await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
-                { username: attacker.username },
-                { $set: attacker },
-            );
+            const villageIdx = attacker.villages.findIndex(v => v.villageName === mission.attackerVillageName);
+            if (villageIdx >= 0) {
+                await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+                    { username: attacker.username },
+                    { $set: { [`villages.${villageIdx}.spyDeathTimestamps`]: attackerVillage.spyDeathTimestamps } },
+                );
+            }
 
             await collection.updateOne(
                 { _id: mission._id },
                 { $set: { status: 'caught' as const } },
+            );
+
+            await this.createCaughtReport(
+                attackerVillage, defenderVillage,
+                attacker.username, defender.username,
             );
         } else {
             // Spy succeeds: create spy report and start return trip
@@ -207,6 +214,22 @@ export class ScoutingService {
                 { _id: mission._id },
                 { $set: { status: 'completed' as const } },
             );
+
+        const attacker = await this.dbAccessorService
+            .getCollection(USERS_COLLECTION)
+            .findOne({ username: mission.attackerUsername }) as User;
+        if (attacker) {
+            const villageIdx = attacker.villages.findIndex(v => v.villageName === mission.attackerVillageName);
+            if (villageIdx >= 0) {
+                const village = attacker.villages[villageIdx];
+                const maxSpies = getMaxSpies(village.buildingsLevels?.stableLevel || 0);
+                const newAlive = Math.min(maxSpies, (village.aliveSpies ?? 0) + 1);
+                await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+                    { username: mission.attackerUsername },
+                    { $set: { [`villages.${villageIdx}.aliveSpies`]: newAlive } },
+                );
+            }
+        }
     }
 
     private async markMissionCompleted(mission: SpyMission): Promise<void> {
@@ -216,6 +239,28 @@ export class ScoutingService {
                 { _id: mission._id },
                 { $set: { status: 'completed' as const } },
             );
+    }
+
+    private async createCaughtReport(attackerVillage: Village, defenderVillage: Village, attackerName: string, defenderName: string): Promise<void> {
+        const emptyTroops = new TroopsAmounts(0, 0, 0, 0, 0, 0, 0);
+        const emptyResources = new ResourcesAmounts(0, 0, 0);
+
+        const report = new AttackReport(
+            attackerName,
+            attackerVillage.villageName,
+            defenderName,
+            defenderVillage.villageName,
+            new Date(),
+            false,
+            emptyResources,
+            0, 0, 0, 0, 0,
+            emptyTroops, emptyTroops,
+            emptyTroops, emptyTroops,
+            emptyTroops, emptyTroops,
+            'spy',
+        );
+
+        await this.reportsService.saveAttackReport(report);
     }
 
     private async createSpyReport(attackerVillage: Village, defenderVillage: Village, attackerName: string, defenderName: string): Promise<void> {
@@ -273,6 +318,11 @@ export class ScoutingService {
 
                 village.aliveSpies = village.aliveSpies ?? maxSpies;
                 village.spyDeathTimestamps = village.spyDeathTimestamps || [];
+
+                if (village.aliveSpies < maxSpies && village.spyDeathTimestamps.length === 0) {
+                    village.aliveSpies = maxSpies;
+                    updated = true;
+                }
 
                 while (village.aliveSpies < maxSpies && village.spyDeathTimestamps.length > 0) {
                     const oldest = village.spyDeathTimestamps[0];

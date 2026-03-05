@@ -37,6 +37,8 @@ export class AttackReportToClientDTO {
     bossHpAfter?: number;
     bossDamageDealt?: number;
     bossReward?: ResourcesAmounts;
+    bossRelicId?: string;
+    bossRelicName?: string;
 
     constructor(attackReport: AttackReport, viewingUsername?: string) {
         this.id = attackReport._id?.toString() || '';
@@ -76,5 +78,7 @@ export class AttackReportToClientDTO {
         this.bossHpAfter = attackReport.bossHpAfter;
         this.bossDamageDealt = attackReport.bossDamageDealt;
         this.bossReward = attackReport.bossReward;
+        this.bossRelicId = attackReport.bossRelicId;
+        this.bossRelicName = attackReport.bossRelicName;
     }
 }

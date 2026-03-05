@@ -3,9 +3,10 @@ import { upgradeDTO } from '../dtos/upgradeDTO';
 import { BuildingsUpgradingService } from '../services/buildings-upgrading/buildings-upgrading.service';
 import { QuestAwareResponse } from '../../quests/quest-response.dto';
 import { AuthGuard } from '../../auth/guards/auth.guard';
+import { ServerStatusGuard } from '../../server/server-status.guard';
 
 @Controller('buildings-upgrading')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, ServerStatusGuard)
 export class BuildingsUpgradingController {
     constructor(private buildingsUpgradingService: BuildingsUpgradingService){
     }

@@ -15,6 +15,8 @@ export interface IBoss {
     claimedAt?: Date;
     isDefeated: boolean;
     defeatedAt?: Date;
+    /** Mythic only: relic bound at spawn (not yet taken by any clan) */
+    relicId?: string;
 }
 
 export class Boss implements IBoss {

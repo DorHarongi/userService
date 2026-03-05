@@ -2,9 +2,10 @@ import { Body, Controller, Post, UseGuards, Request } from '@nestjs/common';
 import { AttackDTO } from '../dtos/attackDTO';
 import { AttackingService } from '../services/attacking/attacking.service';
 import { AuthGuard } from '../../auth/guards/auth.guard';
+import { ServerStatusGuard } from '../../server/server-status.guard';
 
 @Controller('attack')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, ServerStatusGuard)
 export class AttackController {
     constructor(private attackingService: AttackingService){
         

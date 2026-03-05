@@ -80,3 +80,9 @@ export interface ToggleClanOpenDTO {
     leaderUsername: string;
     isOpen: boolean;
 }
+
+export interface UpdateClanDescriptionDTO {
+    clanName: string;
+    description: string;
+    leaderUsername: string;
+}

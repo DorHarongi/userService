@@ -1,8 +1,9 @@
 import { Body, Controller, Get, Param, Post, UseGuards, Request } from '@nestjs/common';
 import { ClansService } from '../services/clans.service';
-import { ClanDTO, ClanMemberRaidStatsDTO, ClanStatisticDTO, CreateClanDTO, HandleJoinRequestDTO, JoinClanRequestDTO, LeaveClanDTO, KickMemberDTO, UpdateClanNameDTO, ToggleClanOpenDTO } from '../dtos/clanDTO';
+import { ClanDTO, ClanMemberRaidStatsDTO, ClanStatisticDTO, CreateClanDTO, HandleJoinRequestDTO, JoinClanRequestDTO, LeaveClanDTO, KickMemberDTO, UpdateClanNameDTO, ToggleClanOpenDTO, UpdateClanDescriptionDTO } from '../dtos/clanDTO';
 import { MessagesService } from '../../messages/services/messages.service';
 import { AuthGuard } from '../../auth/guards/auth.guard';
+import { ServerStatusGuard } from '../../server/server-status.guard';
 
 @Controller('clans')
 export class ClansController {
@@ -12,7 +13,7 @@ export class ClansController {
     ) {}
 
     @Post('create')
-    @UseGuards(AuthGuard)
+    @UseGuards(AuthGuard, ServerStatusGuard)
     async createClan(@Request() req: any, @Body() createClanDTO: CreateClanDTO): Promise<ClanDTO> {
         createClanDTO.leaderUsername = req.user.username;
         return await this.clansService.createClan(createClanDTO);
@@ -37,7 +38,7 @@ export class ClansController {
     }
 
     @Post('join')
-    @UseGuards(AuthGuard)
+    @UseGuards(AuthGuard, ServerStatusGuard)
     async requestToJoinClan(@Request() req: any, @Body() joinRequest: JoinClanRequestDTO): Promise<{ success: boolean }> {
         joinRequest.username = req.user.username;
         const result = await this.clansService.requestToJoinClan(joinRequest);
@@ -64,7 +65,7 @@ export class ClansController {
     }
 
     @Post('handle-request')
-    @UseGuards(AuthGuard)
+    @UseGuards(AuthGuard, ServerStatusGuard)
     async handleJoinRequest(@Request() req: any, @Body() handleRequest: HandleJoinRequestDTO): Promise<{ success: boolean }> {
         handleRequest.leaderUsername = req.user.username;
         const result = await this.clansService.handleJoinRequest(handleRequest);
@@ -96,14 +97,14 @@ export class ClansController {
     }
 
     @Post('leave')
-    @UseGuards(AuthGuard)
+    @UseGuards(AuthGuard, ServerStatusGuard)
     async leaveClan(@Request() req: any, @Body() leaveClanDTO: LeaveClanDTO): Promise<{ success: boolean }> {
         leaveClanDTO.username = req.user.username;
         return await this.clansService.leaveClan(leaveClanDTO);
     }
 
     @Post('kick')
-    @UseGuards(AuthGuard)
+    @UseGuards(AuthGuard, ServerStatusGuard)
     async kickMember(@Request() req: any, @Body() kickMemberDTO: KickMemberDTO): Promise<{ success: boolean }> {
         kickMemberDTO.leaderUsername = req.user.username;
         const result = await this.clansService.kickMember(
@@ -135,7 +136,7 @@ export class ClansController {
     }
 
     @Post('update-name')
-    @UseGuards(AuthGuard)
+    @UseGuards(AuthGuard, ServerStatusGuard)
     async updateClanName(@Request() req: any, @Body() updateClanNameDTO: UpdateClanNameDTO): Promise<{ success: boolean }> {
         updateClanNameDTO.leaderUsername = req.user.username;
         return await this.clansService.updateClanName(
@@ -146,9 +147,16 @@ export class ClansController {
     }
 
     @Post('toggle-open')
-    @UseGuards(AuthGuard)
+    @UseGuards(AuthGuard, ServerStatusGuard)
     async toggleClanOpen(@Request() req: any, @Body() toggleDTO: ToggleClanOpenDTO): Promise<{ success: boolean }> {
         toggleDTO.leaderUsername = req.user.username;
         return await this.clansService.toggleClanOpen(toggleDTO);
+    }
+
+    @Post('update-description')
+    @UseGuards(AuthGuard, ServerStatusGuard)
+    async updateClanDescription(@Request() req: any, @Body() dto: UpdateClanDescriptionDTO): Promise<{ success: boolean }> {
+        dto.leaderUsername = req.user.username;
+        return await this.clansService.updateClanDescription(dto.clanName, dto.description, dto.leaderUsername);
     }
 }

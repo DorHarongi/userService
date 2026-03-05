@@ -363,6 +363,7 @@ export class InteractionsService {
             crop: actualCrop
         };
 
+        // Only sender message now; recipient message is sent when resources arrive (in MovementService.resolveResourcesMovement)
         await this.messagesService.sendResourceTransferMessage(
             dto.senderUsername,
             dto.recipientUsername,
@@ -370,15 +371,6 @@ export class InteractionsService {
             dto.recipientVillageName,
             resourcesData,
             true // sender message
-        );
-
-        await this.messagesService.sendResourceTransferMessage(
-            dto.senderUsername,
-            dto.recipientUsername,
-            senderVillage.villageName,
-            dto.recipientVillageName,
-            resourcesData,
-            false // recipient message
         );
 
         return new UserDTO(sender);

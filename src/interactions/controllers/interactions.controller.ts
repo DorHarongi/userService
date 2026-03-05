@@ -3,9 +3,10 @@ import { InteractionsService } from '../services/interactions.service';
 import { SendSupportDTO, WithdrawSupportDTO, SendResourcesDTO, CreateVillageDTO, RenameVillageDTO, LearnSkillDTO, ResetSkillsDTO } from '../dtos/interactionDTO';
 import { UserDTO } from '../../user/dtos/userDTO';
 import { AuthGuard } from '../../auth/guards/auth.guard';
+import { ServerStatusGuard } from '../../server/server-status.guard';
 
 @Controller('interactions')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, ServerStatusGuard)
 export class InteractionsController {
     constructor(private interactionsService: InteractionsService) {}
 

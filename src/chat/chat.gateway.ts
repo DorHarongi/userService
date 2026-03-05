@@ -69,6 +69,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
             return;
         }
 
+        const user = await this.dbAccessorService
+            .getCollection('users')
+            .findOne({ username }) as User;
+        if (!user || user.clanName !== payload.clanName) {
+            return;
+        }
+
         client.join(payload.clanName);
     }
 

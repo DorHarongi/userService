@@ -290,6 +290,28 @@ export class MessagesService {
         await this.dbAccessorService.getCollection(MESSAGES_COLLECTION).insertOne(message);
     }
 
+    async sendGlobalInboxMessage(
+        subject: string,
+        content: string,
+    ): Promise<void> {
+        const USERS_COLLECTION = 'users';
+        const allUsers = await this.dbAccessorService.getCollection(USERS_COLLECTION)
+            .find({}, { projection: { username: 1 } }).toArray() as unknown as { username: string }[];
+        const docs = allUsers.map((u) => {
+            const msg = new Message(
+                u.username,
+                MessageType.SYSTEM_MESSAGE,
+                subject,
+                content,
+                false,
+            );
+            return { ...msg };
+        });
+        if (docs.length > 0) {
+            await this.dbAccessorService.getCollection(MESSAGES_COLLECTION).insertMany(docs);
+        }
+    }
+
     async sendSupportWithdrawnMessage(
         ownerUsername: string,
         recipientUsername: string,

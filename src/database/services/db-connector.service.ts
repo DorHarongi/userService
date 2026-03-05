@@ -1,66 +1,91 @@
 import { Injectable } from '@nestjs/common';
 import * as mongo from 'mongodb';
 
+const SERVER_DB_PREFIX = 'pasiflora_server_';
+const ACCOUNTS_DB_NAME = 'pasiflora_accounts';
+
 @Injectable()
-export class DbConnectorService{
-    connection: mongo.Db;
-    async connect(): Promise<mongo.Db>
-    {
-        let mongoClient: mongo.MongoClient = await mongo.MongoClient.connect('mongodb://localhost:27017', {
-            maxPoolSize: 50,
-            minPoolSize: 5
-        });
-        if(mongoClient == undefined)
-        {
-            console.log("Mongo down. trying again...")
-            await this.connect();
-        }
-        else
-        {
-            console.log("Connected to db succesfully");
-            this.connection = mongoClient.db('users');
-            await this.ensureIndexes();
-            return this.connection;
-        }
-    }
+export class DbConnectorService {
+  private client: mongo.MongoClient | null = null;
+  private serverDbCache = new Map<number, mongo.Db>();
+  private accountsDb: mongo.Db | null = null;
 
-    private async ensureIndexes(): Promise<void> {
-        console.log("Ensuring database indexes...");
-        
-        // Users collection indexes
-        await this.createIndexSafe('users', { username: 1 }, { unique: true });
-        await this.createIndexSafe('users', { clanName: 1 });
-        await this.createIndexSafe('users', { joinDate: 1 });
-        
-        // Bosses collection indexes
-        await this.createIndexSafe('bosses', { isDefeated: 1, x: 1, y: 1 });
-        await this.createIndexSafe('bosses', { claimedByClanId: 1 });
-        
-        // Clans collection indexes
-        await this.createIndexSafe('clans', { name: 1 }, { unique: true });
-        
-        console.log("Database indexes check complete");
+  async connect(): Promise<mongo.Db> {
+    if (this.client) {
+      return this.getServerDb(1);
     }
+    this.client = await mongo.MongoClient.connect('mongodb://localhost:27017', {
+      maxPoolSize: 50,
+      minPoolSize: 5,
+    });
+    if (!this.client) {
+      console.log('Mongo down. trying again...');
+      return this.connect();
+    }
+    console.log('Connected to MongoDB successfully');
+    const serverIds = await this.getActiveServerIds();
+    for (const id of serverIds) {
+      await this.ensureIndexesForDb(this.getServerDb(id));
+    }
+    return this.getServerDb(1);
+  }
 
-    private async createIndexSafe(
-        collectionName: string, 
-        indexSpec: mongo.IndexSpecification, 
-        options?: mongo.CreateIndexesOptions
-    ): Promise<void> {
-        try {
-            await this.connection.collection(collectionName).createIndex(indexSpec, options);
-        } catch (error: any) {
-            // Index already exists with same spec - that's fine
-            if (error.code === 85 || error.code === 86) {
-                // 85: IndexOptionsConflict, 86: IndexKeySpecsConflict
-                console.log(`Index on ${collectionName} already exists (different options), skipping`);
-            } else if (error.codeName === 'IndexOptionsConflict' || error.message?.includes('already exists')) {
-                console.log(`Index on ${collectionName} already exists, skipping`);
-            } else {
-                // Log but don't crash - indexes are optimization, not critical
-                console.warn(`Warning: Could not create index on ${collectionName}:`, error.message || error);
-            }
-        }
+  getServerDb(serverId: number): mongo.Db {
+    if (!this.client) {
+      throw new Error('DbConnectorService not connected. Call connect() first.');
     }
+    let db = this.serverDbCache.get(serverId);
+    if (!db) {
+      const dbName = `${SERVER_DB_PREFIX}${serverId}`;
+      db = this.client.db(dbName);
+      this.serverDbCache.set(serverId, db);
+    }
+    return db;
+  }
+
+  getAccountsDb(): mongo.Db {
+    if (!this.client) {
+      throw new Error('DbConnectorService not connected. Call connect() first.');
+    }
+    if (!this.accountsDb) {
+      this.accountsDb = this.client.db(ACCOUNTS_DB_NAME);
+    }
+    return this.accountsDb;
+  }
+
+  private async getActiveServerIds(): Promise<number[]> {
+    try {
+      const accts = this.getAccountsDb();
+      const servers = await accts.collection('servers').find({}).toArray();
+      if (servers.length > 0) {
+        return servers.map((s: any) => s.serverId as number).filter(Boolean);
+      }
+    } catch { /* fall through */ }
+    return [1];
+  }
+
+  private async ensureIndexesForDb(db: mongo.Db): Promise<void> {
+    const createIndexSafe = async (
+      collectionName: string,
+      indexSpec: mongo.IndexSpecification,
+      options?: mongo.CreateIndexesOptions,
+    ) => {
+      try {
+        await db.collection(collectionName).createIndex(indexSpec, options);
+      } catch (error: any) {
+        if (error.code === 85 || error.code === 86 || error.codeName === 'IndexOptionsConflict' || error.message?.includes('already exists')) {
+          // skip
+        } else {
+          console.warn(`Warning: Could not create index on ${collectionName}:`, error.message || error);
+        }
+      }
+    };
+
+    await createIndexSafe('users', { username: 1 }, { unique: true });
+    await createIndexSafe('users', { clanName: 1 });
+    await createIndexSafe('users', { joinDate: 1 });
+    await createIndexSafe('bosses', { isDefeated: 1, x: 1, y: 1 });
+    await createIndexSafe('bosses', { claimedByClanId: 1 });
+    await createIndexSafe('clans', { name: 1 }, { unique: true });
+  }
 }
-

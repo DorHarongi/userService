@@ -42,6 +42,9 @@ export class AttackReport implements IAttackReport {
     bossHpAfter?: number;
     bossDamageDealt?: number;
     bossReward?: ResourcesAmounts;
+    /** Mythic only: relic bound to this boss */
+    bossRelicId?: string;
+    bossRelicName?: string;
 
     constructor(
         attackerName: string,
@@ -102,3 +105,4 @@ export class AttackReport implements IAttackReport {
         }
     }
 }
+
