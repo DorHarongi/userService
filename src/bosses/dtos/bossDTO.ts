@@ -39,13 +39,13 @@ export class BossDTO {
             this.relicName = def?.name ?? boss.relicId;
         }
         
-        // Calculate expiration time
-        if (boss.claimedAt) {
-            // 48 hours from claim
-            this.expiresAt = new Date(boss.claimedAt.getTime() + 48 * 60 * 60 * 1000);
-        } else {
-            // 24 hours from spawn for unclaimed
-            this.expiresAt = new Date(boss.spawnedAt.getTime() + 24 * 60 * 60 * 1000);
+        // Mythic bosses never despawn
+        if (boss.tier !== BossTier.MYTHIC) {
+            if (boss.claimedAt) {
+                this.expiresAt = new Date(boss.claimedAt.getTime() + 48 * 60 * 60 * 1000);
+            } else {
+                this.expiresAt = new Date(boss.spawnedAt.getTime() + 24 * 60 * 60 * 1000);
+            }
         }
     }
 }
