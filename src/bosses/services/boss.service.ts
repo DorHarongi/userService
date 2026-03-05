@@ -494,12 +494,29 @@ export class BossService {
       })) as IBoss;
 
     if (!boss) {
-      // Boss already defeated or expired - return troops instantly (no battle location available)
-      await this.returnTroopsToVillage(
+      // Boss already defeated or expired — send message and create return movement
+      await this.messagesService.sendClanNotificationMessage(
         username,
-        movement.senderVillageName,
-        movement.troops,
+        'Boss Already Defeated',
+        `Your troops arrived at the battlefield but the boss was already slain. Your troops are returning home.`,
       );
+      const defeatedBoss = (await this.dbAccessorService
+        .getCollection(BOSSES_COLLECTION)
+        .findOne({ _id: new ObjectId(movement.bossId) })) as IBoss;
+      if (defeatedBoss) {
+        await this.createReturnMovement(
+          username,
+          movement.senderVillageName,
+          movement.troops,
+          village.location.x,
+          village.location.y,
+          defeatedBoss.x,
+          defeatedBoss.y,
+          village.skills,
+        );
+      } else {
+        await this.returnTroopsToVillage(username, movement.senderVillageName, movement.troops);
+      }
       return;
     }
 
