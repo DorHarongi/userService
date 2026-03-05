@@ -22,6 +22,7 @@ import {
     MAX_BOSSES_ON_MAP,
     BOSS_CLAIM_DURATION_MS,
     BOSS_UNCLAIMED_DESPAWN_MS,
+    MYTHIC_BOSS_DESPAWN_MS,
     MYTHIC_BOSS_DAILY_SPAWN_CHANCE,
     RELIC_NAMES,
     warehouseStorageByLevel,
@@ -83,7 +84,7 @@ export class BossService {
         }
     }
 
-    @Cron('0 0 * * * *') // Every day at midnight (hour 0)
+    @Cron('0 0 0 * * *') // Daily at midnight
     async trySpawnMythicBoss(): Promise<void> {
         if (Math.random() >= MYTHIC_BOSS_DAILY_SPAWN_CHANCE) return;
         const currentMythic = await this.dbAccessorService
@@ -98,6 +99,10 @@ export class BossService {
             'mythic_spawn',
             `⚡ A Mythic Boss has appeared at (${location.x}, ${location.y})!`,
             { x: location.x, y: location.y },
+        );
+        await this.messagesService.sendGlobalInboxMessage(
+            `⚡ A Mythic Boss has appeared!`,
+            `A terrifying Mythic Titan has emerged at coordinates (${location.x}, ${location.y}). Rally your clan and prepare for battle — only the mightiest will claim its relic!`,
         );
     }
 
@@ -230,7 +235,7 @@ export class BossService {
     private async cleanupExpiredBosses(): Promise<void> {
         const now = new Date();
 
-        // Remove unclaimed bosses older than 24 hours (never delete Mythic - no despawn)
+        // Remove unclaimed non-mythic bosses older than 48 hours
         const unclaimedExpiry = new Date(now.getTime() - BOSS_UNCLAIMED_DESPAWN_MS);
         await this.dbAccessorService
             .getCollection(BOSSES_COLLECTION)
@@ -241,7 +246,7 @@ export class BossService {
                 spawnedAt: { $lt: unclaimedExpiry }
             });
 
-        // Remove claimed bosses where claim expired (48 hours) - never delete Mythic
+        // Remove claimed non-mythic bosses where claim expired (48 hours)
         const claimedExpiry = new Date(now.getTime() - BOSS_CLAIM_DURATION_MS);
         await this.dbAccessorService
             .getCollection(BOSSES_COLLECTION)
@@ -250,6 +255,25 @@ export class BossService {
                 tier: { $ne: BossTier.MYTHIC },
                 claimedAt: { $lt: claimedExpiry }
             });
+
+        // Mythic bosses despawn after 1 week — award relic to top-damage clan's leader
+        const mythicExpiry = new Date(now.getTime() - MYTHIC_BOSS_DESPAWN_MS);
+        const expiredMythics = await this.dbAccessorService
+            .getCollection(BOSSES_COLLECTION)
+            .find({
+                isDefeated: false,
+                tier: BossTier.MYTHIC,
+                spawnedAt: { $lt: mythicExpiry },
+            })
+            .toArray() as IBoss[];
+
+        for (const boss of expiredMythics) {
+            await this.awardMythicRelicToTopClan(boss);
+            await this.dbAccessorService
+                .getCollection(BOSSES_COLLECTION)
+                .deleteOne({ _id: boss._id });
+            this.logger.log(`Mythic boss ${boss.name} expired after 1 week and was removed`);
+        }
     }
 
     // =====================
@@ -568,37 +592,7 @@ export class BossService {
 
             if (updateResult.modifiedCount > 0) {
                 if (boss.tier === BossTier.MYTHIC) {
-                    const damageDocs = await this.dbAccessorService
-                        .getCollection(MYTHIC_BOSS_DAMAGE_COLLECTION)
-                        .find({ bossId: boss._id!.toHexString() })
-                        .toArray() as unknown as { clanName: string; username: string; villageName: string; damage: number }[];
-                    const byClan: Record<string, number> = {};
-                    for (const d of damageDocs) {
-                        byClan[d.clanName] = (byClan[d.clanName] ?? 0) + d.damage;
-                    }
-                    const topClanEntry = Object.entries(byClan).sort((a, b) => b[1] - a[1])[0];
-                    let winnerUsername: string | null = null;
-                    let winnerVillageName: string | null = null;
-                    if (topClanEntry) {
-                        const [topClanName] = topClanEntry;
-                        const topUser = damageDocs
-                            .filter((d) => d.clanName === topClanName)
-                            .sort((a, b) => b.damage - a.damage)[0];
-                        if (topUser) {
-                            winnerUsername = topUser.username;
-                            winnerVillageName = topUser.villageName;
-                        }
-                    }
-                    if (winnerUsername && winnerVillageName && topClanEntry) {
-                        const relicId = (boss as any).relicId;
-                        if (relicId) {
-                            const relicName = await this.relicsService.assignRelicToClan(relicId, topClanEntry[0], winnerUsername, winnerVillageName);
-                            await this.messagesService.sendGlobalInboxMessage(
-                                `The Mythic Beast has fallen!`,
-                                `The world trembles — Clan ${topClanEntry[0]} has slain the ${boss.name} and claimed the ${relicName}. Their power grows beyond measure.`,
-                            );
-                        }
-                    }
+                    await this.awardMythicRelicToTopClan(boss, true);
                     return;
                 }
 
@@ -621,6 +615,51 @@ export class BossService {
                     { $set: { currentHp: bossHpAfter } },
                 );
         }
+    }
+
+    /**
+     * Awards the mythic boss relic to the clan leader's first village of the clan
+     * that dealt the most total damage. Used on both defeat and despawn.
+     */
+    private async awardMythicRelicToTopClan(boss: IBoss, wasDefeated: boolean = false): Promise<void> {
+        const relicId = (boss as any).relicId;
+        if (!relicId) return;
+
+        const damageDocs = await this.dbAccessorService
+            .getCollection(MYTHIC_BOSS_DAMAGE_COLLECTION)
+            .find({ bossId: boss._id!.toHexString() })
+            .toArray() as unknown as { clanName: string; username: string; villageName: string; damage: number }[];
+
+        if (damageDocs.length === 0) return;
+
+        const byClan: Record<string, number> = {};
+        for (const d of damageDocs) {
+            byClan[d.clanName] = (byClan[d.clanName] ?? 0) + d.damage;
+        }
+        const topClanEntry = Object.entries(byClan).sort((a, b) => b[1] - a[1])[0];
+        if (!topClanEntry) return;
+
+        const [topClanName] = topClanEntry;
+        const clan = await this.dbAccessorService
+            .getCollection(CLANS_COLLECTION)
+            .findOne({ clanName: topClanName }) as IClan;
+        if (!clan) return;
+
+        const leader = await this.dbAccessorService
+            .getCollection(USERS_COLLECTION)
+            .findOne({ username: clan.leaderUsername }) as User;
+        if (!leader || !leader.villages || leader.villages.length === 0) return;
+
+        const firstVillage = leader.villages[0];
+        const relicName = await this.relicsService.assignRelicToClan(
+            relicId, topClanName, clan.leaderUsername, firstVillage.villageName,
+        );
+
+        const action = wasDefeated ? 'slain' : 'outlasted';
+        await this.messagesService.sendGlobalInboxMessage(
+            wasDefeated ? `The Mythic Beast has fallen!` : `The Mythic Beast has vanished!`,
+            `The world trembles — Clan ${topClanName} has ${action} the ${boss.name} and claimed the ${relicName}. Their power grows beyond measure.`,
+        );
     }
 
     private async returnTroopsToVillage(username: string, villageName: string, troops: any): Promise<void> {
