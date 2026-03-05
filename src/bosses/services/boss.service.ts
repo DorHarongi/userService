@@ -494,8 +494,8 @@ export class BossService {
       })) as IBoss;
 
     if (!boss) {
-      // Boss already defeated or expired - return troops
-      this.returnTroopsToVillage(
+      // Boss already defeated or expired - return troops instantly (no battle location available)
+      await this.returnTroopsToVillage(
         username,
         movement.senderVillageName,
         movement.troops,
@@ -625,7 +625,7 @@ export class BossService {
     }
     await this.reportsService.saveAttackReport(bossReport);
 
-    // Return surviving troops
+    // Return surviving troops via movement (travel back from boss location)
     const survivingTroops = new TroopsAmounts(
       Math.max(0, (dto.spearFighters || 0) - (lostTroops.spearFighters || 0)),
       Math.max(0, (dto.swordFighters || 0) - (lostTroops.swordFighters || 0)),
@@ -635,10 +635,15 @@ export class BossService {
       Math.max(0, (dto.horsemen || 0) - (lostTroops.horsemen || 0)),
       Math.max(0, (dto.catapults || 0) - (lostTroops.catapults || 0)),
     );
-    await this.returnTroopsToVillage(
+    await this.createReturnMovement(
       username,
       movement.senderVillageName,
       survivingTroops,
+      village.location.x,
+      village.location.y,
+      boss.x,
+      boss.y,
+      village.skills,
     );
 
     // Update weekly/total stats
@@ -785,6 +790,41 @@ export class BossService {
     await this.dbAccessorService
       .getCollection(USERS_COLLECTION)
       .updateOne({ username }, { $set: { villages: user.villages } });
+  }
+
+  private async createReturnMovement(
+    username: string,
+    villageName: string,
+    troops: TroopsAmounts,
+    villageX: number,
+    villageY: number,
+    bossX: number,
+    bossY: number,
+    skills: any,
+  ): Promise<void> {
+    const totalSurviving =
+      troops.spearFighters + troops.swordFighters + troops.axeFighters +
+      troops.archers + troops.magicians + troops.horsemen + troops.catapults;
+    if (totalSurviving <= 0) return;
+
+    const distance = calculateDistance(villageX, villageY, bossX, bossY);
+    const armySpeed = getArmySpeed(troops as any);
+    const quickStepBonus = getSkillBonus(skills, SkillCategory.QUICK_STEP);
+    const travelTimeMs = calculateTravelTimeMs(distance, armySpeed, quickStepBonus);
+    const departureTime = new Date();
+    const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
+
+    await this.dbAccessorService.getCollection(MOVEMENTS_COLLECTION).insertOne({
+      type: 'return',
+      senderUsername: username,
+      senderVillageName: villageName,
+      targetUsername: username,
+      targetVillageName: villageName,
+      troops,
+      departureTime,
+      arrivalTime,
+      status: 'in_transit',
+    });
   }
 
   // =====================
