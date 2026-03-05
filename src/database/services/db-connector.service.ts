@@ -7,7 +7,12 @@ const SERVER_DB_PREFIX = 'pasiflora_server_';
 const ACCOUNTS_DB_NAME = 'pasiflora_accounts';
 
 function getMongoUrl(): string {
-  const credPath = path.join(process.cwd(), 'mongo-credentials.txt');
+  // Check cwd first, then project root (when run from dist/)
+  const candidates = [
+    path.join(process.cwd(), 'mongo-credentials.txt'),
+    path.join(process.cwd(), '..', 'mongo-credentials.txt'),
+  ];
+  const credPath = candidates.find((p) => fs.existsSync(p)) ?? candidates[0];
   let password = '<password-here>';
   try {
     const content = fs.readFileSync(credPath, 'utf8');
