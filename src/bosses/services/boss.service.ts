@@ -668,16 +668,14 @@ export class BossService {
         'totalStats.lifetimeBossDamage',
       ])
     ) {
-      await this.dbAccessorService
-        .getCollection(USERS_COLLECTION)
-        .updateOne(
-          { username },
-          {
-            $set: {
-              unlockedAchievements: (updatedUser as any).unlockedAchievements,
-            },
+      await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+        { username },
+        {
+          $set: {
+            unlockedAchievements: (updatedUser as any).unlockedAchievements,
           },
-        );
+        },
+      );
     }
 
     if (bossDefeated) {
@@ -803,14 +801,23 @@ export class BossService {
     skills: any,
   ): Promise<void> {
     const totalSurviving =
-      troops.spearFighters + troops.swordFighters + troops.axeFighters +
-      troops.archers + troops.magicians + troops.horsemen + troops.catapults;
+      troops.spearFighters +
+      troops.swordFighters +
+      troops.axeFighters +
+      troops.archers +
+      troops.magicians +
+      troops.horsemen +
+      troops.catapults;
     if (totalSurviving <= 0) return;
 
     const distance = calculateDistance(villageX, villageY, bossX, bossY);
     const armySpeed = getArmySpeed(troops as any);
     const quickStepBonus = getSkillBonus(skills, SkillCategory.QUICK_STEP);
-    const travelTimeMs = calculateTravelTimeMs(distance, armySpeed, quickStepBonus);
+    const travelTimeMs = calculateTravelTimeMs(
+      distance,
+      armySpeed,
+      quickStepBonus,
+    );
     const departureTime = new Date();
     const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
 
@@ -948,9 +955,7 @@ export class BossService {
   }
 
   // Get pending rewards for a user
-  async getPendingRewards(
-    username: string,
-  ): Promise<
+  async getPendingRewards(username: string): Promise<
     {
       bossName: string;
       defeatedAt: Date;
@@ -1018,9 +1023,7 @@ export class BossService {
   // BOSS DAMAGE LEADERBOARD
   // =====================
 
-  async getBossDamageLeaderboard(
-    bossId: string,
-  ): Promise<
+  async getBossDamageLeaderboard(bossId: string): Promise<
     {
       clanName: string;
       totalDamage: number;

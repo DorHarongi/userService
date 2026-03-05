@@ -223,10 +223,7 @@ export class InteractionsService {
         // Subtract from recipient's clanTroops
         this.subtractTroops(recipientVillage.clanTroops, dto.troops);
 
-        // Add back to owner's troops
-        this.addTroops(ownerVillage.troops, dto.troops);
-
-        // Update both users
+        // Update both users (troops removed from recipient now, owner gets them via return movement)
         await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
             { username: dto.ownerUsername },
             { $set: owner }
@@ -235,6 +232,30 @@ export class InteractionsService {
             { username: dto.recipientUsername },
             { $set: recipient }
         );
+
+        // Create return movement for withdrawn troops
+        const distance = calculateDistance(
+            ownerVillage.location.x,
+            ownerVillage.location.y,
+            recipientVillage.location.x,
+            recipientVillage.location.y,
+        );
+        const armySpeed = getArmySpeed(dto.troops as any);
+        const travelTimeMs = calculateTravelTimeMs(distance, armySpeed, 0);
+        const departureTime = new Date();
+        const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
+
+        await this.dbAccessorService.getCollection('movements').insertOne({
+            type: 'return',
+            senderUsername: dto.ownerUsername,
+            senderVillageName: ownerVillage.villageName,
+            targetUsername: dto.ownerUsername,
+            targetVillageName: ownerVillage.villageName,
+            troops: dto.troops,
+            departureTime,
+            arrivalTime,
+            status: 'in_transit',
+        });
 
         // Send withdrawal message to recipient
         const troopsData = {
