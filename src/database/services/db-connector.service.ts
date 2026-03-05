@@ -1,8 +1,28 @@
 import { Injectable } from '@nestjs/common';
 import * as mongo from 'mongodb';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const SERVER_DB_PREFIX = 'pasiflora_server_';
 const ACCOUNTS_DB_NAME = 'pasiflora_accounts';
+
+function getMongoUrl(): string {
+  const credPath = path.join(process.cwd(), 'mongo-credentials.txt');
+  let password = '<password-here>';
+  try {
+    const content = fs.readFileSync(credPath, 'utf8');
+    const match = content.match(/password:\s*(.+)/);
+    if (match && match[1].trim() && match[1].trim() !== '<password-here>') {
+      password = match[1].trim();
+    }
+  } catch {
+    /* use no-auth fallback */
+  }
+  if (password === '<password-here>') {
+    return 'mongodb://localhost:27017';
+  }
+  return `mongodb://pasiflora:${encodeURIComponent(password)}@localhost:27017/?authSource=admin`;
+}
 
 @Injectable()
 export class DbConnectorService {
@@ -14,7 +34,7 @@ export class DbConnectorService {
     if (this.client) {
       return this.getServerDb(1);
     }
-    this.client = await mongo.MongoClient.connect('mongodb://localhost:27017', {
+    this.client = await mongo.MongoClient.connect(getMongoUrl(), {
       maxPoolSize: 50,
       minPoolSize: 5,
     });
