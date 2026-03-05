@@ -3,7 +3,7 @@ import { WorldService } from '../services/world.service';
 import { MapWindowRequestDTO, MapWindowResponseDTO, MinimapResponseDTO, VillageOnMapDTO, BossOnMapDTO } from '../dtos/mapWindowDTO';
 import { DbAccessorService } from '../../database/services/db-accessor.service';
 import { IBoss } from '../../bosses/models/boss.entity';
-import { BOSS_CLAIM_DURATION_MS, BOSS_UNCLAIMED_DESPAWN_MS } from 'utils';
+import { BOSS_CLAIM_DURATION_MS, BOSS_UNCLAIMED_DESPAWN_MS, RELIC_NAMES } from 'utils';
 
 @Controller('world')
 export class WorldController {
@@ -19,15 +19,22 @@ export class WorldController {
         
         const villages = await this.worldService.getVillagesInWindow(x, y);
         
-        // Look up clan names for each owner
         const ownerUsernames = [...new Set(villages.map(v => v.ownerUsername).filter(Boolean))];
         const users = await this.dbAccessorService.getCollection('users').find({
             username: { $in: ownerUsernames }
-        }).project({ username: 1, clanName: 1 }).toArray();
+        }).project({ username: 1, clanName: 1, villages: { villageName: 1, location: 1, buildingsLevels: { quartersLevel: 1 } } }).toArray();
         
         const userClanMap = new Map<string, string>();
+        const villageQuartersMap = new Map<string, number>(); // key: "x,y"
         users.forEach((u: any) => {
             if (u.clanName) userClanMap.set(u.username, u.clanName);
+            for (const v of u.villages || []) {
+                const loc = v.location;
+                if (loc && loc.x != null && loc.y != null) {
+                    const q = v.buildingsLevels?.quartersLevel ?? 1;
+                    villageQuartersMap.set(`${loc.x},${loc.y}`, q);
+                }
+            }
         });
         
         const villagesDTO: VillageOnMapDTO[] = villages.map(v => ({
@@ -35,7 +42,8 @@ export class WorldController {
             y: v.y,
             ownerUsername: v.ownerUsername || '',
             villageName: v.villageName || '',
-            clanName: userClanMap.get(v.ownerUsername || '') || undefined
+            clanName: userClanMap.get(v.ownerUsername || '') || undefined,
+            quartersLevel: villageQuartersMap.get(`${v.x},${v.y}`) ?? 1
         }));
 
         // Get bosses in the window
@@ -58,15 +66,22 @@ export class WorldController {
     async getMinimap(): Promise<MinimapResponseDTO> {
         const villages = await this.worldService.getAllVillages();
         
-        // Look up clan names for each owner
         const ownerUsernames = [...new Set(villages.map(v => v.ownerUsername).filter(Boolean))];
         const users = await this.dbAccessorService.getCollection('users').find({
             username: { $in: ownerUsernames }
-        }).project({ username: 1, clanName: 1 }).toArray();
+        }).project({ username: 1, clanName: 1, villages: { villageName: 1, location: 1, buildingsLevels: { quartersLevel: 1 } } }).toArray();
         
         const userClanMap = new Map<string, string>();
+        const villageQuartersMap = new Map<string, number>();
         users.forEach((u: any) => {
             if (u.clanName) userClanMap.set(u.username, u.clanName);
+            for (const v of u.villages || []) {
+                const loc = v.location;
+                if (loc && loc.x != null && loc.y != null) {
+                    const q = v.buildingsLevels?.quartersLevel ?? 1;
+                    villageQuartersMap.set(`${loc.x},${loc.y}`, q);
+                }
+            }
         });
         
         const villagesDTO: VillageOnMapDTO[] = villages.map(v => ({
@@ -74,7 +89,8 @@ export class WorldController {
             y: v.y,
             ownerUsername: v.ownerUsername || '',
             villageName: v.villageName || '',
-            clanName: userClanMap.get(v.ownerUsername || '') || undefined
+            clanName: userClanMap.get(v.ownerUsername || '') || undefined,
+            quartersLevel: villageQuartersMap.get(`${v.x},${v.y}`) ?? 1
         }));
 
         // Get all active bosses for minimap
@@ -99,7 +115,7 @@ export class WorldController {
             expiresAt = new Date(new Date(boss.spawnedAt).getTime() + BOSS_UNCLAIMED_DESPAWN_MS);
         }
 
-        return {
+        const dto: BossOnMapDTO = {
             id: boss._id?.toHexString() || '',
             x: boss.x,
             y: boss.y,
@@ -111,6 +127,12 @@ export class WorldController {
             claimedByClanName: boss.claimedByClanName,
             expiresAt
         };
+        if (boss.relicId) {
+            dto.relicId = boss.relicId;
+            const def = RELIC_NAMES.find((r) => r.id === boss.relicId);
+            dto.relicName = def?.name ?? boss.relicId;
+        }
+        return dto;
     }
 
     @Post('init')

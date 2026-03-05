@@ -6,6 +6,7 @@ import { User } from '../../user/models/user.entity';
 import { embassyMinimumLevelForClanJoin, RELIC_NAMES } from 'utils';
 import { RelicsService } from '../../relics/relics.service';
 import { AnnouncementsService } from '../../announcements/announcements.service';
+import { MessagesService } from '../../messages/services/messages.service';
 
 const CLANS_COLLECTION = "clans";
 const USERS_COLLECTION = "users";
@@ -18,6 +19,7 @@ export class ClansService {
         private dbAccessorService: DbAccessorService,
         private relicsService: RelicsService,
         private announcementsService: AnnouncementsService,
+        private messagesService: MessagesService,
     ) {}
 
     async createClan(createClanDTO: CreateClanDTO): Promise<ClanDTO> {
@@ -55,6 +57,9 @@ export class ClansService {
             { username: createClanDTO.leaderUsername },
             { $set: { clanName: createClanDTO.clanName } }
         );
+
+        // Update relic holder clan (if leader had relics when clanless) - does NOT touch transferCooldownUntil
+        await this.relicsService.updateHolderClanForUser(createClanDTO.leaderUsername, createClanDTO.clanName);
 
         return new ClanDTO(clan);
     }
@@ -244,16 +249,24 @@ export class ClansService {
             } as any
         );
 
-        // Update relic holder clan; if they hold relics, create announcement
         await this.relicsService.updateHolderClanForUser(username, clanName);
         const heldRelicIds = await this.relicsService.getRelicIdsHeldByUser(username);
-        for (const relicId of heldRelicIds) {
-            const relicDef = RELIC_NAMES.find((r) => r.id === relicId);
-            await this.announcementsService.createAnnouncement(
-                'relic_joined_clan',
-                `Notice: ${username} has joined clan **${clanName}** and they now hold the **${relicDef?.name ?? relicId}**.`,
-                { username, clanName, relicId, relicName: relicDef?.name },
-            );
+
+        if (heldRelicIds.length > 0) {
+            const relicNamesList = heldRelicIds
+                .map(id => RELIC_NAMES.find(r => r.id === id)?.name ?? id)
+                .join(', ');
+
+            const clan = await this.dbAccessorService.getCollection(CLANS_COLLECTION).findOne({ clanName }) as Clan;
+            if (clan) {
+                for (const member of clan.members) {
+                    await this.messagesService.sendClanNotificationMessage(
+                        member,
+                        'A Divine Relic Has Arrived!',
+                        `${username} has joined the clan bringing the ${relicNamesList}! Your clan grows stronger.`,
+                    );
+                }
+            }
         }
     }
 
@@ -296,16 +309,22 @@ export class ClansService {
             { $set: { clanName: "" } }
         );
 
-        // Betrayal: if leaving player holds relics, create announcement and update holder clan
         const heldRelicIds = await this.relicsService.getRelicIdsHeldByUser(leaveClanDTO.username);
         await this.relicsService.updateHolderClanForUser(leaveClanDTO.username, null);
-        for (const relicId of heldRelicIds) {
-            const relicDef = RELIC_NAMES.find((r) => r.id === relicId);
-            await this.announcementsService.createAnnouncement(
-                'relic_left_clan',
-                `Notice: ${leaveClanDTO.username} from clan **${leaveClanDTO.clanName}** left with the **${relicDef?.name ?? relicId}**.`,
-                { username: leaveClanDTO.username, clanName: leaveClanDTO.clanName, relicId, relicName: relicDef?.name },
-            );
+
+        if (heldRelicIds.length > 0) {
+            const relicNamesList = heldRelicIds
+                .map(id => RELIC_NAMES.find(r => r.id === id)?.name ?? id)
+                .join(', ');
+
+            for (const member of clan.members) {
+                if (member === leaveClanDTO.username) continue;
+                await this.messagesService.sendClanNotificationMessage(
+                    member,
+                    'A Relic Has Been Lost!',
+                    `${leaveClanDTO.username} has left the clan and taken the ${relicNamesList} with them. Your clan no longer controls this relic.`,
+                );
+            }
         }
 
         return { success: true };
@@ -456,6 +475,21 @@ export class ClansService {
             { $set: { "pendingClanRequests.$": newClanName } }
         );
 
+        return { success: true };
+    }
+
+    async updateClanDescription(clanName: string, description: string, leaderUsername: string): Promise<{ success: boolean }> {
+        const clan = await this.dbAccessorService.getCollection(CLANS_COLLECTION).findOne({ clanName }) as Clan;
+        if (!clan) {
+            throw new HttpException("Clan not found", HttpStatus.NOT_FOUND);
+        }
+        if (clan.leaderUsername !== leaderUsername) {
+            throw new HttpException("Only the clan leader can update the description", HttpStatus.FORBIDDEN);
+        }
+        await this.dbAccessorService.getCollection(CLANS_COLLECTION).updateOne(
+            { clanName },
+            { $set: { description } }
+        );
         return { success: true };
     }
 

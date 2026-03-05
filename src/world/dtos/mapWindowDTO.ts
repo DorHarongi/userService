@@ -11,6 +11,7 @@ export interface VillageOnMapDTO {
     ownerUsername: string;
     villageName: string;
     clanName?: string;
+    quartersLevel?: number;
 }
 
 export interface BossOnMapDTO {
@@ -24,6 +25,8 @@ export interface BossOnMapDTO {
     claimedByClanId?: string;
     claimedByClanName?: string;
     expiresAt?: Date;
+    relicId?: string;   // Mythic only
+    relicName?: string;
 }
 
 export interface MapWindowResponseDTO {

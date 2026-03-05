@@ -97,9 +97,6 @@ export class RelicsService {
       },
     );
 
-    const relicDef = RELIC_NAMES.find((r) => r.id === relicId);
-    await this.announcementsService.createAnnouncement('relic_transfer', `Clan ${clan.clanName} transferred **${relicDef?.name ?? relicId}** to ${targetUsername} (${targetVillageName}).`, { relicId, relicName: relicDef?.name, clanName: clan.clanName, targetUsername, targetVillageName });
-
     await this.serverService.checkWinCondition();
     return { success: true };
   }
@@ -116,7 +113,7 @@ export class RelicsService {
           holderUsername: username,
           holderVillageName: villageName,
           holderClanName: clanName,
-          transferCooldownUntil: new Date(Date.now() + RELIC_TRANSFER_COOLDOWN_MS),
+          transferCooldownUntil: null,
           obtainedAt: new Date(),
         },
       },
@@ -161,7 +158,7 @@ export class RelicsService {
             holderUsername: attackerUsername,
             holderVillageName: attackerVillageName,
             holderClanName: attackerClanName ?? null,
-            transferCooldownUntil: new Date(Date.now() + RELIC_TRANSFER_COOLDOWN_MS),
+            transferCooldownUntil: null,
             obtainedAt: new Date(),
           },
         },
@@ -172,7 +169,11 @@ export class RelicsService {
     return names;
   }
 
-  /** When a player leaves clan: relics stay with player (no DB change). When they join new clan: update holderClanName. */
+  /**
+   * When a player leaves/joins clan: update holderClanName only.
+   * IMPORTANT: Never modify transferCooldownUntil here. Cooldown is only set on actual transfer
+   * (transferRelic). Steal/mythic set null. Leave+rejoin must NOT reset cooldown (anti-exploit).
+   */
   async updateHolderClanForUser(username: string, newClanName: string | null): Promise<void> {
     await this.collection.updateMany(
       { holderUsername: username },
