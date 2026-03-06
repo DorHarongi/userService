@@ -100,7 +100,7 @@ export class BossService {
     );
     await this.messagesService.sendGlobalInboxMessage(
       `⚡ A Mythic Boss has appeared!`,
-      `A terrifying Ancient Titan has emerged at coordinates (${location.x}, ${location.y}). Rally your clan and prepare for battle — only the mightiest will claim its relic!`,
+      `A terrifying Ancient Titan has emerged at coordinates (${location.x}, ${location.y}).\nRally your clan and prepare for battle!\n\nHint:\nEach Ancient Titan guards a unique Divine Relic.\nThe clan that deals the most damage claims the relic once the titan falls.\nRelics can be stolen by defeating the village that holds one — so keep it safe and guard it well.\nOnly entrust a relic to the clan member you trust most; a disloyal holder could leave and take it with them.\n\nThe first clan to collect all 5 Divine Relics will achieve ultimate victory.`,
     );
   }
 
@@ -921,22 +921,30 @@ export class BossService {
     rewards?: { wood: number; stone: number; crop: number };
   }> {
     // Atomically pull the reward by rewardId — prevents double-claim
-    const result = await this.dbAccessorService
+    const result = (await this.dbAccessorService
       .getCollection(USERS_COLLECTION)
       .findOneAndUpdate(
         { username, 'pendingBossRewards.rewardId': rewardId },
         { $pull: { pendingBossRewards: { rewardId } } } as any,
         { returnDocument: 'before' },
-      ) as any;
+      )) as any;
 
     if (!result) {
-      throw new HttpException('Reward not found or already claimed', HttpStatus.NOT_FOUND);
+      throw new HttpException(
+        'Reward not found or already claimed',
+        HttpStatus.NOT_FOUND,
+      );
     }
 
     const user = result as User;
-    const reward = user.pendingBossRewards?.find((r) => r.rewardId === rewardId);
+    const reward = user.pendingBossRewards?.find(
+      (r) => r.rewardId === rewardId,
+    );
     if (!reward) {
-      throw new HttpException('Reward not found or already claimed', HttpStatus.NOT_FOUND);
+      throw new HttpException(
+        'Reward not found or already claimed',
+        HttpStatus.NOT_FOUND,
+      );
     }
 
     const village = user.villages[0];
@@ -944,9 +952,12 @@ export class BossService {
       throw new HttpException('Village not found', HttpStatus.NOT_FOUND);
     }
 
-    const maxWood = warehouseStorageByLevel[village.buildingsLevels.woodWarehouseLevel];
-    const maxStone = warehouseStorageByLevel[village.buildingsLevels.stoneWarehouseLevel];
-    const maxCrop = warehouseStorageByLevel[village.buildingsLevels.cropWarehouseLevel];
+    const maxWood =
+      warehouseStorageByLevel[village.buildingsLevels.woodWarehouseLevel];
+    const maxStone =
+      warehouseStorageByLevel[village.buildingsLevels.stoneWarehouseLevel];
+    const maxCrop =
+      warehouseStorageByLevel[village.buildingsLevels.cropWarehouseLevel];
 
     // Reject if all warehouses are completely full
     if (
@@ -957,11 +968,13 @@ export class BossService {
       // Put the reward back since we already pulled it
       await this.dbAccessorService
         .getCollection(USERS_COLLECTION)
-        .updateOne(
-          { username },
-          { $push: { pendingBossRewards: reward } } as any,
-        );
-      throw new HttpException('All warehouses are full. Free up space before claiming.', HttpStatus.BAD_REQUEST);
+        .updateOne({ username }, {
+          $push: { pendingBossRewards: reward },
+        } as any);
+      throw new HttpException(
+        'All warehouses are full. Free up space before claiming.',
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     // Deposit resources (capped by warehouse capacity)
