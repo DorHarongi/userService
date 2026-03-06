@@ -17,8 +17,8 @@ import {
   embassyMaximumDefenseTroopsByLevels,
   getArmySpeed,
   getResetCost,
-  getSkillPointsByAcademyLevel,
   getSkillBonus,
+  getSkillPointsByAcademyLevel,
   getUsedSkillPoints,
   warehouseStorageByLevel,
 } from 'utils';
@@ -161,7 +161,10 @@ export class InteractionsService {
       recipientVillage.location.y,
     );
     const armySpeed = getArmySpeed(dto.troops as any);
-    const quickStepBonus = getSkillBonus(senderVillage.skills, SkillCategory.QUICK_STEP);
+    const quickStepBonus = getSkillBonus(
+      senderVillage.skills,
+      SkillCategory.QUICK_STEP,
+    );
     const travelTimeMs = calculateTravelTimeMs(
       distance,
       armySpeed,
@@ -300,8 +303,15 @@ export class InteractionsService {
       recipientVillage.location.y,
     );
     const armySpeed = getArmySpeed(dto.troops as any);
-    const quickStepReturn = getSkillBonus(ownerVillage.skills, SkillCategory.QUICK_STEP);
-    const travelTimeMs = calculateTravelTimeMs(distance, armySpeed, quickStepReturn);
+    const quickStepReturn = getSkillBonus(
+      ownerVillage.skills,
+      SkillCategory.QUICK_STEP,
+    );
+    const travelTimeMs = calculateTravelTimeMs(
+      distance,
+      armySpeed,
+      quickStepReturn,
+    );
     const departureTime = new Date();
     const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
 

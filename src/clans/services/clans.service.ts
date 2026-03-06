@@ -3,7 +3,7 @@ import { DbAccessorService } from '../../database/services/db-accessor.service';
 import { Clan, IClan } from '../models/clan.entity';
 import { ClanDTO, ClanMemberRaidStatsDTO, ClanStatisticDTO, CreateClanDTO, HandleJoinRequestDTO, JoinClanRequestDTO, LeaveClanDTO, ToggleClanOpenDTO } from '../dtos/clanDTO';
 import { User } from '../../user/models/user.entity';
-import { embassyMinimumLevelForClanJoin, RELIC_NAMES } from 'utils';
+import { embassyMinimumLevelForClanJoin, MAX_CLAN_MEMBERS, RELIC_NAMES } from 'utils';
 import { RelicsService } from '../../relics/relics.service';
 import { AnnouncementsService } from '../../announcements/announcements.service';
 import { MessagesService } from '../../messages/services/messages.service';
@@ -177,6 +177,10 @@ export class ClansService {
             throw new HttpException("Already requested to join this clan", HttpStatus.BAD_REQUEST);
         }
 
+        if (clan.members && clan.members.length >= MAX_CLAN_MEMBERS) {
+            throw new HttpException("Clan is full (max " + MAX_CLAN_MEMBERS + " members)", HttpStatus.BAD_REQUEST);
+        }
+
         if (clan.isOpen) {
             // Instant join for open clans
             await this.addMemberToClan(joinRequest.clanName, joinRequest.username);
@@ -229,6 +233,9 @@ export class ClansService {
         );
 
         if (handleRequest.accept) {
+            if (clan.members && clan.members.length >= MAX_CLAN_MEMBERS) {
+                throw new HttpException("Clan is full (max " + MAX_CLAN_MEMBERS + " members)", HttpStatus.BAD_REQUEST);
+            }
             await this.addMemberToClan(handleRequest.clanName, handleRequest.requestUsername);
         }
 

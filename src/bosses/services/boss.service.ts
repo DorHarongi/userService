@@ -100,7 +100,7 @@ export class BossService {
     );
     await this.messagesService.sendGlobalInboxMessage(
       `⚡ A Mythic Boss has appeared!`,
-      `A terrifying Mythic Titan has emerged at coordinates (${location.x}, ${location.y}). Rally your clan and prepare for battle — only the mightiest will claim its relic!`,
+      `A terrifying Ancient Titan has emerged at coordinates (${location.x}, ${location.y}). Rally your clan and prepare for battle — only the mightiest will claim its relic!`,
     );
   }
 
