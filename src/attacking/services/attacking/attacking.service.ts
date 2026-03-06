@@ -22,6 +22,8 @@ import {
     calculateDistance,
     getArmySpeed,
     calculateTravelTimeMs,
+    getSkillBonus,
+    SkillCategory,
 } from 'utils';
 import { DbAccessorService } from '../../../database/services/db-accessor.service';
 import { User } from '../../../user/models/user.entity';
@@ -157,7 +159,7 @@ export class AttackingService {
             defenderVillage.location.y,
         );
         const armySpeed = getArmySpeed(attackDTO.attackingTroops as any);
-        const quickStepBonus = 0; // Skill integration will be added with the Skill Tree (Chunk 1)
+        const quickStepBonus = getSkillBonus(attackerVillage.skills, SkillCategory.QUICK_STEP);
         const travelTimeMs = calculateTravelTimeMs(distance, armySpeed, quickStepBonus);
         const departureTime = new Date();
         const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
