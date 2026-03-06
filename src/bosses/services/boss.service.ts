@@ -82,7 +82,7 @@ export class BossService {
     }
   }
 
-  @Cron('0 0 0 * * *') // Daily at midnight
+  @Cron('0 0 10 * * *') // Daily at 10:00 UTC
   async trySpawnMythicBoss(): Promise<void> {
     if (Math.random() >= MYTHIC_BOSS_DAILY_SPAWN_CHANCE) return;
     const currentMythic = await this.dbAccessorService
