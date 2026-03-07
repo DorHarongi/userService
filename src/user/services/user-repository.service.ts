@@ -149,7 +149,7 @@ export class UserRepositoryService {
         };
     }
 
-    async getUserStatistics(page: number): Promise<Array<UserStatisticDTO>>
+    async getUserStatistics(page: number): Promise<Array<any>>
     {
         const BEGINNER_SHIELD_HOURS = 24;
         
@@ -174,21 +174,37 @@ export class UserRepositoryService {
         
         let usersWithMongoId: any =  await result.toArray();
         const now = new Date();
-        let users: UserStatisticDTO[] = usersWithMongoId.map(userWithMongoId =>{
+
+        // Check if any clanless player holds a relic
+        const relics = await this.dbAccessorService.getCollection('relics')
+            .find({ holderUsername: { $ne: null } }).toArray() as any[];
+        const clanlessRelicHolders = new Map<string, string[]>();
+        for (const r of relics) {
+            if (r.holderUsername && (!r.holderClanName || r.holderClanName === '')) {
+                const existing = clanlessRelicHolders.get(r.holderUsername) || [];
+                existing.push(r.relicId);
+                clanlessRelicHolders.set(r.holderUsername, existing);
+            }
+        }
+
+        let users = usersWithMongoId.map(userWithMongoId =>{
             let shieldRemaining = 0;
             if (userWithMongoId.joinDate) {
                 const joinDate = new Date(userWithMongoId.joinDate);
                 const hoursSinceJoin = (now.getTime() - joinDate.getTime()) / (1000 * 60 * 60);
                 shieldRemaining = Math.max(0, BEGINNER_SHIELD_HOURS - hoursSinceJoin);
             }
-            return {
+            const entry: any = {
                 'username': userWithMongoId.username,
                 'population': userWithMongoId.totalPopulation,
                 'clanName': userWithMongoId.clanName,
                 'numberOfVillages': userWithMongoId.numberOfVillages,
-                'beginnerShieldRemainingHours': shieldRemaining
-            }
-        })
+                'beginnerShieldRemainingHours': shieldRemaining,
+            };
+            const held = clanlessRelicHolders.get(userWithMongoId.username);
+            if (held) entry.heldRelicIds = held;
+            return entry;
+        });
 
         return users;
     }

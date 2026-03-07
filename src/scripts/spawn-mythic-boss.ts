@@ -100,7 +100,7 @@ async function run() {
     const available = allRelics.filter((r: any) => !r.holderUsername);
     const pool = available.length > 0 ? available : allRelics;
     const chosen = pool[Math.floor(Math.random() * pool.length)];
-    const relicId = chosen?.relicId ?? RELIC_NAMES[0]?.id ?? 'apple_of_eternity';
+    const relicId = chosen?.relicId ?? RELIC_NAMES[0]?.id ?? 'apple_of_immortality';
 
     const doc = {
       tier: BossTier.MYTHIC,

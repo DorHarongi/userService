@@ -8,6 +8,7 @@ import { Village } from '../../user/models/village.entity';
 import { TroopsAmounts } from '../../user/models/troopsAmounts';
 import { ResourcesAmounts } from '../../user/models/resourcesAmounts';
 import { BossService } from '../../bosses/services/boss.service';
+import { RELIC_NAMES, RELIC_TRANSFER_COOLDOWN_MS } from 'utils';
 import {
     wallDefenseByLevel,
     spearFighterDefenceStat,
@@ -42,7 +43,7 @@ const MOVEMENTS_COLLECTION = 'movements';
 
 export interface Movement {
     _id?: ObjectId;
-    type: 'attack' | 'support' | 'resources' | 'return' | 'boss_attack';
+    type: 'attack' | 'support' | 'resources' | 'return' | 'boss_attack' | 'relic_transfer';
     senderUsername: string;
     senderVillageName: string;
     targetUsername: string;
@@ -53,6 +54,7 @@ export interface Movement {
     arrivalTime: Date;
     status: 'in_transit' | 'completed';
     bossId?: string;
+    relicId?: string;
 }
 
 @Injectable()
@@ -88,6 +90,8 @@ export class MovementService {
                     await this.resolveResourcesMovement(movement);
                 } else if (movement.type === 'return') {
                     await this.resolveReturnMovement(movement);
+                } else if (movement.type === 'relic_transfer') {
+                    await this.resolveRelicTransferMovement(movement);
                 }
 
                 await collection.updateOne(
@@ -279,9 +283,15 @@ export class MovementService {
                 attacker.clanName || null,
             );
             for (const relicName of stolenNames) {
+                const attackerLabel = attacker.clanName
+                    ? `Clan ${attacker.clanName}`
+                    : `${attacker.username} (clanless)`;
+                const defenderLabel = defender.clanName
+                    ? `${defender.username} of clan ${defender.clanName}`
+                    : `${defender.username} (clanless)`;
                 await this.messagesService.sendGlobalInboxMessage(
                     `A Divine Relic has been stolen!`,
-                    `Clan ${attacker.clanName || 'Unknown'} seized the ${relicName} from ${defender.username} of clan ${defender.clanName || 'None'}. The balance of power shifts.`,
+                    `${attackerLabel} seized the ${relicName} from ${defenderLabel}. The balance of power shifts.`,
                 );
             }
         }
@@ -528,6 +538,43 @@ export class MovementService {
                 crop: movement.resources.cropAmount,
             },
             false, // recipient message
+        );
+    }
+
+    private async resolveRelicTransferMovement(movement: Movement): Promise<void> {
+        if (!movement.relicId) return;
+
+        const targetUser = await this.dbAccessorService.getCollection(USERS_COLLECTION)
+            .findOne({ username: movement.targetUsername }) as User;
+        if (!targetUser) return;
+
+        const hasVillage = targetUser.villages?.some(
+            (v) => v.villageName === movement.targetVillageName,
+        );
+        if (!hasVillage) return;
+
+        const relicDef = RELIC_NAMES.find((r) => r.id === movement.relicId);
+        const relicName = relicDef?.name ?? movement.relicId;
+        const cooldownUntil = new Date(Date.now() + RELIC_TRANSFER_COOLDOWN_MS);
+
+        await this.dbAccessorService.getCollection('relics').updateOne(
+            { relicId: movement.relicId },
+            {
+                $set: {
+                    holderUsername: movement.targetUsername,
+                    holderVillageName: movement.targetVillageName,
+                    holderClanName: targetUser.clanName || null,
+                    transferCooldownUntil: cooldownUntil,
+                    obtainedAt: new Date(),
+                },
+            },
+        );
+
+        await this.relicsService.checkWinAfterChange();
+
+        await this.messagesService.sendGlobalInboxMessage(
+            'A Divine Relic has been moved!',
+            `The ${relicName} has been transferred to ${movement.targetUsername} in ${movement.targetVillageName}.`,
         );
     }
 

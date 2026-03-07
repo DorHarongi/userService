@@ -54,23 +54,51 @@ export class ServerService {
     );
   }
 
-  /** Called after any relic change. If one clan holds all 5, end the server. */
+  /** Called after any relic change. If one clan (or solo player) holds all 5, end the server. */
   async checkWinCondition(): Promise<void> {
     const config = await this.getServerStatus();
     if (config.status === 'ended') return;
 
     const relics = await this.dbAccessorService.getCollection(RELICS_COLLECTION).find({}).toArray() as any[];
     const relicIds = RELIC_NAMES.map((r) => r.id);
+
+    // Check clan win
     const heldByClan: Record<string, number> = {};
     for (const r of relics) {
       if (r.holderClanName && relicIds.includes(r.relicId)) {
         heldByClan[r.holderClanName] = (heldByClan[r.holderClanName] ?? 0) + 1;
       }
     }
-    const winner = Object.entries(heldByClan).find(([, count]) => count === 5);
-    if (winner) {
-      await this.endServer(winner[0]);
+    const clanWinner = Object.entries(heldByClan).find(([, count]) => count === 5);
+    if (clanWinner) {
+      await this.endServer(clanWinner[0]);
+      return;
     }
+
+    // Check solo player win (clanless player holding all 5)
+    const heldByPlayer: Record<string, number> = {};
+    for (const r of relics) {
+      if (r.holderUsername && (!r.holderClanName || r.holderClanName === '') && relicIds.includes(r.relicId)) {
+        heldByPlayer[r.holderUsername] = (heldByPlayer[r.holderUsername] ?? 0) + 1;
+      }
+    }
+    const playerWinner = Object.entries(heldByPlayer).find(([, count]) => count === 5);
+    if (playerWinner) {
+      await this.endServerSoloPlayer(playerWinner[0]);
+    }
+  }
+
+  async endServerSoloPlayer(winningPlayerName: string): Promise<void> {
+    await this.configCollection.updateOne(
+      {},
+      { $set: { status: 'ended', winningPlayerName, endedAt: new Date() } },
+      { upsert: true },
+    );
+    await this.announcementsService.createAnnouncement(
+      'server_ended',
+      `Player **${winningPlayerName}** has single-handedly collected all 5 Divine Relics and won the game!`,
+      { winningPlayerName },
+    );
   }
 
   private readonly USERS_COLLECTION = 'users';

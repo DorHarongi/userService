@@ -27,10 +27,10 @@ import { ServerModule } from './server/server.module';
 @Module({
   imports: [
     ScheduleModule.forRoot(),
-    // Rate limiting: 100 requests per 60 seconds per IP
+    // Rate limiting: 200 requests per 60 seconds per IP
     ThrottlerModule.forRoot([{
       ttl: 60000,  // 60 seconds
-      limit: 100,  // max 100 requests
+      limit: 200,  // max 200 requests
     }]),
     UserModule, 
     DatabaseModule, 

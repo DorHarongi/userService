@@ -1,8 +1,11 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { RELIC_NAMES, RELIC_TRANSFER_COOLDOWN_MS } from 'utils';
+import { RELIC_NAMES, RELIC_TRANSFER_COOLDOWN_MS, calculateDistance } from 'utils';
 import { AnnouncementsService } from '../announcements/announcements.service';
 import { DbAccessorService } from '../database/services/db-accessor.service';
 import { ServerService } from '../server/server.service';
+
+const RELIC_SPEED = 1; // 1 tile per minute
+const MOVEMENTS_COLLECTION = 'movements';
 
 const RELICS_COLLECTION = 'relics';
 const USERS_COLLECTION = 'users';
@@ -29,18 +32,26 @@ export class RelicsService {
     const count = await this.dbAccessorService
       .getCollection(RELICS_COLLECTION)
       .countDocuments();
-    if (count > 0) return;
-    const docs = RELIC_NAMES.map((r) => ({
-      relicId: r.id,
-      holderUsername: null,
-      holderVillageName: null,
-      holderClanName: null,
-      transferCooldownUntil: null,
-      obtainedAt: null,
-    }));
-    await this.dbAccessorService
-      .getCollection(RELICS_COLLECTION)
-      .insertMany(docs);
+    if (count === 0) {
+      const docs = RELIC_NAMES.map((r) => ({
+        relicId: r.id,
+        holderUsername: null,
+        holderVillageName: null,
+        holderClanName: null,
+        transferCooldownUntil: null,
+        obtainedAt: null,
+      }));
+      await this.dbAccessorService
+        .getCollection(RELICS_COLLECTION)
+        .insertMany(docs);
+      return;
+    }
+
+    // Migrate legacy relic ID
+    await this.collection.updateOne(
+      { relicId: 'apple_of_eternity' },
+      { $set: { relicId: 'apple_of_immortality' } },
+    );
   }
 
   private get collection() {
@@ -96,6 +107,17 @@ export class RelicsService {
       );
     }
 
+    if (!relic.holderUsername) {
+      throw new HttpException(
+        'Relic is currently in transit',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const currentHolder = (await this.dbAccessorService
+      .getCollection(USERS_COLLECTION)
+      .findOne({ username: relic.holderUsername })) as any;
+
     const targetUser = (await this.dbAccessorService
       .getCollection(USERS_COLLECTION)
       .findOne({ username: targetUsername })) as any;
@@ -107,34 +129,60 @@ export class RelicsService {
         HttpStatus.BAD_REQUEST,
       );
     }
-    const hasVillage = targetUser.villages?.some(
+    const targetVillage = targetUser.villages?.find(
       (v: any) => v.villageName === targetVillageName,
     );
-    if (!hasVillage)
+    if (!targetVillage)
       throw new HttpException('Target village not found', HttpStatus.NOT_FOUND);
 
-    const cooldownUntil = new Date(Date.now() + RELIC_TRANSFER_COOLDOWN_MS);
+    const sourceVillage = currentHolder?.villages?.find(
+      (v: any) => v.villageName === relic.holderVillageName,
+    );
+
+    let travelTimeMs = 0;
+    if (sourceVillage && targetVillage.location) {
+      const distance = calculateDistance(
+        sourceVillage.location.x,
+        sourceVillage.location.y,
+        targetVillage.location.x,
+        targetVillage.location.y,
+      );
+      travelTimeMs = Math.round((distance / RELIC_SPEED) * 60 * 1000);
+    }
+
+    // Clear current holder while relic is in transit
     await this.collection.updateOne(
       { relicId },
       {
         $set: {
-          holderUsername: targetUsername,
-          holderVillageName: targetVillageName,
-          holderClanName: clan.clanName,
-          transferCooldownUntil: cooldownUntil,
-          obtainedAt: new Date(),
+          holderUsername: null,
+          holderVillageName: null,
         },
       },
     );
 
-    await this.serverService.checkWinCondition();
+    const departureTime = new Date();
+    const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
+
+    await this.dbAccessorService.getCollection(MOVEMENTS_COLLECTION).insertOne({
+      type: 'relic_transfer',
+      senderUsername: relic.holderUsername || leaderUsername,
+      senderVillageName: relic.holderVillageName || '',
+      targetUsername,
+      targetVillageName,
+      departureTime,
+      arrivalTime,
+      status: 'in_transit',
+      relicId,
+    });
+
     return { success: true };
   }
 
-  /** Assign relic to clan (e.g. after Mythic boss defeat). Returns relic name for announcement. */
+  /** Assign relic to a holder. Returns relic name for announcement. */
   async assignRelicToClan(
     relicId: string,
-    clanName: string,
+    clanName: string | null,
     username: string,
     villageName: string,
   ): Promise<string> {
@@ -213,6 +261,11 @@ export class RelicsService {
 
     await this.serverService.checkWinCondition();
     return names;
+  }
+
+  /** Proxy for win condition check, callable from MovementService. */
+  async checkWinAfterChange(): Promise<void> {
+    await this.serverService.checkWinCondition();
   }
 
   /**

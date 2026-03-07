@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Post, UseGuards, Request } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { AttackReportToClientDTO } from '../../models/attackReportToClientDTO';
 import { ReportsService } from '../../services/reports/reports.service';
 import { AuthGuard } from '../../../auth/guards/auth.guard';
@@ -29,6 +30,7 @@ export class ReportsController {
         return await this.reportsService.getAttackReportsOfUser(username, page);
     }
 
+    @SkipThrottle()
     @Get('unread/:username')
     async getUnreadReportCount(@Request() req: any, @Param('username') username: string): Promise<number>
     {

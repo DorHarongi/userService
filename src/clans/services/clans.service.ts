@@ -1,520 +1,827 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { DbAccessorService } from '../../database/services/db-accessor.service';
-import { Clan, IClan } from '../models/clan.entity';
-import { ClanDTO, ClanMemberRaidStatsDTO, ClanStatisticDTO, CreateClanDTO, HandleJoinRequestDTO, JoinClanRequestDTO, LeaveClanDTO, ToggleClanOpenDTO } from '../dtos/clanDTO';
-import { User } from '../../user/models/user.entity';
-import { embassyMinimumLevelForClanJoin, MAX_CLAN_MEMBERS, RELIC_NAMES } from 'utils';
-import { RelicsService } from '../../relics/relics.service';
+import {
+  embassyMinimumLevelForClanJoin,
+  MAX_CLAN_MEMBERS,
+  RELIC_NAMES,
+  calculateDistance,
+  getArmySpeed,
+  calculateTravelTimeMs,
+} from 'utils';
 import { AnnouncementsService } from '../../announcements/announcements.service';
+import { DbAccessorService } from '../../database/services/db-accessor.service';
 import { MessagesService } from '../../messages/services/messages.service';
+import { RelicsService } from '../../relics/relics.service';
+import { User } from '../../user/models/user.entity';
+import {
+  ClanDTO,
+  ClanMemberRaidStatsDTO,
+  ClanStatisticDTO,
+  CreateClanDTO,
+  HandleJoinRequestDTO,
+  JoinClanRequestDTO,
+  LeaveClanDTO,
+  ToggleClanOpenDTO,
+} from '../dtos/clanDTO';
+import { Clan } from '../models/clan.entity';
 
-const CLANS_COLLECTION = "clans";
-const USERS_COLLECTION = "users";
-const RELICS_COLLECTION = "relics";
+const CLANS_COLLECTION = 'clans';
+const USERS_COLLECTION = 'users';
+const RELICS_COLLECTION = 'relics';
+const MOVEMENTS_COLLECTION = 'movements';
 const MAX_CLANS_IN_EACH_STATISTICS_PAGE = 10;
 
 @Injectable()
 export class ClansService {
-    constructor(
-        private dbAccessorService: DbAccessorService,
-        private relicsService: RelicsService,
-        private announcementsService: AnnouncementsService,
-        private messagesService: MessagesService,
-    ) {}
+  constructor(
+    private dbAccessorService: DbAccessorService,
+    private relicsService: RelicsService,
+    private announcementsService: AnnouncementsService,
+    private messagesService: MessagesService,
+  ) {}
 
-    async createClan(createClanDTO: CreateClanDTO): Promise<ClanDTO> {
-        // Check if clan name already exists
-        const existingClan = await this.dbAccessorService.getCollection(CLANS_COLLECTION).findOne({ clanName: createClanDTO.clanName });
-        if (existingClan) {
-            throw new HttpException("Clan name already exists", HttpStatus.CONFLICT);
-        }
-
-        // Check if user exists and doesn't already have a clan
-        const user = await this.dbAccessorService.getCollection(USERS_COLLECTION).findOne({ username: createClanDTO.leaderUsername }) as User;
-        if (!user) {
-            throw new HttpException("User not found", HttpStatus.NOT_FOUND);
-        }
-        if (user.clanName && user.clanName !== "") {
-            throw new HttpException("User already belongs to a clan", HttpStatus.BAD_REQUEST);
-        }
-
-        // Check embassy level in any village
-        const hasRequiredEmbassyLevel = user.villages?.some(
-            v => v.buildingsLevels.embassyLevel >= embassyMinimumLevelForClanJoin
-        );
-        if (!hasRequiredEmbassyLevel) {
-            throw new HttpException(
-                `Embassy must be level ${embassyMinimumLevelForClanJoin} or higher to create a clan`,
-                HttpStatus.BAD_REQUEST
-            );
-        }
-
-        const clan = new Clan(createClanDTO.clanName, createClanDTO.description, createClanDTO.leaderUsername, createClanDTO.isOpen);
-        await this.dbAccessorService.getCollection(CLANS_COLLECTION).insertOne(clan);
-
-        // Update user's clan name
-        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
-            { username: createClanDTO.leaderUsername },
-            { $set: { clanName: createClanDTO.clanName } }
-        );
-
-        // Update relic holder clan (if leader had relics when clanless) - does NOT touch transferCooldownUntil
-        await this.relicsService.updateHolderClanForUser(createClanDTO.leaderUsername, createClanDTO.clanName);
-
-        return new ClanDTO(clan);
+  async createClan(createClanDTO: CreateClanDTO): Promise<ClanDTO> {
+    // Check if clan name already exists
+    const existingClan = await this.dbAccessorService
+      .getCollection(CLANS_COLLECTION)
+      .findOne({ clanName: createClanDTO.clanName });
+    if (existingClan) {
+      throw new HttpException('Clan name already exists', HttpStatus.CONFLICT);
     }
 
-    async getClan(clanName: string): Promise<ClanDTO> {
-        const clan = await this.dbAccessorService.getCollection(CLANS_COLLECTION).findOne({ clanName }) as Clan;
-        if (!clan) {
-            throw new HttpException("Clan not found", HttpStatus.NOT_FOUND);
-        }
-        return new ClanDTO(clan);
+    // Check if user exists and doesn't already have a clan
+    const user = (await this.dbAccessorService
+      .getCollection(USERS_COLLECTION)
+      .findOne({ username: createClanDTO.leaderUsername })) as User;
+    if (!user) {
+      throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+    }
+    if (user.clanName && user.clanName !== '') {
+      throw new HttpException(
+        'User already belongs to a clan',
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
-    async getNumberOfClanStatisticsPages(): Promise<number> {
-        const numberOfClans: number = await this.dbAccessorService.getCollection(CLANS_COLLECTION).estimatedDocumentCount();
-        return Math.ceil(numberOfClans / MAX_CLANS_IN_EACH_STATISTICS_PAGE);
+    // Check embassy level in any village
+    const hasRequiredEmbassyLevel = user.villages?.some(
+      (v) => v.buildingsLevels.embassyLevel >= embassyMinimumLevelForClanJoin,
+    );
+    if (!hasRequiredEmbassyLevel) {
+      throw new HttpException(
+        `Embassy must be level ${embassyMinimumLevelForClanJoin} or higher to create a clan`,
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
-    async getClanStatistics(page: number): Promise<ClanStatisticDTO[]> {
-        // Aggregate clan statistics with total population from members
-        const result = await this.dbAccessorService.getCollection(CLANS_COLLECTION).aggregate([
-            {
-                $lookup: {
-                    from: USERS_COLLECTION,
-                    localField: "members",
-                    foreignField: "username",
-                    as: "memberUsers"
-                }
+    const clan = new Clan(
+      createClanDTO.clanName,
+      createClanDTO.description,
+      createClanDTO.leaderUsername,
+      createClanDTO.isOpen,
+    );
+    await this.dbAccessorService
+      .getCollection(CLANS_COLLECTION)
+      .insertOne(clan);
+
+    // Update user's clan name
+    await this.dbAccessorService
+      .getCollection(USERS_COLLECTION)
+      .updateOne(
+        { username: createClanDTO.leaderUsername },
+        { $set: { clanName: createClanDTO.clanName } },
+      );
+
+    // Update relic holder clan (if leader had relics when clanless) - does NOT touch transferCooldownUntil
+    await this.relicsService.updateHolderClanForUser(
+      createClanDTO.leaderUsername,
+      createClanDTO.clanName,
+    );
+
+    return new ClanDTO(clan);
+  }
+
+  async getClan(clanName: string): Promise<ClanDTO> {
+    const clan = (await this.dbAccessorService
+      .getCollection(CLANS_COLLECTION)
+      .findOne({ clanName })) as Clan;
+    if (!clan) {
+      throw new HttpException('Clan not found', HttpStatus.NOT_FOUND);
+    }
+    return new ClanDTO(clan);
+  }
+
+  async getNumberOfClanStatisticsPages(): Promise<number> {
+    const numberOfClans: number = await this.dbAccessorService
+      .getCollection(CLANS_COLLECTION)
+      .estimatedDocumentCount();
+    return Math.ceil(numberOfClans / MAX_CLANS_IN_EACH_STATISTICS_PAGE);
+  }
+
+  async getClanStatistics(page: number): Promise<ClanStatisticDTO[]> {
+    // Aggregate clan statistics with total population from members
+    const result = await this.dbAccessorService
+      .getCollection(CLANS_COLLECTION)
+      .aggregate([
+        {
+          $lookup: {
+            from: USERS_COLLECTION,
+            localField: 'members',
+            foreignField: 'username',
+            as: 'memberUsers',
+          },
+        },
+        {
+          $addFields: {
+            totalPopulation: {
+              $sum: {
+                $map: {
+                  input: '$memberUsers',
+                  as: 'user',
+                  in: {
+                    $sum: {
+                      $map: {
+                        input: '$$user.villages',
+                        as: 'village',
+                        in: '$$village.population',
+                      },
+                    },
+                  },
+                },
+              },
             },
-            {
-                $addFields: {
-                    totalPopulation: {
-                        $sum: {
-                            $map: {
-                                input: "$memberUsers",
-                                as: "user",
-                                in: {
-                                    $sum: {
-                                        $map: {
-                                            input: "$$user.villages",
-                                            as: "village",
-                                            in: "$$village.population"
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+          },
+        },
+        { $sort: { totalPopulation: -1, clanName: 1 } },
+        { $skip: MAX_CLANS_IN_EACH_STATISTICS_PAGE * (page - 1) },
+        { $limit: MAX_CLANS_IN_EACH_STATISTICS_PAGE },
+        {
+          $lookup: {
+            from: RELICS_COLLECTION,
+            let: { cn: '$clanName' },
+            pipeline: [
+              { $match: { $expr: { $eq: ['$holderClanName', '$$cn'] } } },
+              { $project: { relicId: 1 } },
+            ],
+            as: 'relicDocs',
+          },
+        },
+        {
+          $project: {
+            clanName: 1,
+            description: 1,
+            leaderUsername: 1,
+            memberCount: { $size: '$members' },
+            totalPopulation: 1,
+            isOpen: 1,
+            totalBossesKilled: { $ifNull: ['$totalBossesKilled', 0] },
+            heldRelicIds: {
+              $map: { input: '$relicDocs', as: 'r', in: '$$r.relicId' },
             },
-            { $sort: { totalPopulation: -1, clanName: 1 } },
-            { $skip: MAX_CLANS_IN_EACH_STATISTICS_PAGE * (page - 1) },
-            { $limit: MAX_CLANS_IN_EACH_STATISTICS_PAGE },
-            {
-                $lookup: {
-                    from: RELICS_COLLECTION,
-                    let: { cn: "$clanName" },
-                    pipeline: [
-                        { $match: { $expr: { $eq: ["$holderClanName", "$$cn"] } } },
-                        { $project: { relicId: 1 } }
-                    ],
-                    as: "relicDocs"
-                }
+          },
+        },
+      ])
+      .toArray();
+
+    return result as ClanStatisticDTO[];
+  }
+
+  async getClanMemberRaidStats(
+    clanName: string,
+  ): Promise<ClanMemberRaidStatsDTO[]> {
+    const clan = (await this.dbAccessorService
+      .getCollection(CLANS_COLLECTION)
+      .findOne({ clanName })) as Clan;
+    if (!clan) {
+      throw new HttpException('Clan not found', HttpStatus.NOT_FOUND);
+    }
+
+    // Get all members' weekly raid damage
+    const members = await this.dbAccessorService
+      .getCollection(USERS_COLLECTION)
+      .find({ username: { $in: clan.members } })
+      .project({ username: 1, weeklyRaidDamage: 1 })
+      .toArray();
+
+    return members
+      .map((m) => ({
+        username: m.username,
+        weeklyRaidDamage: m.weeklyRaidDamage || 0,
+      }))
+      .sort((a, b) => b.weeklyRaidDamage - a.weeklyRaidDamage);
+  }
+
+  async requestToJoinClan(
+    joinRequest: JoinClanRequestDTO,
+  ): Promise<{ success: boolean }> {
+    const clan = (await this.dbAccessorService
+      .getCollection(CLANS_COLLECTION)
+      .findOne({ clanName: joinRequest.clanName })) as Clan;
+    if (!clan) {
+      throw new HttpException('Clan not found', HttpStatus.NOT_FOUND);
+    }
+
+    const user = (await this.dbAccessorService
+      .getCollection(USERS_COLLECTION)
+      .findOne({ username: joinRequest.username })) as User;
+    if (!user) {
+      throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+    }
+    if (user.clanName && user.clanName !== '') {
+      throw new HttpException(
+        'User already belongs to a clan',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    // Check if already requested
+    if (
+      user.pendingClanRequests &&
+      user.pendingClanRequests.includes(joinRequest.clanName)
+    ) {
+      throw new HttpException(
+        'Already requested to join this clan',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    if (clan.members && clan.members.length >= MAX_CLAN_MEMBERS) {
+      throw new HttpException(
+        'Clan is full (max ' + MAX_CLAN_MEMBERS + ' members)',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    if (clan.isOpen) {
+      // Instant join for open clans
+      await this.addMemberToClan(joinRequest.clanName, joinRequest.username);
+      return { success: true };
+    } else {
+      // Add to pending requests for closed clans
+      await this.dbAccessorService
+        .getCollection(CLANS_COLLECTION)
+        .updateOne({ clanName: joinRequest.clanName }, {
+          $push: {
+            pendingRequests: {
+              username: joinRequest.username,
+              message: joinRequest.message || '',
+              requestDate: new Date(),
             },
-            {
-                $project: {
-                    clanName: 1,
-                    description: 1,
-                    leaderUsername: 1,
-                    memberCount: { $size: "$members" },
-                    totalPopulation: 1,
-                    isOpen: 1,
-                    totalBossesKilled: { $ifNull: ["$totalBossesKilled", 0] },
-                    heldRelicIds: { $map: { input: "$relicDocs", as: "r", in: "$$r.relicId" } }
-                }
-            }
-        ]).toArray();
+          },
+        } as any);
 
-        return result as ClanStatisticDTO[];
+      // Track pending request on user side
+      await this.dbAccessorService
+        .getCollection(USERS_COLLECTION)
+        .updateOne({ username: joinRequest.username }, {
+          $push: { pendingClanRequests: joinRequest.clanName },
+        } as any);
+
+      return { success: true };
+    }
+  }
+
+  async handleJoinRequest(
+    handleRequest: HandleJoinRequestDTO,
+  ): Promise<{ success: boolean }> {
+    const clan = (await this.dbAccessorService
+      .getCollection(CLANS_COLLECTION)
+      .findOne({ clanName: handleRequest.clanName })) as Clan;
+    if (!clan) {
+      throw new HttpException('Clan not found', HttpStatus.NOT_FOUND);
     }
 
-    async getClanMemberRaidStats(clanName: string): Promise<ClanMemberRaidStatsDTO[]> {
-        const clan = await this.dbAccessorService.getCollection(CLANS_COLLECTION).findOne({ clanName }) as Clan;
-        if (!clan) {
-            throw new HttpException("Clan not found", HttpStatus.NOT_FOUND);
-        }
-
-        // Get all members' weekly raid damage
-        const members = await this.dbAccessorService.getCollection(USERS_COLLECTION)
-            .find({ username: { $in: clan.members } })
-            .project({ username: 1, weeklyRaidDamage: 1 })
-            .toArray();
-
-        return members.map(m => ({
-            username: m.username,
-            weeklyRaidDamage: m.weeklyRaidDamage || 0
-        })).sort((a, b) => b.weeklyRaidDamage - a.weeklyRaidDamage);
+    if (clan.leaderUsername !== handleRequest.leaderUsername) {
+      throw new HttpException(
+        'Only the clan leader can handle join requests',
+        HttpStatus.FORBIDDEN,
+      );
     }
 
-    async requestToJoinClan(joinRequest: JoinClanRequestDTO): Promise<{ success: boolean }> {
-        const clan = await this.dbAccessorService.getCollection(CLANS_COLLECTION).findOne({ clanName: joinRequest.clanName }) as Clan;
-        if (!clan) {
-            throw new HttpException("Clan not found", HttpStatus.NOT_FOUND);
-        }
+    // Remove from pending requests
+    await this.dbAccessorService
+      .getCollection(CLANS_COLLECTION)
+      .updateOne({ clanName: handleRequest.clanName }, {
+        $pull: { pendingRequests: { username: handleRequest.requestUsername } },
+      } as any);
 
-        const user = await this.dbAccessorService.getCollection(USERS_COLLECTION).findOne({ username: joinRequest.username }) as User;
-        if (!user) {
-            throw new HttpException("User not found", HttpStatus.NOT_FOUND);
-        }
-        if (user.clanName && user.clanName !== "") {
-            throw new HttpException("User already belongs to a clan", HttpStatus.BAD_REQUEST);
-        }
+    // Remove from user's pending clan requests
+    await this.dbAccessorService
+      .getCollection(USERS_COLLECTION)
+      .updateOne({ username: handleRequest.requestUsername }, {
+        $pull: { pendingClanRequests: handleRequest.clanName },
+      } as any);
 
-        // Check if already requested
-        if (user.pendingClanRequests && user.pendingClanRequests.includes(joinRequest.clanName)) {
-            throw new HttpException("Already requested to join this clan", HttpStatus.BAD_REQUEST);
-        }
-
-        if (clan.members && clan.members.length >= MAX_CLAN_MEMBERS) {
-            throw new HttpException("Clan is full (max " + MAX_CLAN_MEMBERS + " members)", HttpStatus.BAD_REQUEST);
-        }
-
-        if (clan.isOpen) {
-            // Instant join for open clans
-            await this.addMemberToClan(joinRequest.clanName, joinRequest.username);
-            return { success: true };
-        } else {
-            // Add to pending requests for closed clans
-            await this.dbAccessorService.getCollection(CLANS_COLLECTION).updateOne(
-                { clanName: joinRequest.clanName },
-                {
-                    $push: {
-                        pendingRequests: {
-                            username: joinRequest.username,
-                            message: joinRequest.message || "",
-                            requestDate: new Date()
-                        }
-                    }
-                } as any
-            );
-
-            // Track pending request on user side
-            await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
-                { username: joinRequest.username },
-                { $push: { pendingClanRequests: joinRequest.clanName } } as any
-            );
-
-            return { success: true };
-        }
+    if (handleRequest.accept) {
+      if (clan.members && clan.members.length >= MAX_CLAN_MEMBERS) {
+        throw new HttpException(
+          'Clan is full (max ' + MAX_CLAN_MEMBERS + ' members)',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      await this.addMemberToClan(
+        handleRequest.clanName,
+        handleRequest.requestUsername,
+      );
     }
 
-    async handleJoinRequest(handleRequest: HandleJoinRequestDTO): Promise<{ success: boolean }> {
-        const clan = await this.dbAccessorService.getCollection(CLANS_COLLECTION).findOne({ clanName: handleRequest.clanName }) as Clan;
-        if (!clan) {
-            throw new HttpException("Clan not found", HttpStatus.NOT_FOUND);
+    return { success: true };
+  }
+
+  private async addMemberToClan(
+    clanName: string,
+    username: string,
+  ): Promise<void> {
+    await this.dbAccessorService
+      .getCollection(CLANS_COLLECTION)
+      .updateOne({ clanName }, { $addToSet: { members: username } } as any);
+
+    await this.dbAccessorService
+      .getCollection(USERS_COLLECTION)
+      .updateOne({ username }, {
+        $set: { clanName: clanName },
+        $pull: { pendingClanRequests: clanName },
+      } as any);
+
+    await this.relicsService.updateHolderClanForUser(username, clanName);
+    const heldRelicIds = await this.relicsService.getRelicIdsHeldByUser(
+      username,
+    );
+
+    if (heldRelicIds.length > 0) {
+      const relicNamesList = heldRelicIds
+        .map((id) => RELIC_NAMES.find((r) => r.id === id)?.name ?? id)
+        .join(', ');
+
+      const clan = (await this.dbAccessorService
+        .getCollection(CLANS_COLLECTION)
+        .findOne({ clanName })) as Clan;
+      if (clan) {
+        for (const member of clan.members) {
+          await this.messagesService.sendClanNotificationMessage(
+            member,
+            'A Divine Relic Has Arrived!',
+            `${username} has joined the clan bringing the ${relicNamesList}! Your clan grows stronger.`,
+          );
         }
+      }
+    }
+  }
 
-        if (clan.leaderUsername !== handleRequest.leaderUsername) {
-            throw new HttpException("Only the clan leader can handle join requests", HttpStatus.FORBIDDEN);
-        }
-
-        // Remove from pending requests
-        await this.dbAccessorService.getCollection(CLANS_COLLECTION).updateOne(
-            { clanName: handleRequest.clanName },
-            { $pull: { pendingRequests: { username: handleRequest.requestUsername } } } as any
-        );
-
-        // Remove from user's pending clan requests
-        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
-            { username: handleRequest.requestUsername },
-            { $pull: { pendingClanRequests: handleRequest.clanName } } as any
-        );
-
-        if (handleRequest.accept) {
-            if (clan.members && clan.members.length >= MAX_CLAN_MEMBERS) {
-                throw new HttpException("Clan is full (max " + MAX_CLAN_MEMBERS + " members)", HttpStatus.BAD_REQUEST);
-            }
-            await this.addMemberToClan(handleRequest.clanName, handleRequest.requestUsername);
-        }
-
-        return { success: true };
+  async leaveClan(leaveClanDTO: LeaveClanDTO): Promise<{ success: boolean }> {
+    const clan = (await this.dbAccessorService
+      .getCollection(CLANS_COLLECTION)
+      .findOne({ clanName: leaveClanDTO.clanName })) as Clan;
+    if (!clan) {
+      throw new HttpException('Clan not found', HttpStatus.NOT_FOUND);
     }
 
-    private async addMemberToClan(clanName: string, username: string): Promise<void> {
-        await this.dbAccessorService.getCollection(CLANS_COLLECTION).updateOne(
-            { clanName },
-            { $addToSet: { members: username } } as any
-        );
+    // Withdraw all support troops the leaving player has sent to clan members
+    await this.withdrawAllSupportTroops(leaveClanDTO.username);
+    // Return all support troops other clan members sent to the leaving player
+    await this.returnReceivedSupportTroops(leaveClanDTO.username);
 
-        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
-            { username },
-            { 
-                $set: { clanName: clanName },
-                $pull: { pendingClanRequests: clanName }
-            } as any
-        );
-
-        await this.relicsService.updateHolderClanForUser(username, clanName);
-        const heldRelicIds = await this.relicsService.getRelicIdsHeldByUser(username);
-
-        if (heldRelicIds.length > 0) {
-            const relicNamesList = heldRelicIds
-                .map(id => RELIC_NAMES.find(r => r.id === id)?.name ?? id)
-                .join(', ');
-
-            const clan = await this.dbAccessorService.getCollection(CLANS_COLLECTION).findOne({ clanName }) as Clan;
-            if (clan) {
-                for (const member of clan.members) {
-                    await this.messagesService.sendClanNotificationMessage(
-                        member,
-                        'A Divine Relic Has Arrived!',
-                        `${username} has joined the clan bringing the ${relicNamesList}! Your clan grows stronger.`,
-                    );
-                }
-            }
-        }
+    if (clan.leaderUsername === leaveClanDTO.username) {
+      // If leader leaves, either transfer leadership or dissolve clan
+      if (clan.members.length > 1) {
+        // Transfer to next member
+        const newLeader = clan.members.find((m) => m !== leaveClanDTO.username);
+        await this.dbAccessorService
+          .getCollection(CLANS_COLLECTION)
+          .updateOne({ clanName: leaveClanDTO.clanName }, {
+            $set: { leaderUsername: newLeader },
+            $pull: { members: leaveClanDTO.username },
+          } as any);
+      } else {
+        // Dissolve clan
+        await this.dbAccessorService
+          .getCollection(CLANS_COLLECTION)
+          .deleteOne({ clanName: leaveClanDTO.clanName });
+      }
+    } else {
+      // Regular member leaving
+      await this.dbAccessorService
+        .getCollection(CLANS_COLLECTION)
+        .updateOne({ clanName: leaveClanDTO.clanName }, {
+          $pull: { members: leaveClanDTO.username },
+        } as any);
     }
 
-    async leaveClan(leaveClanDTO: LeaveClanDTO): Promise<{ success: boolean }> {
-        const clan = await this.dbAccessorService.getCollection(CLANS_COLLECTION).findOne({ clanName: leaveClanDTO.clanName }) as Clan;
-        if (!clan) {
-            throw new HttpException("Clan not found", HttpStatus.NOT_FOUND);
-        }
+    // Clear user's clan
+    await this.dbAccessorService
+      .getCollection(USERS_COLLECTION)
+      .updateOne(
+        { username: leaveClanDTO.username },
+        { $set: { clanName: '' } },
+      );
 
-        // Withdraw all support troops the leaving player has sent to clan members
-        await this.withdrawAllSupportTroops(leaveClanDTO.username);
+    const heldRelicIds = await this.relicsService.getRelicIdsHeldByUser(
+      leaveClanDTO.username,
+    );
+    await this.relicsService.updateHolderClanForUser(
+      leaveClanDTO.username,
+      null,
+    );
 
-        if (clan.leaderUsername === leaveClanDTO.username) {
-            // If leader leaves, either transfer leadership or dissolve clan
-            if (clan.members.length > 1) {
-                // Transfer to next member
-                const newLeader = clan.members.find(m => m !== leaveClanDTO.username);
-                await this.dbAccessorService.getCollection(CLANS_COLLECTION).updateOne(
-                    { clanName: leaveClanDTO.clanName },
-                    { 
-                        $set: { leaderUsername: newLeader },
-                        $pull: { members: leaveClanDTO.username }
-                    } as any
-                );
-            } else {
-                // Dissolve clan
-                await this.dbAccessorService.getCollection(CLANS_COLLECTION).deleteOne({ clanName: leaveClanDTO.clanName });
-            }
-        } else {
-            // Regular member leaving
-            await this.dbAccessorService.getCollection(CLANS_COLLECTION).updateOne(
-                { clanName: leaveClanDTO.clanName },
-                { $pull: { members: leaveClanDTO.username } } as any
-            );
-        }
+    if (heldRelicIds.length > 0) {
+      const relicNamesList = heldRelicIds
+        .map((id) => RELIC_NAMES.find((r) => r.id === id)?.name ?? id)
+        .join(', ');
 
-        // Clear user's clan
-        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
-            { username: leaveClanDTO.username },
-            { $set: { clanName: "" } }
+      for (const member of clan.members) {
+        if (member === leaveClanDTO.username) continue;
+        await this.messagesService.sendClanNotificationMessage(
+          member,
+          'A Relic Has Been Lost!',
+          `${leaveClanDTO.username} has left the clan and taken the ${relicNamesList} with them. Your clan no longer controls this relic.`,
         );
-
-        const heldRelicIds = await this.relicsService.getRelicIdsHeldByUser(leaveClanDTO.username);
-        await this.relicsService.updateHolderClanForUser(leaveClanDTO.username, null);
-
-        if (heldRelicIds.length > 0) {
-            const relicNamesList = heldRelicIds
-                .map(id => RELIC_NAMES.find(r => r.id === id)?.name ?? id)
-                .join(', ');
-
-            for (const member of clan.members) {
-                if (member === leaveClanDTO.username) continue;
-                await this.messagesService.sendClanNotificationMessage(
-                    member,
-                    'A Relic Has Been Lost!',
-                    `${leaveClanDTO.username} has left the clan and taken the ${relicNamesList} with them. Your clan no longer controls this relic.`,
-                );
-            }
-        }
-
-        return { success: true };
+      }
     }
 
-    // Withdraw all support troops a user has sent when they leave the clan
-    private async withdrawAllSupportTroops(username: string): Promise<void> {
-        const user = await this.dbAccessorService.getCollection(USERS_COLLECTION).findOne({ username }) as User;
-        if (!user) return;
+    return { success: true };
+  }
 
-        // Go through each village and withdraw support sent
-        for (const village of user.villages) {
-            if (!village.supportSent || village.supportSent.length === 0) continue;
+  private subtractClanTroops(
+    clanTroops: any,
+    troops: any,
+  ): void {
+    clanTroops.spearFighters = Math.max(0, (clanTroops.spearFighters || 0) - (troops.spearFighters || 0));
+    clanTroops.swordFighters = Math.max(0, (clanTroops.swordFighters || 0) - (troops.swordFighters || 0));
+    clanTroops.axeFighters = Math.max(0, (clanTroops.axeFighters || 0) - (troops.axeFighters || 0));
+    clanTroops.archers = Math.max(0, (clanTroops.archers || 0) - (troops.archers || 0));
+    clanTroops.magicians = Math.max(0, (clanTroops.magicians || 0) - (troops.magicians || 0));
+    clanTroops.horsemen = Math.max(0, (clanTroops.horsemen || 0) - (troops.horsemen || 0));
+    clanTroops.catapults = Math.max(0, (clanTroops.catapults || 0) - (troops.catapults || 0));
+  }
 
-            for (const support of village.supportSent) {
-                // Get the recipient user
-                const recipient = await this.dbAccessorService.getCollection(USERS_COLLECTION).findOne({ 
-                    username: support.recipientUsername 
-                }) as User;
-                
-                if (!recipient) continue;
+  private createReturnMovement(
+    senderVillage: any,
+    recipientVillage: any,
+    ownerUsername: string,
+    ownerVillageName: string,
+    troops: any,
+  ): any {
+    const distance = calculateDistance(
+      senderVillage.location.x,
+      senderVillage.location.y,
+      recipientVillage.location.x,
+      recipientVillage.location.y,
+    );
+    const armySpeed = getArmySpeed(troops as any);
+    const travelTimeMs = calculateTravelTimeMs(distance, armySpeed, 0);
+    const departureTime = new Date();
+    const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
 
-                // Find the recipient village
-                const recipientVillage = recipient.villages.find(v => v.villageName === support.recipientVillageName);
-                if (!recipientVillage || !recipientVillage.clanTroops) continue;
+    return {
+      type: 'return',
+      senderUsername: ownerUsername,
+      senderVillageName: ownerVillageName,
+      targetUsername: ownerUsername,
+      targetVillageName: ownerVillageName,
+      troops,
+      departureTime,
+      arrivalTime,
+      status: 'in_transit',
+    };
+  }
 
-                // Subtract troops from recipient's clanTroops
-                recipientVillage.clanTroops.spearFighters = Math.max(0, (recipientVillage.clanTroops.spearFighters || 0) - (support.troops.spearFighters || 0));
-                recipientVillage.clanTroops.swordFighters = Math.max(0, (recipientVillage.clanTroops.swordFighters || 0) - (support.troops.swordFighters || 0));
-                recipientVillage.clanTroops.axeFighters = Math.max(0, (recipientVillage.clanTroops.axeFighters || 0) - (support.troops.axeFighters || 0));
-                recipientVillage.clanTroops.archers = Math.max(0, (recipientVillage.clanTroops.archers || 0) - (support.troops.archers || 0));
-                recipientVillage.clanTroops.magicians = Math.max(0, (recipientVillage.clanTroops.magicians || 0) - (support.troops.magicians || 0));
-                recipientVillage.clanTroops.horsemen = Math.max(0, (recipientVillage.clanTroops.horsemen || 0) - (support.troops.horsemen || 0));
-                recipientVillage.clanTroops.catapults = Math.max(0, (recipientVillage.clanTroops.catapults || 0) - (support.troops.catapults || 0));
+  // Withdraw all support troops a user has SENT when they leave the clan
+  private async withdrawAllSupportTroops(username: string): Promise<void> {
+    const user = (await this.dbAccessorService
+      .getCollection(USERS_COLLECTION)
+      .findOne({ username })) as User;
+    if (!user) return;
 
-                // Update recipient
-                await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
-                    { username: support.recipientUsername },
-                    { $set: recipient }
-                );
+    for (const village of user.villages) {
+      if (!village.supportSent || village.supportSent.length === 0) continue;
 
-                // Return troops to the sender's village
-                village.troops.spearFighters = (village.troops.spearFighters || 0) + (support.troops.spearFighters || 0);
-                village.troops.swordFighters = (village.troops.swordFighters || 0) + (support.troops.swordFighters || 0);
-                village.troops.axeFighters = (village.troops.axeFighters || 0) + (support.troops.axeFighters || 0);
-                village.troops.archers = (village.troops.archers || 0) + (support.troops.archers || 0);
-                village.troops.magicians = (village.troops.magicians || 0) + (support.troops.magicians || 0);
-                village.troops.horsemen = (village.troops.horsemen || 0) + (support.troops.horsemen || 0);
-                village.troops.catapults = (village.troops.catapults || 0) + (support.troops.catapults || 0);
-            }
+      for (const support of village.supportSent) {
+        const recipient = (await this.dbAccessorService
+          .getCollection(USERS_COLLECTION)
+          .findOne({ username: support.recipientUsername })) as User;
+        if (!recipient) continue;
 
-            // Clear supportSent for this village
-            village.supportSent = [];
-        }
-
-        // Update the leaving user with returned troops
-        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
-            { username },
-            { $set: user }
+        const recipientVillage = recipient.villages.find(
+          (v) => v.villageName === support.recipientVillageName,
         );
+        if (!recipientVillage || !recipientVillage.clanTroops) continue;
+
+        this.subtractClanTroops(recipientVillage.clanTroops, support.troops);
+
+        await this.dbAccessorService
+          .getCollection(USERS_COLLECTION)
+          .updateOne(
+            { username: support.recipientUsername },
+            { $set: recipient },
+          );
+
+        // Create return movement (troops travel back at slowest unit speed)
+        const movement = this.createReturnMovement(
+          recipientVillage,
+          village,
+          username,
+          village.villageName,
+          { ...support.troops },
+        );
+        await this.dbAccessorService
+          .getCollection(MOVEMENTS_COLLECTION)
+          .insertOne(movement);
+      }
+
+      village.supportSent = [];
     }
 
-    async getClanMembers(clanName: string): Promise<string[]> {
-        const clan = await this.dbAccessorService.getCollection(CLANS_COLLECTION).findOne({ clanName }) as Clan;
-        if (!clan) {
-            throw new HttpException("Clan not found", HttpStatus.NOT_FOUND);
+    await this.dbAccessorService
+      .getCollection(USERS_COLLECTION)
+      .updateOne({ username }, { $set: user });
+  }
+
+  // Return all support troops that other players sent TO this user
+  private async returnReceivedSupportTroops(username: string): Promise<void> {
+    const allSenders = await this.dbAccessorService
+      .getCollection(USERS_COLLECTION)
+      .find({ 'villages.supportSent.recipientUsername': username })
+      .toArray() as User[];
+
+    if (allSenders.length === 0) return;
+
+    // Load the leaving user once
+    const leavingUser = (await this.dbAccessorService
+      .getCollection(USERS_COLLECTION)
+      .findOne({ username })) as User;
+    if (!leavingUser) return;
+
+    const movementsToInsert: any[] = [];
+
+    for (const sender of allSenders) {
+      let senderChanged = false;
+
+      for (const senderVillage of sender.villages) {
+        if (!senderVillage.supportSent) continue;
+
+        const toReturn = senderVillage.supportSent.filter(
+          (s) => s.recipientUsername === username,
+        );
+        if (toReturn.length === 0) continue;
+
+        for (const support of toReturn) {
+          const recipientVillage = leavingUser.villages.find(
+            (v) => v.villageName === support.recipientVillageName,
+          );
+          if (!recipientVillage || !recipientVillage.clanTroops) continue;
+
+          this.subtractClanTroops(recipientVillage.clanTroops, support.troops);
+
+          movementsToInsert.push(this.createReturnMovement(
+            recipientVillage,
+            senderVillage,
+            sender.username,
+            senderVillage.villageName,
+            { ...support.troops },
+          ));
         }
-        return clan.members;
+
+        senderVillage.supportSent = senderVillage.supportSent.filter(
+          (s) => s.recipientUsername !== username,
+        );
+        senderChanged = true;
+      }
+
+      if (senderChanged) {
+        await this.dbAccessorService
+          .getCollection(USERS_COLLECTION)
+          .updateOne({ username: sender.username }, { $set: sender });
+      }
     }
 
-    async areUsersInSameClan(username1: string, username2: string): Promise<boolean> {
-        const user1 = await this.dbAccessorService.getCollection(USERS_COLLECTION).findOne({ username: username1 }) as User;
-        const user2 = await this.dbAccessorService.getCollection(USERS_COLLECTION).findOne({ username: username2 }) as User;
-        
-        if (!user1 || !user2) return false;
-        if (!user1.clanName || !user2.clanName || user1.clanName === "" || user2.clanName === "") return false;
-        
-        return user1.clanName === user2.clanName;
+    // Save the leaving user once with all clanTroops subtractions
+    await this.dbAccessorService
+      .getCollection(USERS_COLLECTION)
+      .updateOne({ username }, { $set: leavingUser });
+
+    // Bulk insert all return movements
+    if (movementsToInsert.length > 0) {
+      await this.dbAccessorService
+        .getCollection(MOVEMENTS_COLLECTION)
+        .insertMany(movementsToInsert);
+    }
+  }
+
+  async getClanMembers(clanName: string): Promise<string[]> {
+    const clan = (await this.dbAccessorService
+      .getCollection(CLANS_COLLECTION)
+      .findOne({ clanName })) as Clan;
+    if (!clan) {
+      throw new HttpException('Clan not found', HttpStatus.NOT_FOUND);
+    }
+    return clan.members;
+  }
+
+  async areUsersInSameClan(
+    username1: string,
+    username2: string,
+  ): Promise<boolean> {
+    const user1 = (await this.dbAccessorService
+      .getCollection(USERS_COLLECTION)
+      .findOne({ username: username1 })) as User;
+    const user2 = (await this.dbAccessorService
+      .getCollection(USERS_COLLECTION)
+      .findOne({ username: username2 })) as User;
+
+    if (!user1 || !user2) return false;
+    if (
+      !user1.clanName ||
+      !user2.clanName ||
+      user1.clanName === '' ||
+      user2.clanName === ''
+    )
+      return false;
+
+    return user1.clanName === user2.clanName;
+  }
+
+  async kickMember(
+    clanName: string,
+    leaderUsername: string,
+    memberUsername: string,
+  ): Promise<{ success: boolean }> {
+    const clan = (await this.dbAccessorService
+      .getCollection(CLANS_COLLECTION)
+      .findOne({ clanName })) as Clan;
+    if (!clan) {
+      throw new HttpException('Clan not found', HttpStatus.NOT_FOUND);
     }
 
-    async kickMember(clanName: string, leaderUsername: string, memberUsername: string): Promise<{ success: boolean }> {
-        const clan = await this.dbAccessorService.getCollection(CLANS_COLLECTION).findOne({ clanName }) as Clan;
-        if (!clan) {
-            throw new HttpException("Clan not found", HttpStatus.NOT_FOUND);
-        }
-
-        if (clan.leaderUsername !== leaderUsername) {
-            throw new HttpException("Only the clan leader can kick members", HttpStatus.FORBIDDEN);
-        }
-
-        if (leaderUsername === memberUsername) {
-            throw new HttpException("You cannot kick yourself", HttpStatus.BAD_REQUEST);
-        }
-
-        if (!clan.members.includes(memberUsername)) {
-            throw new HttpException("User is not a member of this clan", HttpStatus.BAD_REQUEST);
-        }
-
-        // Withdraw all support troops the kicked player has sent to clan members
-        await this.withdrawAllSupportTroops(memberUsername);
-
-        // Remove member from clan
-        await this.dbAccessorService.getCollection(CLANS_COLLECTION).updateOne(
-            { clanName },
-            { $pull: { members: memberUsername } } as any
-        );
-
-        // Clear user's clan
-        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
-            { username: memberUsername },
-            { $set: { clanName: "" } }
-        );
-
-        return { success: true };
+    if (clan.leaderUsername !== leaderUsername) {
+      throw new HttpException(
+        'Only the clan leader can kick members',
+        HttpStatus.FORBIDDEN,
+      );
     }
 
-    async updateClanName(oldClanName: string, newClanName: string, leaderUsername: string): Promise<{ success: boolean }> {
-        const clan = await this.dbAccessorService.getCollection(CLANS_COLLECTION).findOne({ clanName: oldClanName }) as Clan;
-        if (!clan) {
-            throw new HttpException("Clan not found", HttpStatus.NOT_FOUND);
-        }
-
-        if (clan.leaderUsername !== leaderUsername) {
-            throw new HttpException("Only the clan leader can update the clan name", HttpStatus.FORBIDDEN);
-        }
-
-        // Check if new name already exists
-        const existingClan = await this.dbAccessorService.getCollection(CLANS_COLLECTION).findOne({ clanName: newClanName });
-        if (existingClan) {
-            throw new HttpException("Clan name already exists", HttpStatus.CONFLICT);
-        }
-
-        // Update clan name
-        await this.dbAccessorService.getCollection(CLANS_COLLECTION).updateOne(
-            { clanName: oldClanName },
-            { $set: { clanName: newClanName } }
-        );
-
-        // Update all members' clanName
-        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateMany(
-            { clanName: oldClanName },
-            { $set: { clanName: newClanName } }
-        );
-
-        // Update pending clan requests to the new name
-        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateMany(
-            { pendingClanRequests: oldClanName },
-            { $set: { "pendingClanRequests.$": newClanName } }
-        );
-
-        return { success: true };
+    if (leaderUsername === memberUsername) {
+      throw new HttpException(
+        'You cannot kick yourself',
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
-    async updateClanDescription(clanName: string, description: string, leaderUsername: string): Promise<{ success: boolean }> {
-        const clan = await this.dbAccessorService.getCollection(CLANS_COLLECTION).findOne({ clanName }) as Clan;
-        if (!clan) {
-            throw new HttpException("Clan not found", HttpStatus.NOT_FOUND);
-        }
-        if (clan.leaderUsername !== leaderUsername) {
-            throw new HttpException("Only the clan leader can update the description", HttpStatus.FORBIDDEN);
-        }
-        await this.dbAccessorService.getCollection(CLANS_COLLECTION).updateOne(
-            { clanName },
-            { $set: { description } }
-        );
-        return { success: true };
+    if (!clan.members.includes(memberUsername)) {
+      throw new HttpException(
+        'User is not a member of this clan',
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
-    async toggleClanOpen(toggleDTO: ToggleClanOpenDTO): Promise<{ success: boolean }> {
-        const clan = await this.dbAccessorService.getCollection(CLANS_COLLECTION).findOne({ clanName: toggleDTO.clanName }) as Clan;
-        if (!clan) {
-            throw new HttpException("Clan not found", HttpStatus.NOT_FOUND);
-        }
+    // Withdraw all support troops the kicked player has sent to clan members
+    await this.withdrawAllSupportTroops(memberUsername);
+    // Return all support troops other clan members sent to the kicked player
+    await this.returnReceivedSupportTroops(memberUsername);
 
-        if (clan.leaderUsername !== toggleDTO.leaderUsername) {
-            throw new HttpException("Only the clan leader can change clan settings", HttpStatus.FORBIDDEN);
-        }
+    // Remove member from clan
+    await this.dbAccessorService
+      .getCollection(CLANS_COLLECTION)
+      .updateOne({ clanName }, { $pull: { members: memberUsername } } as any);
 
-        await this.dbAccessorService.getCollection(CLANS_COLLECTION).updateOne(
-            { clanName: toggleDTO.clanName },
-            { $set: { isOpen: toggleDTO.isOpen } }
+    // Clear user's clan
+    await this.dbAccessorService
+      .getCollection(USERS_COLLECTION)
+      .updateOne({ username: memberUsername }, { $set: { clanName: '' } });
+
+    // Handle relics held by the kicked player
+    const heldRelicIds = await this.relicsService.getRelicIdsHeldByUser(
+      memberUsername,
+    );
+    await this.relicsService.updateHolderClanForUser(memberUsername, null);
+
+    if (heldRelicIds.length > 0) {
+      const relicNamesList = heldRelicIds
+        .map((id) => RELIC_NAMES.find((r) => r.id === id)?.name ?? id)
+        .join(', ');
+
+      const relicWord = heldRelicIds.length > 1 ? 'relics' : 'relic';
+      const theseRelics = heldRelicIds.length > 1
+        ? 'These relics now stand unprotected'
+        : 'The relic now stands unprotected';
+
+      await this.messagesService.sendGlobalInboxMessage(
+        'A Divine Relic has been forsaken!',
+        `Clan ${clanName} has expelled ${memberUsername}, who carries the ${relicNamesList}. ${theseRelics}.`,
+      );
+
+      for (const member of clan.members) {
+        if (member === memberUsername) continue;
+        await this.messagesService.sendClanNotificationMessage(
+          member,
+          'A Relic Has Been Lost!',
+          `${memberUsername} has been kicked from the clan, taking the ${relicNamesList} with them. Your clan no longer controls ${heldRelicIds.length > 1 ? 'these ' + relicWord : 'this ' + relicWord}.`,
         );
-
-        return { success: true };
+      }
     }
+
+    return { success: true };
+  }
+
+  async updateClanName(
+    oldClanName: string,
+    newClanName: string,
+    leaderUsername: string,
+  ): Promise<{ success: boolean }> {
+    const clan = (await this.dbAccessorService
+      .getCollection(CLANS_COLLECTION)
+      .findOne({ clanName: oldClanName })) as Clan;
+    if (!clan) {
+      throw new HttpException('Clan not found', HttpStatus.NOT_FOUND);
+    }
+
+    if (clan.leaderUsername !== leaderUsername) {
+      throw new HttpException(
+        'Only the clan leader can update the clan name',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+
+    // Check if new name already exists
+    const existingClan = await this.dbAccessorService
+      .getCollection(CLANS_COLLECTION)
+      .findOne({ clanName: newClanName });
+    if (existingClan) {
+      throw new HttpException('Clan name already exists', HttpStatus.CONFLICT);
+    }
+
+    // Update clan name
+    await this.dbAccessorService
+      .getCollection(CLANS_COLLECTION)
+      .updateOne(
+        { clanName: oldClanName },
+        { $set: { clanName: newClanName } },
+      );
+
+    // Update all members' clanName
+    await this.dbAccessorService
+      .getCollection(USERS_COLLECTION)
+      .updateMany(
+        { clanName: oldClanName },
+        { $set: { clanName: newClanName } },
+      );
+
+    // Update pending clan requests to the new name
+    await this.dbAccessorService
+      .getCollection(USERS_COLLECTION)
+      .updateMany(
+        { pendingClanRequests: oldClanName },
+        { $set: { 'pendingClanRequests.$': newClanName } },
+      );
+
+    return { success: true };
+  }
+
+  async updateClanDescription(
+    clanName: string,
+    description: string,
+    leaderUsername: string,
+  ): Promise<{ success: boolean }> {
+    const clan = (await this.dbAccessorService
+      .getCollection(CLANS_COLLECTION)
+      .findOne({ clanName })) as Clan;
+    if (!clan) {
+      throw new HttpException('Clan not found', HttpStatus.NOT_FOUND);
+    }
+    if (clan.leaderUsername !== leaderUsername) {
+      throw new HttpException(
+        'Only the clan leader can update the description',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+    await this.dbAccessorService
+      .getCollection(CLANS_COLLECTION)
+      .updateOne({ clanName }, { $set: { description } });
+    return { success: true };
+  }
+
+  async toggleClanOpen(
+    toggleDTO: ToggleClanOpenDTO,
+  ): Promise<{ success: boolean }> {
+    const clan = (await this.dbAccessorService
+      .getCollection(CLANS_COLLECTION)
+      .findOne({ clanName: toggleDTO.clanName })) as Clan;
+    if (!clan) {
+      throw new HttpException('Clan not found', HttpStatus.NOT_FOUND);
+    }
+
+    if (clan.leaderUsername !== toggleDTO.leaderUsername) {
+      throw new HttpException(
+        'Only the clan leader can change clan settings',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+
+    await this.dbAccessorService
+      .getCollection(CLANS_COLLECTION)
+      .updateOne(
+        { clanName: toggleDTO.clanName },
+        { $set: { isOpen: toggleDTO.isOpen } },
+      );
+
+    return { success: true };
+  }
 }
