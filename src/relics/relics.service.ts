@@ -46,12 +46,6 @@ export class RelicsService {
         .insertMany(docs);
       return;
     }
-
-    // Migrate legacy relic ID
-    await this.collection.updateOne(
-      { relicId: 'apple_of_eternity' },
-      { $set: { relicId: 'apple_of_immortality' } },
-    );
   }
 
   private get collection() {
