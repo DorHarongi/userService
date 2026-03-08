@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ObjectId } from 'mongodb';
 import {
@@ -54,7 +54,7 @@ const WORLD_SIZE = 100;
 const PROXIMITY_RANGE = 20; // Bosses spawn within this range of villages
 
 @Injectable()
-export class BossService {
+export class BossService implements OnModuleInit {
   private readonly logger = new Logger(BossService.name);
 
   constructor(
@@ -64,6 +64,31 @@ export class BossService {
     private announcementsService: AnnouncementsService,
     private reportsService: ReportsService,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    await this.migrateBossNames();
+  }
+
+  private async migrateBossNames(): Promise<void> {
+    const OLD_NAME = 'Ancient Dragon';
+    const NEW_NAME = 'Sun Dragon';
+
+    await this.dbAccessorService
+      .getCollection(BOSSES_COLLECTION)
+      .updateMany({ name: OLD_NAME }, { $set: { name: NEW_NAME } });
+
+    await this.dbAccessorService
+      .getCollection(RAID_REPORTS_COLLECTION)
+      .updateMany({ bossName: OLD_NAME }, { $set: { bossName: NEW_NAME } });
+
+    await this.dbAccessorService
+      .getCollection(USERS_COLLECTION)
+      .updateMany(
+        { 'pendingBossRewards.bossName': OLD_NAME },
+        { $set: { 'pendingBossRewards.$[elem].bossName': NEW_NAME } },
+        { arrayFilters: [{ 'elem.bossName': OLD_NAME }] } as any,
+      );
+  }
 
   // =====================
   // SPAWNING LOGIC
