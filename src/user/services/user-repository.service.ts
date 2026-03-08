@@ -2,6 +2,7 @@ import { HttpException, HttpStatus, Injectable, Inject, forwardRef } from '@nest
 import { Cron } from '@nestjs/schedule';
 import { InsertOneResult } from 'mongodb';
 import { DbAccessorService } from '../../database/services/db-accessor.service';
+import { ServerContextService } from '../../database/services/server-context.service';
 import { User } from '../models/user.entity';
 import { userFromClientDTO } from '../dtos/userFromClientDTO';
 import * as crypto from 'crypto';
@@ -21,11 +22,9 @@ const COLLECTION_NAME = "users";
 export class UserRepositoryService {
     constructor(
         private dbAccessorService: DbAccessorService,
+        private serverContextService: ServerContextService,
         @Inject(forwardRef(() => WorldService)) private worldService: WorldService
-    )
-    {
-
-    }
+    ) {}
     async create(userFromClient: userFromClientDTO): Promise<boolean> {
         // Check if username already exists
         const existingUser = await this.dbAccessorService.getCollection(COLLECTION_NAME).findOne({ username: userFromClient.username });
@@ -82,43 +81,45 @@ export class UserRepositoryService {
     // Reset weekly stats every Monday at 00:00; archive previous week's leaderboards first
     @Cron('0 0 * * 1')
     async resetWeeklyStats(): Promise<void> {
-        const archiveColl = this.dbAccessorService.getCollection('leaderboardArchive');
-        const weekEnding = new Date(); // Monday 00:00 = end of previous week
+        await this.serverContextService.forEachServer(async () => {
+            const archiveColl = this.dbAccessorService.getCollection('leaderboardArchive');
+            const weekEnding = new Date();
 
-        try {
-            const [playerBossDamage, playerResourcesStolen, playerSuccessfulDefenses, clanBossDamage, clanResourcesStolen, clanSuccessfulDefenses] = await Promise.all([
-                this.getUserLeaderboard('bossDamage'),
-                this.getUserLeaderboard('resourcesStolen'),
-                this.getUserLeaderboard('successfulDefenses'),
-                this.getClanLeaderboard('bossDamage'),
-                this.getClanLeaderboard('resourcesStolen'),
-                this.getClanLeaderboard('successfulDefenses'),
-            ]);
-            await archiveColl.insertOne({
-                weekEnding,
-                playerBossDamage,
-                playerResourcesStolen,
-                playerSuccessfulDefenses,
-                clanBossDamage,
-                clanResourcesStolen,
-                clanSuccessfulDefenses,
-            });
-        } catch (e) {
-            console.error('Leaderboard archive failed (continuing reset):', e);
-        }
+            try {
+                const [playerBossDamage, playerResourcesStolen, playerSuccessfulDefenses, clanBossDamage, clanResourcesStolen, clanSuccessfulDefenses] = await Promise.all([
+                    this.getUserLeaderboard('bossDamage'),
+                    this.getUserLeaderboard('resourcesStolen'),
+                    this.getUserLeaderboard('successfulDefenses'),
+                    this.getClanLeaderboard('bossDamage'),
+                    this.getClanLeaderboard('resourcesStolen'),
+                    this.getClanLeaderboard('successfulDefenses'),
+                ]);
+                await archiveColl.insertOne({
+                    weekEnding,
+                    playerBossDamage,
+                    playerResourcesStolen,
+                    playerSuccessfulDefenses,
+                    clanBossDamage,
+                    clanResourcesStolen,
+                    clanSuccessfulDefenses,
+                });
+            } catch (e) {
+                console.error('Leaderboard archive failed (continuing reset):', e);
+            }
 
-        await this.dbAccessorService
-            .getCollection(COLLECTION_NAME)
-            .updateMany(
-                {},
-                {
-                    $set: {
-                        'weeklyStats.bossDamage': 0,
-                        'weeklyStats.resourcesStolen': 0,
-                        'weeklyStats.successfulDefenses': 0,
+            await this.dbAccessorService
+                .getCollection(COLLECTION_NAME)
+                .updateMany(
+                    {},
+                    {
+                        $set: {
+                            'weeklyStats.bossDamage': 0,
+                            'weeklyStats.resourcesStolen': 0,
+                            'weeklyStats.successfulDefenses': 0,
+                        },
                     },
-                },
-            );
+                );
+        });
     }
 
     async getLeaderboardArchive(): Promise<{

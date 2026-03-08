@@ -78,7 +78,7 @@ export class DbConnectorService {
     return this.accountsDb;
   }
 
-  private async getActiveServerIds(): Promise<number[]> {
+  async getActiveServerIds(): Promise<number[]> {
     try {
       const accts = this.getAccountsDb();
       const servers = await accts.collection('servers').find({}).toArray();

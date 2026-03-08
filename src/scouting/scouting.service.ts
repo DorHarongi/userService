@@ -2,6 +2,7 @@ import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ObjectId } from 'mongodb';
 import { DbAccessorService } from '../database/services/db-accessor.service';
+import { ServerContextService } from '../database/services/server-context.service';
 import { ReportsService } from '../reports/services/reports/reports.service';
 import { User } from '../user/models/user.entity';
 import { Village } from '../user/models/village.entity';
@@ -29,6 +30,7 @@ export class ScoutingService {
 
     constructor(
         private dbAccessorService: DbAccessorService,
+        private serverContextService: ServerContextService,
         private reportsService: ReportsService,
     ) {}
 
@@ -108,23 +110,25 @@ export class ScoutingService {
 
     @Cron('*/10 * * * * *')
     async resolveSpyMissions(): Promise<void> {
-        const now = new Date();
-        const missions = await this.dbAccessorService
-            .getCollection(SPY_MISSIONS_COLLECTION)
-            .find({ arrivalTime: { $lte: now }, status: { $in: ['in_transit', 'returning'] } })
-            .toArray() as SpyMission[];
+        await this.serverContextService.forEachServer(async () => {
+            const now = new Date();
+            const missions = await this.dbAccessorService
+                .getCollection(SPY_MISSIONS_COLLECTION)
+                .find({ arrivalTime: { $lte: now }, status: { $in: ['in_transit', 'returning'] } })
+                .toArray() as SpyMission[];
 
-        for (const mission of missions) {
-            try {
-                if (mission.status === 'in_transit') {
-                    await this.resolveArrival(mission);
-                } else if (mission.status === 'returning') {
-                    await this.completeReturn(mission);
+            for (const mission of missions) {
+                try {
+                    if (mission.status === 'in_transit') {
+                        await this.resolveArrival(mission);
+                    } else if (mission.status === 'returning') {
+                        await this.completeReturn(mission);
+                    }
+                } catch (error) {
+                    this.logger.error(`Error resolving spy mission ${mission._id}: ${error?.message || error}`);
                 }
-            } catch (error) {
-                this.logger.error(`Error resolving spy mission ${mission._id}: ${error?.message || error}`);
             }
-        }
+        });
     }
 
     private async resolveArrival(mission: SpyMission): Promise<void> {
@@ -300,49 +304,51 @@ export class ScoutingService {
 
     @Cron('*/30 * * * * *')
     async regenerateSpies(): Promise<void> {
-        const users = await this.dbAccessorService
-            .getCollection(USERS_COLLECTION)
-            .find({})
-            .toArray() as User[];
+        await this.serverContextService.forEachServer(async () => {
+            const users = await this.dbAccessorService
+                .getCollection(USERS_COLLECTION)
+                .find({})
+                .toArray() as User[];
 
-        const now = new Date();
+            const now = new Date();
 
-        for (const user of users) {
-            let updated = false;
+            for (const user of users) {
+                let updated = false;
 
-            for (const village of user.villages) {
-                const stableLevel = village.buildingsLevels.stableLevel || 0;
-                const maxSpies = getMaxSpies(stableLevel);
+                for (const village of user.villages) {
+                    const stableLevel = village.buildingsLevels.stableLevel || 0;
+                    const maxSpies = getMaxSpies(stableLevel);
 
-                if (!maxSpies || maxSpies <= 0) continue;
+                    if (!maxSpies || maxSpies <= 0) continue;
 
-                village.aliveSpies = village.aliveSpies ?? maxSpies;
-                village.spyDeathTimestamps = village.spyDeathTimestamps || [];
+                    village.aliveSpies = village.aliveSpies ?? maxSpies;
+                    village.spyDeathTimestamps = village.spyDeathTimestamps || [];
 
-                if (village.aliveSpies < maxSpies && village.spyDeathTimestamps.length === 0) {
-                    village.aliveSpies = maxSpies;
-                    updated = true;
-                }
-
-                while (village.aliveSpies < maxSpies && village.spyDeathTimestamps.length > 0) {
-                    const oldest = village.spyDeathTimestamps[0];
-                    const regenReady = new Date(oldest.getTime() + (12 * 60 * 60 * 1000));
-                    if (regenReady <= now) {
-                        village.aliveSpies += 1;
-                        village.spyDeathTimestamps.shift();
+                    if (village.aliveSpies < maxSpies && village.spyDeathTimestamps.length === 0) {
+                        village.aliveSpies = maxSpies;
                         updated = true;
-                    } else {
-                        break;
+                    }
+
+                    while (village.aliveSpies < maxSpies && village.spyDeathTimestamps.length > 0) {
+                        const oldest = village.spyDeathTimestamps[0];
+                        const regenReady = new Date(oldest.getTime() + (12 * 60 * 60 * 1000));
+                        if (regenReady <= now) {
+                            village.aliveSpies += 1;
+                            village.spyDeathTimestamps.shift();
+                            updated = true;
+                        } else {
+                            break;
+                        }
                     }
                 }
-            }
 
-            if (updated) {
-                await this.dbAccessorService
-                    .getCollection(USERS_COLLECTION)
-                    .updateOne({ username: user.username }, { $set: user });
+                if (updated) {
+                    await this.dbAccessorService
+                        .getCollection(USERS_COLLECTION)
+                        .updateOne({ username: user.username }, { $set: user });
+                }
             }
-        }
+        });
     }
 }
 

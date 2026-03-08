@@ -2,6 +2,7 @@ import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ObjectId } from 'mongodb';
 import { DbAccessorService } from '../../database/services/db-accessor.service';
+import { ServerContextService } from '../../database/services/server-context.service';
 import { ReportsService } from '../../reports/services/reports/reports.service';
 import { User } from '../../user/models/user.entity';
 import { Village } from '../../user/models/village.entity';
@@ -63,6 +64,7 @@ export class MovementService {
 
     constructor(
         private dbAccessorService: DbAccessorService,
+        private serverContextService: ServerContextService,
         private reportsService: ReportsService,
         private relicsService: RelicsService,
         private announcementsService: AnnouncementsService,
@@ -72,36 +74,38 @@ export class MovementService {
 
     @Cron('*/10 * * * * *')
     async processArrivedMovements(): Promise<void> {
-        const now = new Date();
-        const collection = this.dbAccessorService.getCollection(MOVEMENTS_COLLECTION);
-        const movements = await collection
-            .find({ arrivalTime: { $lte: now }, status: 'in_transit' })
-            .toArray() as Movement[];
+        await this.serverContextService.forEachServer(async () => {
+            const now = new Date();
+            const collection = this.dbAccessorService.getCollection(MOVEMENTS_COLLECTION);
+            const movements = await collection
+                .find({ arrivalTime: { $lte: now }, status: 'in_transit' })
+                .toArray() as Movement[];
 
-        for (const movement of movements) {
-            try {
-                if (movement.type === 'attack') {
-                    await this.resolveAttackMovement(movement);
-                } else if (movement.type === 'boss_attack') {
-                    await this.bossService.resolveBossAttack(movement as any);
-                } else if (movement.type === 'support') {
-                    await this.resolveSupportMovement(movement);
-                } else if (movement.type === 'resources') {
-                    await this.resolveResourcesMovement(movement);
-                } else if (movement.type === 'return') {
-                    await this.resolveReturnMovement(movement);
-                } else if (movement.type === 'relic_transfer') {
-                    await this.resolveRelicTransferMovement(movement);
+            for (const movement of movements) {
+                try {
+                    if (movement.type === 'attack') {
+                        await this.resolveAttackMovement(movement);
+                    } else if (movement.type === 'boss_attack') {
+                        await this.bossService.resolveBossAttack(movement as any);
+                    } else if (movement.type === 'support') {
+                        await this.resolveSupportMovement(movement);
+                    } else if (movement.type === 'resources') {
+                        await this.resolveResourcesMovement(movement);
+                    } else if (movement.type === 'return') {
+                        await this.resolveReturnMovement(movement);
+                    } else if (movement.type === 'relic_transfer') {
+                        await this.resolveRelicTransferMovement(movement);
+                    }
+
+                    await collection.updateOne(
+                        { _id: movement._id },
+                        { $set: { status: 'completed' } },
+                    );
+                } catch (error) {
+                    this.logger.error(`Error processing movement ${movement._id}: ${error?.message || error}`);
                 }
-
-                await collection.updateOne(
-                    { _id: movement._id },
-                    { $set: { status: 'completed' } },
-                );
-            } catch (error) {
-                this.logger.error(`Error processing movement ${movement._id}: ${error?.message || error}`);
             }
-        }
+        });
     }
 
     async getUserMovements(username: string): Promise<any[]> {

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { DbAccessorService } from '../database/services/db-accessor.service';
+import { ServerContextService } from '../database/services/server-context.service';
 
 const CHAT_COLLECTION = 'chatMessages';
 
@@ -14,7 +15,10 @@ export interface ChatMessage {
 
 @Injectable()
 export class ChatService {
-    constructor(private dbAccessorService: DbAccessorService) {}
+    constructor(
+        private dbAccessorService: DbAccessorService,
+        private serverContextService: ServerContextService,
+    ) {}
 
     async saveChatMessage(clanName: string, senderUsername: string, senderRole: 'leader' | 'member', content: string): Promise<void> {
         const message: ChatMessage = {
@@ -48,10 +52,12 @@ export class ChatService {
 
     @Cron('0 0 * * *')
     async cleanOldMessages(): Promise<void> {
-        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-        await this.dbAccessorService
-            .getCollection(CHAT_COLLECTION)
-            .deleteMany({ date: { $lt: sevenDaysAgo } });
+        await this.serverContextService.forEachServer(async () => {
+            const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+            await this.dbAccessorService
+                .getCollection(CHAT_COLLECTION)
+                .deleteMany({ date: { $lt: sevenDaysAgo } });
+        });
     }
 }
 

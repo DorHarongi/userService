@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { DbAccessorService } from '../database/services/db-accessor.service';
+import { ServerContextService } from '../database/services/server-context.service';
 
 const ANNOUNCEMENTS_COLLECTION = 'announcements';
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -14,7 +15,10 @@ export interface AnnouncementDocument {
 
 @Injectable()
 export class AnnouncementsService {
-  constructor(private dbAccessorService: DbAccessorService) {}
+  constructor(
+    private dbAccessorService: DbAccessorService,
+    private serverContextService: ServerContextService,
+  ) {}
 
   private get collection() {
     return this.dbAccessorService.getCollection(ANNOUNCEMENTS_COLLECTION);
@@ -39,7 +43,9 @@ export class AnnouncementsService {
 
   @Cron('0 0 * * * *') // every hour
   async cleanOldMessages(): Promise<void> {
-    const cutoff = new Date(Date.now() - MAX_AGE_MS);
-    await this.collection.deleteMany({ date: { $lt: cutoff } });
+    await this.serverContextService.forEachServer(async () => {
+      const cutoff = new Date(Date.now() - MAX_AGE_MS);
+      await this.collection.deleteMany({ date: { $lt: cutoff } });
+    });
   }
 }

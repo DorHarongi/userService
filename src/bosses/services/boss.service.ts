@@ -31,6 +31,7 @@ import {
 import { AnnouncementsService } from '../../announcements/announcements.service';
 import { IClan } from '../../clans/models/clan.entity';
 import { DbAccessorService } from '../../database/services/db-accessor.service';
+import { ServerContextService } from '../../database/services/server-context.service';
 import { MessagesService } from '../../messages/services/messages.service';
 import { RelicsService } from '../../relics/relics.service';
 import { AttackReport } from '../../reports/models/attackReport.entity';
@@ -59,6 +60,7 @@ export class BossService {
 
   constructor(
     private dbAccessorService: DbAccessorService,
+    private serverContextService: ServerContextService,
     private messagesService: MessagesService,
     private relicsService: RelicsService,
     private announcementsService: AnnouncementsService,
@@ -72,74 +74,78 @@ export class BossService {
   // Reset weekly raid damage every Sunday at midnight
   @Cron('0 0 0 * * 0') // Sunday at 00:00:00
   async resetWeeklyRaidDamage(): Promise<void> {
-    try {
-      await this.dbAccessorService
-        .getCollection(USERS_COLLECTION)
-        .updateMany({}, { $set: { weeklyRaidDamage: 0 } });
-      this.logger.log('Reset weekly raid damage for all users');
-    } catch (error) {
-      this.logger.error('Error resetting weekly raid damage:', error);
-    }
+    await this.serverContextService.forEachServer(async () => {
+      try {
+        await this.dbAccessorService
+          .getCollection(USERS_COLLECTION)
+          .updateMany({}, { $set: { weeklyRaidDamage: 0 } });
+        this.logger.log('Reset weekly raid damage for all users');
+      } catch (error) {
+        this.logger.error('Error resetting weekly raid damage:', error);
+      }
+    });
   }
 
   @Cron('0 0 10 * * *') // Daily at 10:00 UTC
   async trySpawnMythicBoss(): Promise<void> {
-    if (Math.random() >= MYTHIC_BOSS_DAILY_SPAWN_CHANCE) return;
-    const currentMythic = await this.dbAccessorService
-      .getCollection(BOSSES_COLLECTION)
-      .countDocuments({ isDefeated: false, tier: BossTier.MYTHIC });
-    if (currentMythic > 0) return; // only one mythic at a time
-    const location = await this.findSpawnLocation();
-    if (!location) return;
-    await this.spawnBoss(BossTier.MYTHIC, location.x, location.y);
-    this.logger.log(`Mythic boss spawned at (${location.x}, ${location.y})`);
-    await this.announcementsService.createAnnouncement(
-      'mythic_spawn',
-      `⚡ A Mythic Boss has appeared at (${location.x}, ${location.y})!`,
-      { x: location.x, y: location.y },
-    );
-    await this.messagesService.sendGlobalInboxMessage(
-      `⚡ A Mythic Boss has appeared!`,
-      `A terrifying Ancient Titan has emerged at coordinates (${location.x}, ${location.y}).\nRally your clan and prepare for battle!\n\nHint:\nEach Ancient Titan guards a unique Divine Relic.\nThe clan that deals the most damage claims the relic once the titan falls.\nRelics can be stolen by defeating the village that holds one — so keep it safe and guard it well.\nOnly entrust a relic to the clan member you trust most; a disloyal holder could leave and take it with them.\n\nThe first clan to collect all 5 Divine Relics will achieve ultimate victory.`,
-    );
+    await this.serverContextService.forEachServer(async () => {
+      if (Math.random() >= MYTHIC_BOSS_DAILY_SPAWN_CHANCE) return;
+      const currentMythic = await this.dbAccessorService
+        .getCollection(BOSSES_COLLECTION)
+        .countDocuments({ isDefeated: false, tier: BossTier.MYTHIC });
+      if (currentMythic > 0) return;
+      const location = await this.findSpawnLocation();
+      if (!location) return;
+      await this.spawnBoss(BossTier.MYTHIC, location.x, location.y);
+      this.logger.log(`Mythic boss spawned at (${location.x}, ${location.y})`);
+      await this.announcementsService.createAnnouncement(
+        'mythic_spawn',
+        `⚡ A Mythic Boss has appeared at (${location.x}, ${location.y})!`,
+        { x: location.x, y: location.y },
+      );
+      await this.messagesService.sendGlobalInboxMessage(
+        `⚡ A Mythic Boss has appeared!`,
+        `A terrifying Ancient Titan has emerged at coordinates (${location.x}, ${location.y}).\nRally your clan and prepare for battle!\n\nHint:\nEach Ancient Titan guards a unique Divine Relic.\nThe clan that deals the most damage claims the relic once the titan falls.\nRelics can be stolen by defeating the village that holds one — so keep it safe and guard it well.\nOnly entrust a relic to the clan member you trust most; a disloyal holder could leave and take it with them.\n\nThe first clan to collect all 5 Divine Relics will achieve ultimate victory.`,
+      );
+    });
   }
 
   @Cron('0 */30 * * * *') // Every 30 minutes
   async trySpawnBoss(): Promise<void> {
-    try {
-      // Clean up expired bosses first
-      await this.cleanupExpiredBosses();
+    await this.serverContextService.forEachServer(async () => {
+      try {
+        await this.cleanupExpiredBosses();
 
-      const currentBossCount = await this.dbAccessorService
-        .getCollection(BOSSES_COLLECTION)
-        .countDocuments({ isDefeated: false, tier: { $ne: BossTier.MYTHIC } });
+        const currentBossCount = await this.dbAccessorService
+          .getCollection(BOSSES_COLLECTION)
+          .countDocuments({ isDefeated: false, tier: { $ne: BossTier.MYTHIC } });
 
-      if (currentBossCount >= MAX_BOSSES_ON_MAP) {
-        this.logger.log(
-          `Boss cap reached (${currentBossCount}/${MAX_BOSSES_ON_MAP}), skipping spawn`,
-        );
-        return;
+        if (currentBossCount >= MAX_BOSSES_ON_MAP) {
+          this.logger.log(
+            `Boss cap reached (${currentBossCount}/${MAX_BOSSES_ON_MAP}), skipping spawn`,
+          );
+          return;
+        }
+
+        if (Math.random() > 0.7) {
+          this.logger.log('Spawn chance missed this interval');
+          return;
+        }
+
+        const tier = this.selectRandomTier();
+        const location = await this.findSpawnLocation();
+
+        if (!location) {
+          this.logger.warn('Could not find valid spawn location for boss');
+          return;
+        }
+
+        await this.spawnBoss(tier, location.x, location.y);
+        this.logger.log(`Spawned ${tier} boss at (${location.x}, ${location.y})`);
+      } catch (error) {
+        this.logger.error('Error in boss spawn cron:', error);
       }
-
-      // Random chance to spawn (not every interval guarantees a spawn)
-      if (Math.random() > 0.7) {
-        this.logger.log('Spawn chance missed this interval');
-        return;
-      }
-
-      const tier = this.selectRandomTier();
-      const location = await this.findSpawnLocation();
-
-      if (!location) {
-        this.logger.warn('Could not find valid spawn location for boss');
-        return;
-      }
-
-      await this.spawnBoss(tier, location.x, location.y);
-      this.logger.log(`Spawned ${tier} boss at (${location.x}, ${location.y})`);
-    } catch (error) {
-      this.logger.error('Error in boss spawn cron:', error);
-    }
+    });
   }
 
   private selectRandomTier(): BossTier {
