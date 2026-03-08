@@ -1,5 +1,4 @@
 import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards, Request } from '@nestjs/common';
-import { SkipThrottle } from '@nestjs/throttler';
 import { MessagesService } from '../services/messages.service';
 import { MessageDTO, SendMessageDTO } from '../dtos/messageDTO';
 import { AuthGuard } from '../../auth/guards/auth.guard';
@@ -64,7 +63,6 @@ export class MessagesController {
         return await this.messagesService.deleteMessage(messageId, req.user.username);
     }
 
-    @SkipThrottle()
     @Get(':username/unread')
     async getUnreadMessageCount(@Request() req: any, @Param('username') username: string): Promise<number> {
         // Verify user can only access their own messages

@@ -1,5 +1,4 @@
 import { Body, Controller, Get, HttpException, HttpStatus, Param, Post, UseGuards, Request } from '@nestjs/common';
-import { SkipThrottle } from '@nestjs/throttler';
 import { userFromClientDTO } from '../dtos/userFromClientDTO';
 import * as crypto from 'crypto';
 import { UserRepositoryService } from '../services/user-repository.service';
@@ -143,7 +142,6 @@ export class UserController {
         return await this.userRepositorService.getUserVillage(userVillageRequestDTO);
     }
 
-    @SkipThrottle()
     @Get('movements/:username')
     @UseGuards(AuthGuard)
     async getMovements(@Request() req: any, @Param('username') username: string): Promise<any[]>
@@ -154,7 +152,6 @@ export class UserController {
         return await this.movementService.getUserMovements(username);
     }
 
-    @SkipThrottle()
     @Get(':username')
     @UseGuards(AuthGuard)
     async getUser(@Request() req: any, @Param('username') username: string): Promise<UserDTO>
