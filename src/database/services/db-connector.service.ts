@@ -112,5 +112,12 @@ export class DbConnectorService {
     await createIndexSafe('bosses', { isDefeated: 1, x: 1, y: 1 });
     await createIndexSafe('bosses', { claimedByClanId: 1 });
     await createIndexSafe('clans', { name: 1 }, { unique: true });
+
+    await createIndexSafe('oases', { x: 1, y: 1 });
+    await createIndexSafe('expertSpyMissions', { ownerUsername: 1, ownerVillageName: 1, status: 1 });
+    await createIndexSafe('expertSpyMissions', { status: 1, arrivalTime: 1 });
+    await createIndexSafe('crowMessages', { ownerUsername: 1, status: 1 });
+    await createIndexSafe('crowMessages', { status: 1, arrivalTime: 1 });
+    await createIndexSafe('clanQuestProgress', { clanName: 1, weekSeed: 1 });
   }
 }
