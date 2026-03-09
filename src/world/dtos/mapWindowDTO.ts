@@ -29,14 +29,22 @@ export interface BossOnMapDTO {
     relicName?: string;
 }
 
+export interface OasisOnMapDTO {
+    id: string;
+    x: number;
+    y: number;
+}
+
 export interface MapWindowResponseDTO {
     villages: VillageOnMapDTO[];
     bosses: BossOnMapDTO[];
+    oases?: OasisOnMapDTO[];
     worldSize: number;
 }
 
 export interface MinimapResponseDTO {
     villages: VillageOnMapDTO[];
     bosses: BossOnMapDTO[];
+    oases?: OasisOnMapDTO[];
     worldSize: number;
 }

@@ -39,10 +39,21 @@ export class User implements IUser
         lifetimeBossDamage: number;
         lifetimeResourcesStolen: number;
         totalBattlesWon: number;
+        successfulSpies: number;
+        relicsStolen: number;
+        resourcesSentToClan: number;
+        mythicBossDamage: number;
+        supportTroopsSent: number;
+        oasesConquered: number;
     };
     selectedTitle?: string;
     unlockedAchievements?: string[];
     theme?: string;
+    dailyQuestProgress?: {
+        date: string;
+        quests: { questId: string; progress: number; claimed: boolean }[];
+    };
+    clanQuestRewardClaimedWeek?: number;
 
     constructor(userFromClientDTO: userFromClientDTO, initialLocation: Location = new Location(0, 0))
     {
@@ -66,6 +77,12 @@ export class User implements IUser
             lifetimeBossDamage: 0,
             lifetimeResourcesStolen: 0,
             totalBattlesWon: 0,
+            successfulSpies: 0,
+            relicsStolen: 0,
+            resourcesSentToClan: 0,
+            mythicBossDamage: 0,
+            supportTroopsSent: 0,
+            oasesConquered: 0,
         };
         this.selectedTitle = undefined;
         this.unlockedAchievements = [];

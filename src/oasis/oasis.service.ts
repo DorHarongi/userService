@@ -1,0 +1,1044 @@
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
+import { ObjectId } from 'mongodb';
+import {
+    OasisTier,
+    oasisTierConfigs,
+    selectRandomOasisTier,
+    MAX_OASES_ON_MAP,
+    OASIS_SPAWN_CHANCE,
+    OASIS_HARVEST_RATE_PER_TROOP_PER_HOUR,
+    OASIS_UNCLAIMED_DESPAWN_MS,
+    OASIS_PROXIMITY_RANGE,
+    calculateDistance,
+    getArmySpeed,
+    calculateTravelTimeMs,
+    getSkillBonus,
+    SkillCategory,
+    warehouseStorageByLevel,
+    spearFighterAttackingStat,
+    swordFighterAttackingStat,
+    axeFighterAttackingStat,
+    archerAttackingStat,
+    magicianAttackingStat,
+    horsemenAttackingStat,
+    catapultsAttackingStat,
+    spearFighterDefenceStat,
+    swordFighterDefenceStat,
+    axeFighterDefenceStat,
+    archerDefenceStat,
+    magicianDefenceStat,
+    horsemenDefenceStat,
+    catapultsDefenceStat,
+} from 'utils';
+import { DbAccessorService } from '../database/services/db-accessor.service';
+import { ServerContextService } from '../database/services/server-context.service';
+import { ReportsService } from '../reports/services/reports/reports.service';
+import { MessagesService } from '../messages/services/messages.service';
+import { User } from '../user/models/user.entity';
+import { TroopsAmounts } from '../user/models/troopsAmounts';
+import { ResourcesAmounts } from '../user/models/resourcesAmounts';
+import { AttackReport } from '../reports/models/attackReport.entity';
+import { unlockAchievements } from '../user/services/achievement-utils';
+import { Oasis, OasisGarrison } from './models/oasis.entity';
+
+const OASES_COLLECTION = 'oases';
+const USERS_COLLECTION = 'users';
+const MOVEMENTS_COLLECTION = 'movements';
+const GRIDS_COLLECTION = 'grids';
+const BOSSES_COLLECTION = 'bosses';
+const WORLD_SIZE = 100;
+
+@Injectable()
+export class OasisService {
+    private readonly logger = new Logger(OasisService.name);
+
+    constructor(
+        private dbAccessorService: DbAccessorService,
+        private serverContextService: ServerContextService,
+        private reportsService: ReportsService,
+        private messagesService: MessagesService,
+    ) {}
+
+    @Cron('0 */30 * * * *')
+    async trySpawnOasis(): Promise<void> {
+        await this.serverContextService.forEachServer(async () => {
+            try {
+                await this.cleanupUnclaimedOases();
+
+                const currentOasisCount = await this.dbAccessorService
+                    .getCollection(OASES_COLLECTION)
+                    .countDocuments({});
+
+                if (currentOasisCount >= MAX_OASES_ON_MAP) {
+                    this.logger.log(
+                        `Oasis cap reached (${currentOasisCount}/${MAX_OASES_ON_MAP}), skipping spawn`,
+                    );
+                    return;
+                }
+
+                if (Math.random() > OASIS_SPAWN_CHANCE) {
+                    this.logger.log('Oasis spawn chance missed this interval');
+                    return;
+                }
+
+                const tier = selectRandomOasisTier();
+                const location = await this.findSpawnLocation();
+
+                if (!location) {
+                    this.logger.warn('Could not find valid spawn location for oasis');
+                    return;
+                }
+
+                await this.spawnOasis(tier, location.x, location.y);
+                this.logger.log(`Spawned ${tier} oasis at (${location.x}, ${location.y})`);
+            } catch (error) {
+                this.logger.error('Error in oasis spawn cron:', error);
+            }
+        });
+    }
+
+    private async cleanupUnclaimedOases(): Promise<void> {
+        const now = new Date();
+        const unclaimedExpiry = new Date(now.getTime() - OASIS_UNCLAIMED_DESPAWN_MS);
+        await this.dbAccessorService.getCollection(OASES_COLLECTION).deleteMany({
+            garrison: { $exists: false },
+            spawnedAt: { $lt: unclaimedExpiry },
+        });
+    }
+
+    private async findSpawnLocation(): Promise<{ x: number; y: number } | null> {
+        const villages = await this.dbAccessorService
+            .getCollection(GRIDS_COLLECTION)
+            .find({ taken: true })
+            .limit(20)
+            .toArray();
+
+        if (villages.length === 0) {
+            return { x: Math.floor(WORLD_SIZE / 2), y: Math.floor(WORLD_SIZE / 2) };
+        }
+
+        const existingBosses = await this.dbAccessorService
+            .getCollection(BOSSES_COLLECTION)
+            .find({ isDefeated: false })
+            .toArray();
+
+        const existingOases = await this.dbAccessorService
+            .getCollection(OASES_COLLECTION)
+            .find({})
+            .toArray();
+
+        const shuffledVillages = villages.sort(() => Math.random() - 0.5);
+
+        for (const village of shuffledVillages) {
+            const offsetX =
+                Math.floor(Math.random() * (OASIS_PROXIMITY_RANGE * 2 + 1)) - OASIS_PROXIMITY_RANGE;
+            const offsetY =
+                Math.floor(Math.random() * (OASIS_PROXIMITY_RANGE * 2 + 1)) - OASIS_PROXIMITY_RANGE;
+
+            const x = Math.max(0, Math.min(WORLD_SIZE - 1, village.x + offsetX));
+            const y = Math.max(0, Math.min(WORLD_SIZE - 1, village.y + offsetY));
+
+            const cellTaken = await this.dbAccessorService
+                .getCollection(GRIDS_COLLECTION)
+                .findOne({ x, y, taken: true });
+
+            if (cellTaken) continue;
+
+            const bossAtLocation = existingBosses.find((b: any) => b.x === x && b.y === y);
+            if (bossAtLocation) continue;
+
+            const oasisAtLocation = existingOases.find((o: any) => o.x === x && o.y === y);
+            if (oasisAtLocation) continue;
+
+            return { x, y };
+        }
+
+        return null;
+    }
+
+    private async spawnOasis(tier: OasisTier, x: number, y: number): Promise<Oasis> {
+        const config = oasisTierConfigs[tier];
+        const now = new Date();
+        const oasis: Oasis = {
+            x,
+            y,
+            tier,
+            resourcesRemaining: {
+                wood: config.wood,
+                stone: config.stone,
+                crop: config.crop,
+            },
+            spawnedAt: now,
+            lastHarvestTick: now,
+        };
+
+        await this.dbAccessorService.getCollection(OASES_COLLECTION).insertOne(oasis);
+        return oasis;
+    }
+
+    @Cron('*/10 * * * * *')
+    async harvestOases(): Promise<void> {
+        await this.serverContextService.forEachServer(async () => {
+            try {
+                const oases = (await this.dbAccessorService
+                    .getCollection(OASES_COLLECTION)
+                    .find({ garrison: { $exists: true, $ne: null } })
+                    .toArray()) as Oasis[];
+
+                const now = new Date();
+
+                for (const oasis of oases) {
+                    if (!oasis.garrison) continue;
+
+                    const garrison = oasis.garrison;
+                    const troopCount =
+                        (garrison.troops.spearFighters || 0) +
+                        (garrison.troops.swordFighters || 0) +
+                        (garrison.troops.axeFighters || 0) +
+                        (garrison.troops.archers || 0) +
+                        (garrison.troops.magicians || 0) +
+                        (garrison.troops.horsemen || 0) +
+                        (garrison.troops.catapults || 0);
+
+                    if (troopCount <= 0) continue;
+
+                    const lastTick = new Date(oasis.lastHarvestTick).getTime();
+                    const secondsElapsed = (now.getTime() - lastTick) / 1000;
+                    const harvestPerResource =
+                        (troopCount * OASIS_HARVEST_RATE_PER_TROOP_PER_HOUR) / 3600 * secondsElapsed;
+
+                    const woodHarvested = Math.min(
+                        harvestPerResource,
+                        oasis.resourcesRemaining.wood,
+                    );
+                    const stoneHarvested = Math.min(
+                        harvestPerResource,
+                        oasis.resourcesRemaining.stone,
+                    );
+                    const cropHarvested = Math.min(
+                        harvestPerResource,
+                        oasis.resourcesRemaining.crop,
+                    );
+
+                    const newStashWood = (garrison.stash.wood || 0) + woodHarvested;
+                    const newStashStone = (garrison.stash.stone || 0) + stoneHarvested;
+                    const newStashCrop = (garrison.stash.crop || 0) + cropHarvested;
+
+                    const newWood = Math.max(0, oasis.resourcesRemaining.wood - woodHarvested);
+                    const newStone = Math.max(0, oasis.resourcesRemaining.stone - stoneHarvested);
+                    const newCrop = Math.max(0, oasis.resourcesRemaining.crop - cropHarvested);
+
+                    const allDrained = newWood <= 0 && newStone <= 0 && newCrop <= 0;
+
+                    if (allDrained) {
+                        await this.autoRetreatFromOasis(oasis);
+                    } else {
+                        await this.dbAccessorService.getCollection(OASES_COLLECTION).updateOne(
+                            { _id: oasis._id },
+                            {
+                                $set: {
+                                    'resourcesRemaining.wood': newWood,
+                                    'resourcesRemaining.stone': newStone,
+                                    'resourcesRemaining.crop': newCrop,
+                                    'garrison.stash.wood': newStashWood,
+                                    'garrison.stash.stone': newStashStone,
+                                    'garrison.stash.crop': newStashCrop,
+                                    lastHarvestTick: now,
+                                },
+                            },
+                        );
+                    }
+                }
+            } catch (error) {
+                this.logger.error('Error in oasis harvest cron:', error);
+            }
+        });
+    }
+
+    private async autoRetreatFromOasis(oasis: Oasis): Promise<void> {
+        const garrison = oasis.garrison!;
+        const user = (await this.dbAccessorService
+            .getCollection(USERS_COLLECTION)
+            .findOne({ username: garrison.username })) as User;
+
+        if (!user) {
+            await this.dbAccessorService.getCollection(OASES_COLLECTION).updateOne(
+                { _id: oasis._id },
+                { $unset: { garrison: '' } },
+            );
+            return;
+        }
+
+        const village = user.villages.find((v) => v.villageName === garrison.villageName);
+        if (!village) {
+            await this.dbAccessorService.getCollection(OASES_COLLECTION).updateOne(
+                { _id: oasis._id },
+                { $unset: { garrison: '' } },
+            );
+            return;
+        }
+
+        const troops = new TroopsAmounts(
+            garrison.troops.spearFighters || 0,
+            garrison.troops.swordFighters || 0,
+            garrison.troops.axeFighters || 0,
+            garrison.troops.archers || 0,
+            garrison.troops.magicians || 0,
+            garrison.troops.horsemen || 0,
+            garrison.troops.catapults || 0,
+        );
+
+        const resources = new ResourcesAmounts(
+            garrison.stash.wood || 0,
+            garrison.stash.stone || 0,
+            garrison.stash.crop || 0,
+        );
+
+        const distance = calculateDistance(
+            village.location.x,
+            village.location.y,
+            oasis.x,
+            oasis.y,
+        );
+        const armySpeed = getArmySpeed(troops as any);
+        const quickStepBonus = getSkillBonus(village.skills, SkillCategory.QUICK_STEP);
+        const travelTimeMs = calculateTravelTimeMs(distance, armySpeed, quickStepBonus);
+        const departureTime = new Date();
+        const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
+
+        await this.dbAccessorService.getCollection(MOVEMENTS_COLLECTION).insertOne({
+            type: 'return',
+            senderUsername: garrison.username,
+            senderVillageName: garrison.villageName,
+            targetUsername: garrison.username,
+            targetVillageName: garrison.villageName,
+            troops,
+            resources,
+            departureTime,
+            arrivalTime,
+            status: 'in_transit',
+        });
+
+        await this.dbAccessorService.getCollection(OASES_COLLECTION).updateOne(
+            { _id: oasis._id },
+            { $unset: { garrison: '' } },
+        );
+    }
+
+    async garrisonOasis(
+        username: string,
+        villageName: string,
+        oasisId: string,
+        troops: {
+            spearFighters?: number;
+            swordFighters?: number;
+            axeFighters?: number;
+            archers?: number;
+            magicians?: number;
+            horsemen?: number;
+            catapults?: number;
+        },
+    ): Promise<{ travelTimeMs: number; isAttack: boolean }> {
+        const user = (await this.dbAccessorService
+            .getCollection(USERS_COLLECTION)
+            .findOne({ username })) as User;
+
+        if (!user) {
+            throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+        }
+
+        const villageIndex = user.villages.findIndex((v) => v.villageName === villageName);
+        const village = user.villages[villageIndex];
+        if (!village || villageIndex < 0) {
+            throw new HttpException('Village not found', HttpStatus.NOT_FOUND);
+        }
+
+        const troopsObj = new TroopsAmounts(
+            troops.spearFighters || 0,
+            troops.swordFighters || 0,
+            troops.axeFighters || 0,
+            troops.archers || 0,
+            troops.magicians || 0,
+            troops.horsemen || 0,
+            troops.catapults || 0,
+        );
+
+        if (!this.hasTroopsToSend(troopsObj)) {
+            throw new HttpException(
+                'You must select at least one troop to garrison',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+
+        if (!this.doesUserHaveTroops(troopsObj, village.troops)) {
+            throw new HttpException(
+                'You chose more troops than you have',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+
+        const oasis = (await this.dbAccessorService
+            .getCollection(OASES_COLLECTION)
+            .findOne({ _id: new ObjectId(oasisId) })) as Oasis | null;
+
+        if (!oasis) {
+            throw new HttpException('Oasis not found', HttpStatus.NOT_FOUND);
+        }
+
+        const isAttack = !!oasis.garrison && oasis.garrison.username !== username;
+
+        if (isAttack && user.energy < 1) {
+            throw new HttpException('You need 1 energy to attack an occupied oasis', HttpStatus.BAD_REQUEST);
+        }
+
+        const troopsPath = `villages.${villageIndex}.troops`;
+        const updateOps: any = {
+            $inc: {
+                [`${troopsPath}.spearFighters`]: -(troopsObj.spearFighters || 0),
+                [`${troopsPath}.swordFighters`]: -(troopsObj.swordFighters || 0),
+                [`${troopsPath}.axeFighters`]: -(troopsObj.axeFighters || 0),
+                [`${troopsPath}.archers`]: -(troopsObj.archers || 0),
+                [`${troopsPath}.magicians`]: -(troopsObj.magicians || 0),
+                [`${troopsPath}.horsemen`]: -(troopsObj.horsemen || 0),
+                [`${troopsPath}.catapults`]: -(troopsObj.catapults || 0),
+            },
+        };
+
+        if (isAttack) {
+            updateOps.$inc.energy = -1;
+        }
+
+        const atomicResult = await this.dbAccessorService
+            .getCollection(USERS_COLLECTION)
+            .findOneAndUpdate(
+                {
+                    username,
+                    [`${troopsPath}.spearFighters`]: { $gte: troopsObj.spearFighters || 0 },
+                    [`${troopsPath}.swordFighters`]: { $gte: troopsObj.swordFighters || 0 },
+                    [`${troopsPath}.axeFighters`]: { $gte: troopsObj.axeFighters || 0 },
+                    [`${troopsPath}.archers`]: { $gte: troopsObj.archers || 0 },
+                    [`${troopsPath}.magicians`]: { $gte: troopsObj.magicians || 0 },
+                    [`${troopsPath}.horsemen`]: { $gte: troopsObj.horsemen || 0 },
+                    [`${troopsPath}.catapults`]: { $gte: troopsObj.catapults || 0 },
+                    ...(isAttack ? { energy: { $gte: 1 } } : {}),
+                },
+                updateOps,
+                { returnDocument: 'after' },
+            );
+
+        if (!atomicResult) {
+            throw new HttpException(
+                'Garrison failed - not enough troops or energy',
+                HttpStatus.CONFLICT,
+            );
+        }
+
+        const distance = calculateDistance(
+            village.location.x,
+            village.location.y,
+            oasis.x,
+            oasis.y,
+        );
+        const armySpeed = getArmySpeed(troopsObj as any);
+        const quickStepBonus = getSkillBonus(village.skills, SkillCategory.QUICK_STEP);
+        const travelTimeMs = calculateTravelTimeMs(distance, armySpeed, quickStepBonus);
+        const departureTime = new Date();
+        const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
+
+        const movementType = isAttack ? 'oasis_attack' : 'oasis_garrison';
+        await this.dbAccessorService.getCollection(MOVEMENTS_COLLECTION).insertOne({
+            type: movementType,
+            senderUsername: username,
+            senderVillageName: villageName,
+            targetUsername: 'oasis',
+            targetVillageName: oasisId,
+            troops: troopsObj,
+            oasisId,
+            departureTime,
+            arrivalTime,
+            status: 'in_transit',
+        });
+
+        return { travelTimeMs, isAttack };
+    }
+
+    async retreatFromOasis(
+        username: string,
+        villageName: string,
+        oasisId: string,
+    ): Promise<{ travelTimeMs: number }> {
+        const oasis = (await this.dbAccessorService
+            .getCollection(OASES_COLLECTION)
+            .findOne({ _id: new ObjectId(oasisId) })) as Oasis | null;
+
+        if (!oasis) {
+            throw new HttpException('Oasis not found', HttpStatus.NOT_FOUND);
+        }
+
+        if (!oasis.garrison || oasis.garrison.username !== username) {
+            throw new HttpException(
+                'You do not have a garrison at this oasis',
+                HttpStatus.FORBIDDEN,
+            );
+        }
+
+        if (oasis.garrison.villageName !== villageName) {
+            throw new HttpException(
+                'Village name does not match the garrison',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+
+        const user = (await this.dbAccessorService
+            .getCollection(USERS_COLLECTION)
+            .findOne({ username })) as User;
+
+        if (!user) {
+            throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+        }
+
+        const village = user.villages.find((v) => v.villageName === villageName);
+        if (!village) {
+            throw new HttpException('Village not found', HttpStatus.NOT_FOUND);
+        }
+
+        const garrison = oasis.garrison;
+        const troops = new TroopsAmounts(
+            garrison.troops.spearFighters || 0,
+            garrison.troops.swordFighters || 0,
+            garrison.troops.axeFighters || 0,
+            garrison.troops.archers || 0,
+            garrison.troops.magicians || 0,
+            garrison.troops.horsemen || 0,
+            garrison.troops.catapults || 0,
+        );
+
+        const resources = new ResourcesAmounts(
+            garrison.stash.wood || 0,
+            garrison.stash.stone || 0,
+            garrison.stash.crop || 0,
+        );
+
+        const distance = calculateDistance(
+            village.location.x,
+            village.location.y,
+            oasis.x,
+            oasis.y,
+        );
+        const armySpeed = getArmySpeed(troops as any);
+        const quickStepBonus = getSkillBonus(village.skills, SkillCategory.QUICK_STEP);
+        const travelTimeMs = calculateTravelTimeMs(distance, armySpeed, quickStepBonus);
+        const departureTime = new Date();
+        const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
+
+        await this.dbAccessorService.getCollection(MOVEMENTS_COLLECTION).insertOne({
+            type: 'return',
+            senderUsername: username,
+            senderVillageName: villageName,
+            targetUsername: username,
+            targetVillageName: villageName,
+            troops,
+            resources,
+            departureTime,
+            arrivalTime,
+            status: 'in_transit',
+        });
+
+        await this.dbAccessorService.getCollection(OASES_COLLECTION).updateOne(
+            { _id: oasis._id },
+            { $unset: { garrison: '' } },
+        );
+
+        return { travelTimeMs };
+    }
+
+    async attackOasis(
+        username: string,
+        villageName: string,
+        oasisId: string,
+        troops: {
+            spearFighters?: number;
+            swordFighters?: number;
+            axeFighters?: number;
+            archers?: number;
+            magicians?: number;
+            horsemen?: number;
+            catapults?: number;
+        },
+    ): Promise<{ travelTimeMs: number }> {
+        return this.garrisonOasis(username, villageName, oasisId, troops).then((r) => ({
+            travelTimeMs: r.travelTimeMs,
+        }));
+    }
+
+    async getOasisInfo(oasisId: string, username: string): Promise<any> {
+        const oasis = (await this.dbAccessorService
+            .getCollection(OASES_COLLECTION)
+            .findOne({ _id: new ObjectId(oasisId) })) as Oasis | null;
+
+        if (!oasis) {
+            throw new HttpException('Oasis not found', HttpStatus.NOT_FOUND);
+        }
+
+        const isOccupier = oasis.garrison?.username === username;
+
+        if (isOccupier) {
+            return {
+                _id: oasis._id?.toHexString(),
+                x: oasis.x,
+                y: oasis.y,
+                tier: oasis.tier,
+                resourcesRemaining: oasis.resourcesRemaining,
+                garrison: oasis.garrison,
+                spawnedAt: oasis.spawnedAt,
+                lastHarvestTick: oasis.lastHarvestTick,
+            };
+        }
+
+        return {
+            _id: oasis._id?.toHexString(),
+            x: oasis.x,
+            y: oasis.y,
+            tier: oasis.tier,
+            occupied: !!oasis.garrison,
+        };
+    }
+
+    async getOasesForMap(
+        startX: number,
+        startY: number,
+        size: number = 21,
+    ): Promise<{ _id: string; x: number; y: number; tier: OasisTier }[]> {
+        const oases = (await this.dbAccessorService
+            .getCollection(OASES_COLLECTION)
+            .find({
+                x: { $gte: startX, $lt: startX + size },
+                y: { $gte: startY, $lt: startY + size },
+            })
+            .project({ x: 1, y: 1, tier: 1 })
+            .toArray()) as Oasis[];
+
+        return oases.map((o) => ({
+            _id: o._id!.toHexString(),
+            x: o.x,
+            y: o.y,
+            tier: o.tier,
+        }));
+    }
+
+    async getAllOases(): Promise<{ _id: string; x: number; y: number }[]> {
+        const oases = (await this.dbAccessorService
+            .getCollection(OASES_COLLECTION)
+            .find({})
+            .project({ x: 1, y: 1 })
+            .toArray()) as Oasis[];
+
+        return oases.map((o) => ({
+            _id: o._id!.toHexString(),
+            x: o.x,
+            y: o.y,
+        }));
+    }
+
+    async resolveOasisGarrisonMovement(movement: {
+        senderUsername: string;
+        senderVillageName: string;
+        oasisId: string;
+        troops: any;
+    }): Promise<void> {
+        const oasis = (await this.dbAccessorService
+            .getCollection(OASES_COLLECTION)
+            .findOne({ _id: new ObjectId(movement.oasisId) })) as Oasis | null;
+
+        if (!oasis) return;
+
+        if (oasis.garrison && oasis.garrison.username !== movement.senderUsername) {
+            await this.resolveOasisCombat(movement, oasis, 'oasis_garrison');
+            return;
+        }
+
+        if (oasis.garrison) return;
+
+        const user = (await this.dbAccessorService
+            .getCollection(USERS_COLLECTION)
+            .findOne({ username: movement.senderUsername })) as User;
+
+        if (!user) return;
+
+        const village = user.villages.find((v) => v.villageName === movement.senderVillageName);
+        if (!village) return;
+
+        const garrison: OasisGarrison = {
+            username: movement.senderUsername,
+            villageName: movement.senderVillageName,
+            troops: {
+                spearFighters: movement.troops.spearFighters || 0,
+                swordFighters: movement.troops.swordFighters || 0,
+                axeFighters: movement.troops.axeFighters || 0,
+                archers: movement.troops.archers || 0,
+                magicians: movement.troops.magicians || 0,
+                horsemen: movement.troops.horsemen || 0,
+                catapults: movement.troops.catapults || 0,
+            },
+            stash: { wood: 0, stone: 0, crop: 0 },
+            garrisonedAt: new Date(),
+        };
+
+        await this.dbAccessorService.getCollection(OASES_COLLECTION).updateOne(
+            { _id: oasis._id },
+            {
+                $set: {
+                    garrison,
+                    lastHarvestTick: new Date(),
+                },
+            },
+        );
+
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username: movement.senderUsername },
+            { $inc: { 'totalStats.oasesConquered': 1 } },
+        );
+
+        const updatedUser = (await this.dbAccessorService
+            .getCollection(USERS_COLLECTION)
+            .findOne({ username: movement.senderUsername })) as User;
+        if (
+            updatedUser &&
+            unlockAchievements(updatedUser, ['totalStats.oasesConquered'])
+        ) {
+            await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+                { username: movement.senderUsername },
+                { $set: { unlockedAchievements: (updatedUser as any).unlockedAchievements } },
+            );
+        }
+    }
+
+    async resolveOasisAttackMovement(movement: {
+        senderUsername: string;
+        senderVillageName: string;
+        oasisId: string;
+        troops: any;
+    }): Promise<void> {
+        const oasis = (await this.dbAccessorService
+            .getCollection(OASES_COLLECTION)
+            .findOne({ _id: new ObjectId(movement.oasisId) })) as Oasis | null;
+
+        if (!oasis || !oasis.garrison) return;
+
+        await this.resolveOasisCombat(movement, oasis, 'oasis_attack');
+    }
+
+    private async resolveOasisCombat(
+        movement: {
+            senderUsername: string;
+            senderVillageName: string;
+            oasisId: string;
+            troops: any;
+        },
+        oasis: Oasis,
+        movementType: string,
+    ): Promise<void> {
+        const garrison = oasis.garrison!;
+        const attackerTroops = new TroopsAmounts(
+            movement.troops.spearFighters || 0,
+            movement.troops.swordFighters || 0,
+            movement.troops.axeFighters || 0,
+            movement.troops.archers || 0,
+            movement.troops.magicians || 0,
+            movement.troops.horsemen || 0,
+            movement.troops.catapults || 0,
+        );
+
+        const defenderTroops = new TroopsAmounts(
+            garrison.troops.spearFighters || 0,
+            garrison.troops.swordFighters || 0,
+            garrison.troops.axeFighters || 0,
+            garrison.troops.archers || 0,
+            garrison.troops.magicians || 0,
+            garrison.troops.horsemen || 0,
+            garrison.troops.catapults || 0,
+        );
+
+        const attackerUser = (await this.dbAccessorService
+            .getCollection(USERS_COLLECTION)
+            .findOne({ username: movement.senderUsername })) as User;
+
+        if (!attackerUser) return;
+
+        const attackerVillage = attackerUser.villages.find(
+            (v) => v.villageName === movement.senderVillageName,
+        );
+        if (!attackerVillage) return;
+
+        const attackingPower = this.calculateAttackingPower(attackerTroops);
+        const sharperBladesBonus = getSkillBonus(
+            attackerVillage.skills,
+            SkillCategory.SHARPER_BLADES,
+        );
+        const totalAttackingPower = Math.floor(attackingPower * (1 + sharperBladesBonus));
+
+        const defenderDefence = this.calculateDefence(defenderTroops);
+
+        const attackToDefenceRatio = totalAttackingPower / (defenderDefence || 1);
+        const defenceToAttackRatio = defenderDefence / (totalAttackingPower || 1);
+
+        let killedAttackerTroops: TroopsAmounts;
+        let killedDefenderTroops: TroopsAmounts;
+        let attackWon: boolean;
+
+        if (attackToDefenceRatio <= 1) {
+            attackWon = false;
+            killedAttackerTroops = this.calculateKilledTroopsByRatio(attackerTroops, 1);
+            killedDefenderTroops = this.calculateKilledTroopsByRatio(
+                defenderTroops,
+                attackToDefenceRatio,
+            );
+        } else {
+            attackWon = true;
+            killedDefenderTroops = this.calculateKilledTroopsByRatio(defenderTroops, 1);
+            let killedRatio = defenceToAttackRatio;
+            const selfDefenseBonus = getSkillBonus(
+                attackerVillage.skills,
+                SkillCategory.SELF_DEFENSE,
+            );
+            killedRatio = killedRatio * (1 - selfDefenseBonus);
+            killedAttackerTroops = this.calculateKilledTroopsByRatio(
+                attackerTroops,
+                killedRatio,
+            );
+        }
+
+        const loot = attackWon
+            ? new ResourcesAmounts(
+                  garrison.stash.wood || 0,
+                  garrison.stash.stone || 0,
+                  garrison.stash.crop || 0,
+              )
+            : new ResourcesAmounts(0, 0, 0);
+
+        const attackReport = new AttackReport(
+            movement.senderUsername,
+            attackerVillage.villageName,
+            garrison.username,
+            garrison.villageName,
+            new Date(),
+            attackWon,
+            loot,
+            totalAttackingPower,
+            defenderDefence,
+            defenderDefence,
+            0,
+            0,
+            attackerTroops,
+            killedAttackerTroops,
+            defenderTroops,
+            killedDefenderTroops,
+            new TroopsAmounts(0, 0, 0, 0, 0, 0, 0),
+            new TroopsAmounts(0, 0, 0, 0, 0, 0, 0),
+            'pvp',
+        );
+        await this.reportsService.saveAttackReport(attackReport);
+
+        const survivingAttackers = new TroopsAmounts(
+            Math.max(0, attackerTroops.spearFighters - killedAttackerTroops.spearFighters),
+            Math.max(0, attackerTroops.swordFighters - killedAttackerTroops.swordFighters),
+            Math.max(0, attackerTroops.axeFighters - killedAttackerTroops.axeFighters),
+            Math.max(0, attackerTroops.archers - killedAttackerTroops.archers),
+            Math.max(0, attackerTroops.magicians - killedAttackerTroops.magicians),
+            Math.max(0, attackerTroops.horsemen - killedAttackerTroops.horsemen),
+            Math.max(0, attackerTroops.catapults - killedAttackerTroops.catapults),
+        );
+
+        if (attackWon) {
+            const totalSurviving =
+                survivingAttackers.spearFighters +
+                survivingAttackers.swordFighters +
+                survivingAttackers.axeFighters +
+                survivingAttackers.archers +
+                survivingAttackers.magicians +
+                survivingAttackers.horsemen +
+                survivingAttackers.catapults;
+
+            if (totalSurviving > 0 || loot.woodAmount + loot.stonesAmount + loot.cropAmount > 0) {
+                const distance = calculateDistance(
+                    attackerVillage.location.x,
+                    attackerVillage.location.y,
+                    oasis.x,
+                    oasis.y,
+                );
+                const armySpeed = getArmySpeed(survivingAttackers as any);
+                const quickStepBonus = getSkillBonus(
+                    attackerVillage.skills,
+                    SkillCategory.QUICK_STEP,
+                );
+                const travelTimeMs = calculateTravelTimeMs(
+                    distance,
+                    armySpeed,
+                    quickStepBonus,
+                );
+                const departureTime = new Date();
+                const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
+
+                await this.dbAccessorService.getCollection(MOVEMENTS_COLLECTION).insertOne({
+                    type: 'return',
+                    senderUsername: movement.senderUsername,
+                    senderVillageName: movement.senderVillageName,
+                    targetUsername: movement.senderUsername,
+                    targetVillageName: movement.senderVillageName,
+                    troops: survivingAttackers,
+                    resources: loot,
+                    departureTime,
+                    arrivalTime,
+                    status: 'in_transit',
+                });
+            }
+
+            const newGarrison: OasisGarrison = {
+                username: movement.senderUsername,
+                villageName: movement.senderVillageName,
+                troops: {
+                    spearFighters: survivingAttackers.spearFighters,
+                    swordFighters: survivingAttackers.swordFighters,
+                    axeFighters: survivingAttackers.axeFighters,
+                    archers: survivingAttackers.archers,
+                    magicians: survivingAttackers.magicians,
+                    horsemen: survivingAttackers.horsemen,
+                    catapults: survivingAttackers.catapults,
+                },
+                stash: { wood: 0, stone: 0, crop: 0 },
+                garrisonedAt: new Date(),
+            };
+
+            await this.dbAccessorService.getCollection(OASES_COLLECTION).updateOne(
+                { _id: oasis._id },
+                {
+                    $set: {
+                        garrison: newGarrison,
+                        lastHarvestTick: new Date(),
+                    },
+                },
+            );
+
+            await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+                { username: movement.senderUsername },
+                { $inc: { 'totalStats.oasesConquered': 1 } },
+            );
+
+            const updatedUser = (await this.dbAccessorService
+                .getCollection(USERS_COLLECTION)
+                .findOne({ username: movement.senderUsername })) as User;
+            if (
+                updatedUser &&
+                unlockAchievements(updatedUser, ['totalStats.oasesConquered'])
+            ) {
+                await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+                    { username: movement.senderUsername },
+                    { $set: { unlockedAchievements: (updatedUser as any).unlockedAchievements } },
+                );
+            }
+        }
+
+        attackerUser.weeklyStats = attackerUser.weeklyStats || {
+            bossDamage: 0,
+            resourcesStolen: 0,
+            successfulDefenses: 0,
+        };
+        attackerUser.totalStats = attackerUser.totalStats || {
+            lifetimeBossDamage: 0,
+            lifetimeResourcesStolen: 0,
+            totalBattlesWon: 0,
+            successfulSpies: 0,
+            relicsStolen: 0,
+            resourcesSentToClan: 0,
+            mythicBossDamage: 0,
+            supportTroopsSent: 0,
+            oasesConquered: 0,
+        };
+
+        if (attackWon) {
+            attackerUser.totalStats.totalBattlesWon += 1;
+            unlockAchievements(attackerUser, ['totalStats.totalBattlesWon']);
+        }
+
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username: attackerUser.username },
+            {
+                $set: {
+                    weeklyStats: attackerUser.weeklyStats,
+                    totalStats: attackerUser.totalStats,
+                    unlockedAchievements: (attackerUser as any).unlockedAchievements,
+                },
+            },
+        );
+    }
+
+    private calculateAttackingPower(troops: TroopsAmounts): number {
+        return (
+            (troops.spearFighters || 0) * spearFighterAttackingStat +
+            (troops.swordFighters || 0) * swordFighterAttackingStat +
+            (troops.axeFighters || 0) * axeFighterAttackingStat +
+            (troops.archers || 0) * archerAttackingStat +
+            (troops.magicians || 0) * magicianAttackingStat +
+            (troops.horsemen || 0) * horsemenAttackingStat +
+            (troops.catapults || 0) * catapultsAttackingStat
+        );
+    }
+
+    private calculateDefence(troops: TroopsAmounts): number {
+        return (
+            (troops.spearFighters || 0) * spearFighterDefenceStat +
+            (troops.swordFighters || 0) * swordFighterDefenceStat +
+            (troops.axeFighters || 0) * axeFighterDefenceStat +
+            (troops.archers || 0) * archerDefenceStat +
+            (troops.magicians || 0) * magicianDefenceStat +
+            (troops.horsemen || 0) * horsemenDefenceStat +
+            (troops.catapults || 0) * catapultsDefenceStat
+        );
+    }
+
+    private calculateKilledTroopsByRatio(
+        troops: TroopsAmounts,
+        ratio: number,
+    ): TroopsAmounts {
+        if (ratio > 1 || ratio < 0) {
+            return new TroopsAmounts(0, 0, 0, 0, 0, 0, 0);
+        }
+        return new TroopsAmounts(
+            Math.floor((troops.spearFighters || 0) * ratio),
+            Math.floor((troops.swordFighters || 0) * ratio),
+            Math.floor((troops.axeFighters || 0) * ratio),
+            Math.floor((troops.archers || 0) * ratio),
+            Math.floor((troops.magicians || 0) * ratio),
+            Math.floor((troops.horsemen || 0) * ratio),
+            Math.floor((troops.catapults || 0) * ratio),
+        );
+    }
+
+    private hasTroopsToSend(troops: TroopsAmounts): boolean {
+        const total =
+            (troops.spearFighters || 0) +
+            (troops.swordFighters || 0) +
+            (troops.axeFighters || 0) +
+            (troops.archers || 0) +
+            (troops.magicians || 0) +
+            (troops.horsemen || 0) +
+            (troops.catapults || 0);
+        return total > 0;
+    }
+
+    private doesUserHaveTroops(
+        requested: TroopsAmounts,
+        available: TroopsAmounts,
+    ): boolean {
+        return (
+            (requested.spearFighters || 0) <= (available.spearFighters || 0) &&
+            (requested.swordFighters || 0) <= (available.swordFighters || 0) &&
+            (requested.axeFighters || 0) <= (available.axeFighters || 0) &&
+            (requested.archers || 0) <= (available.archers || 0) &&
+            (requested.magicians || 0) <= (available.magicians || 0) &&
+            (requested.horsemen || 0) <= (available.horsemen || 0) &&
+            (requested.catapults || 0) <= (available.catapults || 0)
+        );
+    }
+}

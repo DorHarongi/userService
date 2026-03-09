@@ -9,6 +9,7 @@ import { Village } from '../../user/models/village.entity';
 import { TroopsAmounts } from '../../user/models/troopsAmounts';
 import { ResourcesAmounts } from '../../user/models/resourcesAmounts';
 import { BossService } from '../../bosses/services/boss.service';
+import { OasisService } from '../../oasis/oasis.service';
 import { RELIC_NAMES, RELIC_TRANSFER_COOLDOWN_MS } from 'utils';
 import {
     wallDefenseByLevel,
@@ -44,7 +45,7 @@ const MOVEMENTS_COLLECTION = 'movements';
 
 export interface Movement {
     _id?: ObjectId;
-    type: 'attack' | 'support' | 'resources' | 'return' | 'boss_attack' | 'relic_transfer';
+    type: 'attack' | 'support' | 'resources' | 'return' | 'boss_attack' | 'relic_transfer' | 'oasis_garrison' | 'oasis_attack';
     senderUsername: string;
     senderVillageName: string;
     targetUsername: string;
@@ -56,6 +57,7 @@ export interface Movement {
     status: 'in_transit' | 'completed';
     bossId?: string;
     relicId?: string;
+    oasisId?: string;
 }
 
 @Injectable()
@@ -70,6 +72,7 @@ export class MovementService {
         private announcementsService: AnnouncementsService,
         private messagesService: MessagesService,
         @Inject(forwardRef(() => BossService)) private bossService: BossService,
+        @Inject(forwardRef(() => OasisService)) private oasisService: OasisService,
     ) {}
 
     @Cron('*/10 * * * * *')
@@ -87,6 +90,10 @@ export class MovementService {
                         await this.resolveAttackMovement(movement);
                     } else if (movement.type === 'boss_attack') {
                         await this.bossService.resolveBossAttack(movement as any);
+                    } else if (movement.type === 'oasis_garrison') {
+                        await this.oasisService.resolveOasisGarrisonMovement(movement as any);
+                    } else if (movement.type === 'oasis_attack') {
+                        await this.oasisService.resolveOasisAttackMovement(movement as any);
                     } else if (movement.type === 'support') {
                         await this.resolveSupportMovement(movement);
                     } else if (movement.type === 'resources') {
@@ -136,7 +143,26 @@ export class MovementService {
             status: 'in_transit',
         }));
 
-        return [...movements, ...spyAsMovements];
+        const crowMessages = await this.dbAccessorService.getCollection('crowMessages')
+            .find({
+                ownerUsername: username,
+                status: 'in_transit',
+            })
+            .sort({ arrivalTime: 1 })
+            .toArray() as any[];
+
+        const crowAsMovements = crowMessages.map((c: any) => ({
+            type: 'crow',
+            senderUsername: c.ownerUsername,
+            senderVillageName: c.ownerVillageName,
+            targetUsername: c.ownerUsername,
+            targetVillageName: c.ownerVillageName,
+            departureTime: c.departureTime,
+            arrivalTime: c.arrivalTime,
+            status: 'in_transit',
+        }));
+
+        return [...movements, ...spyAsMovements, ...crowAsMovements];
     }
 
     private async resolveAttackMovement(movement: Movement): Promise<void> {
@@ -286,6 +312,10 @@ export class MovementService {
                 attackerVillage.villageName,
                 attacker.clanName || null,
             );
+            if (stolenNames.length > 0) {
+                attacker.totalStats = attacker.totalStats || { lifetimeBossDamage: 0, lifetimeResourcesStolen: 0, totalBattlesWon: 0, successfulSpies: 0, relicsStolen: 0, resourcesSentToClan: 0, mythicBossDamage: 0, supportTroopsSent: 0, oasesConquered: 0 };
+                attacker.totalStats.relicsStolen = (attacker.totalStats.relicsStolen || 0) + stolenNames.length;
+            }
             for (const relicName of stolenNames) {
                 const attackerLabel = attacker.clanName
                     ? `Clan ${attacker.clanName}`
@@ -341,6 +371,12 @@ export class MovementService {
             lifetimeBossDamage: 0,
             lifetimeResourcesStolen: 0,
             totalBattlesWon: 0,
+            successfulSpies: 0,
+            relicsStolen: 0,
+            resourcesSentToClan: 0,
+            mythicBossDamage: 0,
+            supportTroopsSent: 0,
+            oasesConquered: 0,
         };
 
         defender.weeklyStats = defender.weeklyStats || {
@@ -352,6 +388,12 @@ export class MovementService {
             lifetimeBossDamage: 0,
             lifetimeResourcesStolen: 0,
             totalBattlesWon: 0,
+            successfulSpies: 0,
+            relicsStolen: 0,
+            resourcesSentToClan: 0,
+            mythicBossDamage: 0,
+            supportTroopsSent: 0,
+            oasesConquered: 0,
         };
 
         const attackerTroopsKilled =

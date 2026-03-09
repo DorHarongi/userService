@@ -185,6 +185,14 @@ export class InteractionsService {
       status: 'in_transit',
     });
 
+    const totalTroopsSent = (dto.troops.spearFighters || 0) + (dto.troops.swordFighters || 0) +
+      (dto.troops.axeFighters || 0) + (dto.troops.archers || 0) + (dto.troops.magicians || 0) +
+      (dto.troops.horsemen || 0) + (dto.troops.catapults || 0);
+    await this.dbAccessorService.getCollection('users').updateOne(
+      { username: dto.senderUsername },
+      { $inc: { 'totalStats.supportTroopsSent': totalTroopsSent } },
+    );
+
     // Send messages to both parties
     const troopsData = {
       spearFighters: dto.troops.spearFighters,
@@ -503,6 +511,12 @@ export class InteractionsService {
       arrivalTime,
       status: 'in_transit',
     });
+
+    const totalResourcesSent = actualWood + actualStone + actualCrop;
+    await this.dbAccessorService.getCollection('users').updateOne(
+      { username: dto.senderUsername },
+      { $inc: { 'totalStats.resourcesSentToClan': totalResourcesSent } },
+    );
 
     // Send messages to both parties with ACTUAL amounts transferred
     const resourcesData = {

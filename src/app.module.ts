@@ -17,12 +17,16 @@ import { MessagesModule } from './messages/messages.module';
 import { InteractionsModule } from './interactions/interactions.module';
 import { AuthModule } from './auth/auth.module';
 import { QuestModule } from './quests/quest.module';
+import { DailyQuestModule } from './dailyQuests/daily-quest.module';
+import { ClanQuestModule } from './clanQuests/clan-quest.module';
 import { BossesModule } from './bosses/bosses.module';
 import { ChatModule } from './chat/chat.module';
 import { ScoutingModule } from './scouting/scouting.module';
+import { ExpertSpyModule } from './expertSpy/expert-spy.module';
 import { RelicsModule } from './relics/relics.module';
 import { AnnouncementsModule } from './announcements/announcements.module';
 import { ServerModule } from './server/server.module';
+import { OasisModule } from './oasis/oasis.module';
 
 @Module({
   imports: [
@@ -45,9 +49,12 @@ import { ServerModule } from './server/server.module';
     InteractionsModule, 
     AuthModule, 
     QuestModule,
+    DailyQuestModule,
+    ClanQuestModule,
     BossesModule,
     ChatModule,
     ScoutingModule,
+    ExpertSpyModule,
     RelicsModule,
     AnnouncementsModule,
     ServerModule,

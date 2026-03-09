@@ -4,6 +4,7 @@ import { MapWindowRequestDTO, MapWindowResponseDTO, MinimapResponseDTO, VillageO
 import { DbAccessorService } from '../../database/services/db-accessor.service';
 import { IBoss } from '../../bosses/models/boss.entity';
 import { BOSS_CLAIM_DURATION_MS, BOSS_UNCLAIMED_DESPAWN_MS, RELIC_NAMES } from 'utils';
+import { Oasis } from '../../oasis/models/oasis.entity';
 
 @Controller('world')
 export class WorldController {
@@ -55,9 +56,16 @@ export class WorldController {
 
         const bossesDTO: BossOnMapDTO[] = bosses.map(b => this.mapBossToDTO(b));
 
+        const oases = await this.dbAccessorService.getCollection('oases').find({
+            x: { $gte: x, $lt: x + 10 },
+            y: { $gte: y, $lt: y + 10 },
+        }).toArray() as Oasis[];
+        const oasesDTO = oases.map(o => ({ id: o._id?.toHexString() || '', x: o.x, y: o.y }));
+
         return {
             villages: villagesDTO,
             bosses: bossesDTO,
+            oases: oasesDTO,
             worldSize: this.worldService.getWorldSize()
         };
     }
@@ -100,9 +108,13 @@ export class WorldController {
 
         const bossesDTO: BossOnMapDTO[] = bosses.map(b => this.mapBossToDTO(b));
 
+        const allOases = await this.dbAccessorService.getCollection('oases').find({}).toArray() as Oasis[];
+        const oasesDTO = allOases.map(o => ({ id: o._id?.toHexString() || '', x: o.x, y: o.y }));
+
         return {
             villages: villagesDTO,
             bosses: bossesDTO,
+            oases: oasesDTO,
             worldSize: this.worldService.getWorldSize()
         };
     }

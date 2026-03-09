@@ -25,10 +25,21 @@ export class UserDTO {
         lifetimeBossDamage: number;
         lifetimeResourcesStolen: number;
         totalBattlesWon: number;
+        successfulSpies: number;
+        relicsStolen: number;
+        resourcesSentToClan: number;
+        mythicBossDamage: number;
+        supportTroopsSent: number;
+        oasesConquered: number;
     };
     selectedTitle?: string;
     unlockedAchievements?: string[];
     theme?: string;
+    dailyQuestProgress?: {
+        date: string;
+        quests: { questId: string; progress: number; claimed: boolean }[];
+    };
+    clanQuestRewardClaimedWeek?: number;
 
     constructor(user: User) {
         this.username = user.username;
@@ -46,6 +57,8 @@ export class UserDTO {
         this.selectedTitle = user.selectedTitle;
         this.unlockedAchievements = user.unlockedAchievements || [];
         this.theme = user.theme ?? 'default';
+        this.dailyQuestProgress = user.dailyQuestProgress;
+        this.clanQuestRewardClaimedWeek = user.clanQuestRewardClaimedWeek;
         this.villages = [];
         for (const village of user.villages) {
             this.villages.push(new VillageDTO(village));
