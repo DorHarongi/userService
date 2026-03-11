@@ -5,6 +5,7 @@ import { User } from '../user/models/user.entity';
 import { UserDTO } from '../user/dtos/userDTO';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { ServerStatusGuard } from '../server/server-status.guard';
+import { warehouseStorageByLevel, scaleQuestReward } from 'utils';
 
 const USERS_COLLECTION = 'users';
 
@@ -60,13 +61,20 @@ export class DailyQuestController {
         const quests = this.dailyQuestService.getTodaysQuests();
         const progress = this.dailyQuestService.getPlayerDailyProgress(user);
 
+        const village = user.villages[0];
+        const lowestWarehouse = village ? Math.min(
+            warehouseStorageByLevel[village.buildingsLevels.woodWarehouseLevel] || 5000,
+            warehouseStorageByLevel[village.buildingsLevels.stoneWarehouseLevel] || 5000,
+            warehouseStorageByLevel[village.buildingsLevels.cropWarehouseLevel] || 5000,
+        ) : 5000;
+
         const questsWithProgress: DailyQuestWithProgress[] = quests.map((quest, idx) => ({
             quest: {
                 id: quest.id,
                 title: quest.title,
                 description: quest.description,
                 target: quest.target,
-                reward: quest.reward,
+                reward: scaleQuestReward(quest.reward, lowestWarehouse),
             },
             progress: progress[idx]?.progress ?? 0,
             claimed: progress[idx]?.claimed ?? false,

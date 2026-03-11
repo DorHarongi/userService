@@ -6,6 +6,7 @@ import {
     getClanQuestWeekSeed,
     ClanQuestTrackingType,
     warehouseStorageByLevel,
+    scaleQuestReward,
 } from 'utils';
 import { DbAccessorService } from '../database/services/db-accessor.service';
 
@@ -125,16 +126,19 @@ export class ClanQuestService {
         const maxStone = warehouseStorageByLevel[village.buildingsLevels.stoneWarehouseLevel];
         const maxCrop = warehouseStorageByLevel[village.buildingsLevels.cropWarehouseLevel];
 
+        const lowestWarehouse = Math.min(maxWood || 5000, maxStone || 5000, maxCrop || 5000);
+        const scaledReward = scaleQuestReward(quest.reward, lowestWarehouse);
+
         village.resourcesAmounts.woodAmount = Math.min(
-            village.resourcesAmounts.woodAmount + quest.reward.wood,
+            village.resourcesAmounts.woodAmount + scaledReward.wood,
             maxWood,
         );
         village.resourcesAmounts.stonesAmount = Math.min(
-            village.resourcesAmounts.stonesAmount + quest.reward.stone,
+            village.resourcesAmounts.stonesAmount + scaledReward.stone,
             maxStone,
         );
         village.resourcesAmounts.cropAmount = Math.min(
-            village.resourcesAmounts.cropAmount + quest.reward.crop,
+            village.resourcesAmounts.cropAmount + scaledReward.crop,
             maxCrop,
         );
 
