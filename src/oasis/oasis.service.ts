@@ -601,7 +601,6 @@ export class OasisService {
             x: oasis.x,
             y: oasis.y,
             tier: oasis.tier,
-            occupied: !!oasis.garrison,
         };
     }
 

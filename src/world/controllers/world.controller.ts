@@ -60,7 +60,7 @@ export class WorldController {
             x: { $gte: x, $lt: x + 10 },
             y: { $gte: y, $lt: y + 10 },
         }).toArray() as Oasis[];
-        const oasesDTO = oases.map(o => ({ id: o._id?.toHexString() || '', x: o.x, y: o.y }));
+        const oasesDTO = oases.map(o => ({ id: o._id?.toHexString() || '', x: o.x, y: o.y, tier: o.tier }));
 
         return {
             villages: villagesDTO,
@@ -109,7 +109,7 @@ export class WorldController {
         const bossesDTO: BossOnMapDTO[] = bosses.map(b => this.mapBossToDTO(b));
 
         const allOases = await this.dbAccessorService.getCollection('oases').find({}).toArray() as Oasis[];
-        const oasesDTO = allOases.map(o => ({ id: o._id?.toHexString() || '', x: o.x, y: o.y }));
+        const oasesDTO = allOases.map(o => ({ id: o._id?.toHexString() || '', x: o.x, y: o.y, tier: o.tier }));
 
         return {
             villages: villagesDTO,
