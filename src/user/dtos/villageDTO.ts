@@ -2,7 +2,7 @@ import { BuildingsLevels } from "../models/buildingsLevels";
 import { Location } from "../models/location";
 import { ResourcesAmounts } from "../models/resourcesAmounts";
 import { ResourcesWorkers } from "../models/resourcesWorkers";
-import { SupportSentEntry } from "../models/supportSent";
+import { OasisTroopsSentEntry, SupportSentEntry } from "../models/supportSent";
 import { TroopsAmounts } from "../models/troopsAmounts";
 import { Village } from "../models/village.entity";
 import {
@@ -23,6 +23,7 @@ export class VillageDTO {
     clanTroops: TroopsAmounts;
     location: Location;
     supportSent: SupportSentEntry[];
+    oasisTroopsSent: OasisTroopsSentEntry[];
     woodProductionPerSecond: number;
     stoneProductionPerSecond: number;
     cropProductionPerSecond: number;
@@ -40,6 +41,7 @@ export class VillageDTO {
         this.clanTroops = village.clanTroops;
         this.location = village.location;
         this.supportSent = village.supportSent || [];
+        this.oasisTroopsSent = village.oasisTroopsSent || [];
         this.skills = village.skills;
         this.aliveSpies = village.aliveSpies;
         this.spyDeathTimestamps = village.spyDeathTimestamps || [];

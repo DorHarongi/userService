@@ -6,4 +6,9 @@ export interface SupportSentEntry {
     troops: TroopsAmounts;
 }
 
+export interface OasisTroopsSentEntry {
+    oasisId: string;
+    troops: TroopsAmounts;
+}
+
 export type SupportSent = SupportSentEntry[];

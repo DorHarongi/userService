@@ -323,6 +323,12 @@ export class OasisService {
         await this.dbAccessorService.getCollection(OASES_COLLECTION).deleteOne(
             { _id: oasis._id },
         );
+
+        await this.removeOasisTroopsTracking(
+            garrison.username,
+            garrison.villageName,
+            oasis._id!.toHexString(),
+        );
     }
 
     async garrisonOasis(
@@ -392,6 +398,7 @@ export class OasisService {
         }
 
         const troopsPath = `villages.${villageIndex}.troops`;
+        const oasisEntry = { oasisId, troops: { ...troopsObj } };
         const updateOps: any = {
             $inc: {
                 [`${troopsPath}.spearFighters`]: -(troopsObj.spearFighters || 0),
@@ -401,6 +408,9 @@ export class OasisService {
                 [`${troopsPath}.magicians`]: -(troopsObj.magicians || 0),
                 [`${troopsPath}.horsemen`]: -(troopsObj.horsemen || 0),
                 [`${troopsPath}.catapults`]: -(troopsObj.catapults || 0),
+            },
+            $push: {
+                [`villages.${villageIndex}.oasisTroopsSent`]: oasisEntry,
             },
         };
 
@@ -567,6 +577,8 @@ export class OasisService {
                 { $unset: { garrison: '' } },
             );
         }
+
+        await this.removeOasisTroopsTracking(username, villageName, oasisId);
 
         return { travelTimeMs };
     }
@@ -991,6 +1003,18 @@ export class OasisService {
                 );
             }
 
+            const oasisIdStr = oasis._id!.toHexString();
+            await this.removeOasisTroopsTracking(garrison.username, garrison.villageName, oasisIdStr);
+            if (totalSurviving > 0) {
+                await this.updateOasisTroopsTracking(
+                    movement.senderUsername, movement.senderVillageName, oasisIdStr, survivingAttackers,
+                );
+            } else {
+                await this.removeOasisTroopsTracking(
+                    movement.senderUsername, movement.senderVillageName, oasisIdStr,
+                );
+            }
+
             await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
                 { username: movement.senderUsername },
                 { $inc: { 'totalStats.oasesConquered': 1 } },
@@ -1041,6 +1065,14 @@ export class OasisService {
                     },
                 },
             );
+
+            const oasisIdStr = oasis._id!.toHexString();
+            await this.removeOasisTroopsTracking(
+                movement.senderUsername, movement.senderVillageName, oasisIdStr,
+            );
+            await this.updateOasisTroopsTracking(
+                garrison.username, garrison.villageName, oasisIdStr, survivingDefenders,
+            );
         }
 
         attackerUser.weeklyStats = attackerUser.weeklyStats || {
@@ -1074,6 +1106,39 @@ export class OasisService {
                     unlockedAchievements: (attackerUser as any).unlockedAchievements,
                 },
             },
+        );
+    }
+
+    private async removeOasisTroopsTracking(
+        username: string,
+        villageName: string,
+        oasisId: string,
+    ): Promise<void> {
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username, 'villages.villageName': villageName },
+            { $pull: { 'villages.$.oasisTroopsSent': { oasisId } } as any },
+        );
+    }
+
+    private async updateOasisTroopsTracking(
+        username: string,
+        villageName: string,
+        oasisId: string,
+        troops: TroopsAmounts,
+    ): Promise<void> {
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username },
+            {
+                $set: {
+                    'villages.$[v].oasisTroopsSent.$[o].troops': troops,
+                },
+            },
+            {
+                arrayFilters: [
+                    { 'v.villageName': villageName },
+                    { 'o.oasisId': oasisId },
+                ],
+            } as any,
         );
     }
 

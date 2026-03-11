@@ -8,7 +8,7 @@ import { BuildingsLevels } from './buildingsLevels';
 import { Location } from './location';
 import { ResourcesAmounts } from './resourcesAmounts';
 import { ResourcesWorkers } from './resourcesWorkers';
-import { SupportSentEntry } from './supportSent';
+import { OasisTroopsSentEntry, SupportSentEntry } from './supportSent';
 import { TroopsAmounts } from './troopsAmounts';
 
 export class Village {
@@ -21,6 +21,7 @@ export class Village {
   clanTroops: TroopsAmounts;
   location: Location;
   supportSent: SupportSentEntry[];
+  oasisTroopsSent: OasisTroopsSentEntry[];
   skills: Skills;
   aliveSpies: number;
   spyDeathTimestamps: Date[];
@@ -55,6 +56,7 @@ export class Village {
     this.troops = new TroopsAmounts(0, 0, 0, 0, 0, 0, 0);
     this.clanTroops = new TroopsAmounts(0, 0, 0, 0, 0, 0, 0);
     this.supportSent = [];
+    this.oasisTroopsSent = [];
     this.skills = { ...EMPTY_SKILLS };
     this.aliveSpies = 0;
     this.spyDeathTimestamps = [];
@@ -95,13 +97,31 @@ export class Village {
     return total;
   }
 
+  static getTotalOasisTroops(village: Village): number {
+    if (!village.oasisTroopsSent || village.oasisTroopsSent.length === 0) return 0;
+    let total = 0;
+    for (const entry of village.oasisTroopsSent) {
+      const t = entry.troops;
+      total +=
+        (t.spearFighters || 0) +
+        (t.swordFighters || 0) +
+        (t.axeFighters || 0) +
+        (t.archers || 0) +
+        (t.magicians || 0) +
+        (t.horsemen || 0) +
+        (t.catapults || 0);
+    }
+    return total;
+  }
+
   static getFreePopulation(village: Village): number {
     const max =
       quartersPopulationByLevel[village.buildingsLevels.quartersLevel];
     const used =
       Village.getTotalTroops(village) +
       Village.getTotalWorkers(village) +
-      Village.getTotalSupportSent(village);
+      Village.getTotalSupportSent(village) +
+      Village.getTotalOasisTroops(village);
     return max - used;
   }
 }
