@@ -22,7 +22,6 @@ import { ClanQuestModule } from './clanQuests/clan-quest.module';
 import { BossesModule } from './bosses/bosses.module';
 import { ChatModule } from './chat/chat.module';
 import { ScoutingModule } from './scouting/scouting.module';
-import { ExpertSpyModule } from './expertSpy/expert-spy.module';
 import { RelicsModule } from './relics/relics.module';
 import { AnnouncementsModule } from './announcements/announcements.module';
 import { ServerModule } from './server/server.module';
@@ -54,7 +53,6 @@ import { OasisModule } from './oasis/oasis.module';
     BossesModule,
     ChatModule,
     ScoutingModule,
-    ExpertSpyModule,
     RelicsModule,
     AnnouncementsModule,
     ServerModule,

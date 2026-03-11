@@ -143,26 +143,7 @@ export class MovementService {
             status: 'in_transit',
         }));
 
-        const crowMessages = await this.dbAccessorService.getCollection('crowMessages')
-            .find({
-                ownerUsername: username,
-                status: 'in_transit',
-            })
-            .sort({ arrivalTime: 1 })
-            .toArray() as any[];
-
-        const crowAsMovements = crowMessages.map((c: any) => ({
-            type: 'crow',
-            senderUsername: c.ownerUsername,
-            senderVillageName: c.ownerVillageName,
-            targetUsername: c.ownerUsername,
-            targetVillageName: c.ownerVillageName,
-            departureTime: c.departureTime,
-            arrivalTime: c.arrivalTime,
-            status: 'in_transit',
-        }));
-
-        return [...movements, ...spyAsMovements, ...crowAsMovements];
+        return [...movements, ...spyAsMovements];
     }
 
     private async resolveAttackMovement(movement: Movement): Promise<void> {
