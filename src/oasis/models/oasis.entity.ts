@@ -18,6 +18,11 @@ export interface OasisGarrison {
         stone: number;
         crop: number;
     };
+    totalForOccupier: {
+        wood: number;
+        stone: number;
+        crop: number;
+    };
     garrisonedAt: Date;
 }
 
