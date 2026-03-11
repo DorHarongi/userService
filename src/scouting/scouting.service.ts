@@ -20,6 +20,9 @@ import {
     warehouseStorageByLevel,
 } from 'utils';
 import { AttackReport } from '../reports/models/attackReport.entity';
+import { DailyQuestTrackingType, ClanQuestTrackingType } from 'utils';
+import { DailyQuestService } from '../dailyQuests/daily-quest.service';
+import { ClanQuestService } from '../clanQuests/clan-quest.service';
 
 const USERS_COLLECTION = 'users';
 const SPY_MISSIONS_COLLECTION = 'spyMissions';
@@ -32,6 +35,8 @@ export class ScoutingService {
         private dbAccessorService: DbAccessorService,
         private serverContextService: ServerContextService,
         private reportsService: ReportsService,
+        private dailyQuestService: DailyQuestService,
+        private clanQuestService: ClanQuestService,
     ) {}
 
     async scoutVillage(attackerUsername: string, attackerVillageName: string, defenderUsername: string, defenderVillageName: string): Promise<number> {
@@ -193,6 +198,11 @@ export class ScoutingService {
                 { username: attacker.username },
                 { $set: { 'totalStats.successfulSpies': attacker.totalStats.successfulSpies } },
             );
+
+            this.dailyQuestService.incrementProgress(attacker.username, DailyQuestTrackingType.SUCCESSFUL_SPIES, 1).catch(() => {});
+            if (attacker.clanName) {
+                this.clanQuestService.incrementClanProgress(attacker.clanName, attacker.username, ClanQuestTrackingType.TOTAL_SUCCESSFUL_SPIES, 1).catch(() => {});
+            }
 
             const distance = calculateDistance(
                 attackerVillage.location.x,

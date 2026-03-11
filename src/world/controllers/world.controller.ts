@@ -14,7 +14,11 @@ export class WorldController {
     ) {}
 
     @Get('map')
-    async getMapWindow(@Query('startX') startX: string, @Query('startY') startY: string): Promise<MapWindowResponseDTO> {
+    async getMapWindow(
+        @Query('startX') startX: string,
+        @Query('startY') startY: string,
+        @Query('username') currentUsername?: string,
+    ): Promise<MapWindowResponseDTO> {
         const x = parseInt(startX) || 0;
         const y = parseInt(startY) || 0;
         
@@ -60,7 +64,35 @@ export class WorldController {
             x: { $gte: x, $lt: x + 10 },
             y: { $gte: y, $lt: y + 10 },
         }).toArray() as Oasis[];
-        const oasesDTO = oases.map(o => ({ id: o._id?.toHexString() || '', x: o.x, y: o.y, tier: o.tier }));
+
+        let currentUserClan: string | null = null;
+        let clanMembers: string[] = [];
+        if (currentUsername) {
+            const currentUser = await this.dbAccessorService.getCollection('users').findOne(
+                { username: currentUsername },
+                { projection: { clanName: 1 } },
+            ) as any;
+            if (currentUser?.clanName) {
+                currentUserClan = currentUser.clanName;
+                const clan = await this.dbAccessorService.getCollection('clans').findOne(
+                    { clanName: currentUserClan },
+                    { projection: { members: 1 } },
+                ) as any;
+                clanMembers = clan?.members || [];
+            }
+        }
+
+        const oasesDTO = oases.map(o => {
+            const dto: any = { id: o._id?.toHexString() || '', x: o.x, y: o.y, tier: o.tier };
+            if (o.garrison && currentUsername) {
+                if (o.garrison.username === currentUsername) {
+                    dto.ownerType = 'mine';
+                } else if (currentUserClan && clanMembers.includes(o.garrison.username)) {
+                    dto.ownerType = 'clan';
+                }
+            }
+            return dto;
+        });
 
         return {
             villages: villagesDTO,
@@ -71,7 +103,7 @@ export class WorldController {
     }
 
     @Get('minimap')
-    async getMinimap(): Promise<MinimapResponseDTO> {
+    async getMinimap(@Query('username') currentUsername?: string): Promise<MinimapResponseDTO> {
         const villages = await this.worldService.getAllVillages();
         
         const ownerUsernames = [...new Set(villages.map(v => v.ownerUsername).filter(Boolean))];
@@ -109,7 +141,35 @@ export class WorldController {
         const bossesDTO: BossOnMapDTO[] = bosses.map(b => this.mapBossToDTO(b));
 
         const allOases = await this.dbAccessorService.getCollection('oases').find({}).toArray() as Oasis[];
-        const oasesDTO = allOases.map(o => ({ id: o._id?.toHexString() || '', x: o.x, y: o.y, tier: o.tier }));
+
+        let minimapUserClan: string | null = null;
+        let minimapClanMembers: string[] = [];
+        if (currentUsername) {
+            const currentUser = await this.dbAccessorService.getCollection('users').findOne(
+                { username: currentUsername },
+                { projection: { clanName: 1 } },
+            ) as any;
+            if (currentUser?.clanName) {
+                minimapUserClan = currentUser.clanName;
+                const clan = await this.dbAccessorService.getCollection('clans').findOne(
+                    { clanName: minimapUserClan },
+                    { projection: { members: 1 } },
+                ) as any;
+                minimapClanMembers = clan?.members || [];
+            }
+        }
+
+        const oasesDTO = allOases.map(o => {
+            const dto: any = { id: o._id?.toHexString() || '', x: o.x, y: o.y, tier: o.tier };
+            if (o.garrison && currentUsername) {
+                if (o.garrison.username === currentUsername) {
+                    dto.ownerType = 'mine';
+                } else if (minimapUserClan && minimapClanMembers.includes(o.garrison.username)) {
+                    dto.ownerType = 'clan';
+                }
+            }
+            return dto;
+        });
 
         return {
             villages: villagesDTO,

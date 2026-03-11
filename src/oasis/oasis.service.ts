@@ -40,6 +40,9 @@ import { User } from '../user/models/user.entity';
 import { TroopsAmounts } from '../user/models/troopsAmounts';
 import { ResourcesAmounts } from '../user/models/resourcesAmounts';
 import { AttackReport } from '../reports/models/attackReport.entity';
+import { DailyQuestTrackingType, ClanQuestTrackingType } from 'utils';
+import { DailyQuestService } from '../dailyQuests/daily-quest.service';
+import { ClanQuestService } from '../clanQuests/clan-quest.service';
 import { unlockAchievements } from '../user/services/achievement-utils';
 import { Oasis, OasisGarrison } from './models/oasis.entity';
 
@@ -59,6 +62,8 @@ export class OasisService {
         private serverContextService: ServerContextService,
         private reportsService: ReportsService,
         private messagesService: MessagesService,
+        private dailyQuestService: DailyQuestService,
+        private clanQuestService: ClanQuestService,
     ) {}
 
     @Cron('0 */30 * * * *')
@@ -539,6 +544,14 @@ export class OasisService {
             status: 'in_transit',
         });
 
+        const totalStash = (garrison.stash.wood || 0) + (garrison.stash.stone || 0) + (garrison.stash.crop || 0);
+        if (totalStash > 0) {
+            this.dailyQuestService.incrementProgress(username, DailyQuestTrackingType.RETREAT_OASIS_WITH_RESOURCES, totalStash).catch(() => {});
+            if (user.clanName) {
+                this.clanQuestService.incrementClanProgress(user.clanName, username, ClanQuestTrackingType.TOTAL_OASIS_RESOURCES_HARVESTED, totalStash).catch(() => {});
+            }
+        }
+
         const allDrained =
             oasis.resourcesRemaining.wood <= 0 &&
             oasis.resourcesRemaining.stone <= 0 &&
@@ -599,6 +612,27 @@ export class OasisService {
                 spawnedAt: oasis.spawnedAt,
                 lastHarvestTick: oasis.lastHarvestTick,
             };
+        }
+
+        // Check if a clanmate owns this oasis
+        if (oasis.garrison) {
+            const requestingUser = (await this.dbAccessorService
+                .getCollection(USERS_COLLECTION)
+                .findOne({ username }, { projection: { clanName: 1 } })) as any;
+            if (requestingUser?.clanName) {
+                const garrisonUser = (await this.dbAccessorService
+                    .getCollection(USERS_COLLECTION)
+                    .findOne({ username: oasis.garrison.username }, { projection: { clanName: 1 } })) as any;
+                if (garrisonUser?.clanName === requestingUser.clanName) {
+                    return {
+                        _id: oasis._id?.toHexString(),
+                        x: oasis.x,
+                        y: oasis.y,
+                        tier: oasis.tier,
+                        clanOwner: oasis.garrison.username,
+                    };
+                }
+            }
         }
 
         return {
@@ -707,6 +741,18 @@ export class OasisService {
         await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
             { username: movement.senderUsername },
             { $inc: { 'totalStats.oasesConquered': 1 } },
+        );
+
+        this.dailyQuestService.incrementProgress(movement.senderUsername, DailyQuestTrackingType.GARRISON_OASIS, 1).catch(() => {});
+        if (user.clanName) {
+            this.clanQuestService.incrementClanProgress(user.clanName, movement.senderUsername, ClanQuestTrackingType.TOTAL_OASES_CONQUERED, 1).catch(() => {});
+        }
+
+        // Send garrison notification message
+        await this.messagesService.sendClanNotificationMessage(
+            movement.senderUsername,
+            'Oasis Garrisoned',
+            `Your troops have garrisoned an oasis at (${oasis.x}, ${oasis.y}). You now control this oasis.`,
         );
 
         const updatedUser = (await this.dbAccessorService
@@ -949,6 +995,12 @@ export class OasisService {
                 { username: movement.senderUsername },
                 { $inc: { 'totalStats.oasesConquered': 1 } },
             );
+
+            this.dailyQuestService.incrementProgress(movement.senderUsername, DailyQuestTrackingType.GARRISON_OASIS, 1).catch(() => {});
+            this.dailyQuestService.incrementProgress(movement.senderUsername, DailyQuestTrackingType.ATTACK_OASIS, 1).catch(() => {});
+            if (attackerUser.clanName) {
+                this.clanQuestService.incrementClanProgress(attackerUser.clanName, movement.senderUsername, ClanQuestTrackingType.TOTAL_OASES_CONQUERED, 1).catch(() => {});
+            }
 
             const updatedUser = (await this.dbAccessorService
                 .getCollection(USERS_COLLECTION)

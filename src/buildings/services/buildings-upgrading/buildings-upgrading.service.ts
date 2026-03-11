@@ -8,6 +8,9 @@ import { Village } from '../../../user/models/village.entity';
 import { UpdateResult } from 'mongodb';
 import { BuildingGetterSetter } from '../../classes/buildingGetterSetter';
 import { UserDTO } from '../../../user/dtos/userDTO';
+import { DailyQuestTrackingType, ClanQuestTrackingType } from 'utils';
+import { DailyQuestService } from '../../../dailyQuests/daily-quest.service';
+import { ClanQuestService } from '../../../clanQuests/clan-quest.service';
 import { QuestService } from '../../../quests/quest.service';
 import { QuestAwareResponse } from '../../../quests/quest-response.dto';
 
@@ -17,7 +20,9 @@ const USER_COLLECTIONS = "users";
 export class BuildingsUpgradingService {
     constructor(
         private dbAccessorService: DbAccessorService,
-        private questService: QuestService
+        private questService: QuestService,
+        private dailyQuestService: DailyQuestService,
+        private clanQuestService: ClanQuestService,
     )
     {
 
@@ -60,6 +65,11 @@ export class BuildingsUpgradingService {
             buildingName: upgradeDTO.buildingName,
             newLevel: buildingNextLevel
         }, upgradeDTO.villageIndex);
+
+        this.dailyQuestService.incrementProgress(upgradeDTO.username, DailyQuestTrackingType.UPGRADE_BUILDING, 1).catch(() => {});
+        if (user.clanName) {
+            this.clanQuestService.incrementClanProgress(user.clanName, upgradeDTO.username, ClanQuestTrackingType.TOTAL_BUILDINGS_UPGRADED, 1).catch(() => {});
+        }
 
         const updateResult: UpdateResult = await this.dbAccessorService.getCollection(USER_COLLECTIONS).updateOne({username: upgradeDTO.username}, {$set: user});
         return { user: new UserDTO(user), isQuestClaimable };

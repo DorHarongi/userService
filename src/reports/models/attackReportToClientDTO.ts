@@ -35,6 +35,7 @@ export class AttackReportToClientDTO {
     bossTier?: string;
     bossHpBefore?: number;
     bossHpAfter?: number;
+    bossMaxHp?: number;
     bossDamageDealt?: number;
     bossReward?: ResourcesAmounts;
     bossRelicId?: string;
@@ -76,6 +77,7 @@ export class AttackReportToClientDTO {
         this.bossTier = attackReport.bossTier;
         this.bossHpBefore = attackReport.bossHpBefore;
         this.bossHpAfter = attackReport.bossHpAfter;
+        this.bossMaxHp = attackReport.bossMaxHp;
         this.bossDamageDealt = attackReport.bossDamageDealt;
         this.bossReward = attackReport.bossReward;
         this.bossRelicId = attackReport.bossRelicId;

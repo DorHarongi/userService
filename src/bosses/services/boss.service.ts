@@ -27,11 +27,15 @@ import {
   spearFighterAttackingStat,
   swordFighterAttackingStat,
   warehouseStorageByLevel,
+  DailyQuestTrackingType,
+  ClanQuestTrackingType,
 } from 'utils';
 import { AnnouncementsService } from '../../announcements/announcements.service';
 import { IClan } from '../../clans/models/clan.entity';
 import { DbAccessorService } from '../../database/services/db-accessor.service';
 import { ServerContextService } from '../../database/services/server-context.service';
+import { DailyQuestService } from '../../dailyQuests/daily-quest.service';
+import { ClanQuestService } from '../../clanQuests/clan-quest.service';
 import { MessagesService } from '../../messages/services/messages.service';
 import { RelicsService } from '../../relics/relics.service';
 import { AttackReport } from '../../reports/models/attackReport.entity';
@@ -65,6 +69,8 @@ export class BossService {
     private relicsService: RelicsService,
     private announcementsService: AnnouncementsService,
     private reportsService: ReportsService,
+    private dailyQuestService: DailyQuestService,
+    private clanQuestService: ClanQuestService,
   ) {}
 
   // =====================
@@ -685,6 +691,13 @@ export class BossService {
         },
       },
     );
+
+    // Daily + clan quest progress for boss attack
+    this.dailyQuestService.incrementProgress(username, DailyQuestTrackingType.DEAL_BOSS_DAMAGE, actualDamage).catch(() => {});
+    this.dailyQuestService.incrementProgress(username, DailyQuestTrackingType.ATTACK_DIFFERENT_BOSSES, 1).catch(() => {});
+    if (user.clanName) {
+      this.clanQuestService.incrementClanProgress(user.clanName, username, ClanQuestTrackingType.TOTAL_BOSS_DAMAGE, actualDamage).catch(() => {});
+    }
 
     const updatedUser = (await this.dbAccessorService
       .getCollection(USERS_COLLECTION)

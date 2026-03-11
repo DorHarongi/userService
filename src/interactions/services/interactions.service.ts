@@ -24,6 +24,9 @@ import {
 } from 'utils';
 import { BossService } from '../../bosses/services/boss.service';
 import { DbAccessorService } from '../../database/services/db-accessor.service';
+import { DailyQuestTrackingType, ClanQuestTrackingType } from 'utils';
+import { DailyQuestService } from '../../dailyQuests/daily-quest.service';
+import { ClanQuestService } from '../../clanQuests/clan-quest.service';
 import { MessagesService } from '../../messages/services/messages.service';
 import { UserDTO } from '../../user/dtos/userDTO';
 import { Location } from '../../user/models/location';
@@ -49,6 +52,8 @@ export class InteractionsService {
     private dbAccessorService: DbAccessorService,
     private worldService: WorldService,
     private messagesService: MessagesService,
+    private dailyQuestService: DailyQuestService,
+    private clanQuestService: ClanQuestService,
     @Inject(forwardRef(() => BossService)) private bossService: BossService,
   ) {}
 
@@ -192,6 +197,11 @@ export class InteractionsService {
       { username: dto.senderUsername },
       { $inc: { 'totalStats.supportTroopsSent': totalTroopsSent } },
     );
+
+    this.dailyQuestService.incrementProgress(dto.senderUsername, DailyQuestTrackingType.SEND_SUPPORT, 1).catch(() => {});
+    if (sender.clanName) {
+      this.clanQuestService.incrementClanProgress(sender.clanName, dto.senderUsername, ClanQuestTrackingType.TOTAL_SUPPORT_SHIPMENTS, 1).catch(() => {});
+    }
 
     // Send messages to both parties
     const troopsData = {
@@ -517,6 +527,11 @@ export class InteractionsService {
       { username: dto.senderUsername },
       { $inc: { 'totalStats.resourcesSentToClan': totalResourcesSent } },
     );
+
+    this.dailyQuestService.incrementProgress(dto.senderUsername, DailyQuestTrackingType.SEND_RESOURCES_TO_CLAN, 1).catch(() => {});
+    if (sender.clanName) {
+      this.clanQuestService.incrementClanProgress(sender.clanName, dto.senderUsername, ClanQuestTrackingType.TOTAL_RESOURCE_SHIPMENTS, 1).catch(() => {});
+    }
 
     // Send messages to both parties with ACTUAL amounts transferred
     const resourcesData = {

@@ -5,7 +5,18 @@ import { User } from '../user/models/user.entity';
 import { UserDTO } from '../user/dtos/userDTO';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { ServerStatusGuard } from '../server/server-status.guard';
-import { warehouseStorageByLevel, scaleQuestReward } from 'utils';
+import {
+    warehouseStorageByLevel,
+    scaleQuestReward,
+    scaleQuestTarget,
+    spearFighterAttackingStat,
+    swordFighterAttackingStat,
+    axeFighterAttackingStat,
+    archerAttackingStat,
+    magicianAttackingStat,
+    horsemenAttackingStat,
+    catapultsAttackingStat,
+} from 'utils';
 
 const USERS_COLLECTION = 'users';
 
@@ -68,12 +79,25 @@ export class DailyQuestController {
             warehouseStorageByLevel[village.buildingsLevels.cropWarehouseLevel] || 5000,
         ) : 5000;
 
+        let totalAttackPower = 0;
+        for (const v of user.villages) {
+            const t = v.troops;
+            totalAttackPower +=
+                (t.spearFighters || 0) * spearFighterAttackingStat +
+                (t.swordFighters || 0) * swordFighterAttackingStat +
+                (t.axeFighters || 0) * axeFighterAttackingStat +
+                (t.archers || 0) * archerAttackingStat +
+                (t.magicians || 0) * magicianAttackingStat +
+                (t.horsemen || 0) * horsemenAttackingStat +
+                (t.catapults || 0) * catapultsAttackingStat;
+        }
+
         const questsWithProgress: DailyQuestWithProgress[] = quests.map((quest, idx) => ({
             quest: {
                 id: quest.id,
                 title: quest.title,
                 description: quest.description,
-                target: quest.target,
+                target: scaleQuestTarget(quest.target, quest.trackingType, totalAttackPower),
                 reward: scaleQuestReward(quest.reward, lowestWarehouse),
             },
             progress: progress[idx]?.progress ?? 0,

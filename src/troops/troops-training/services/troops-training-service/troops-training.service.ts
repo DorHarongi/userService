@@ -19,6 +19,9 @@ import {
   swordFighterMinimumArsenalLevel,
 } from 'utils';
 import { DbAccessorService } from '../../../../database/services/db-accessor.service';
+import { DailyQuestTrackingType, ClanQuestTrackingType } from 'utils';
+import { DailyQuestService } from '../../../../dailyQuests/daily-quest.service';
+import { ClanQuestService } from '../../../../clanQuests/clan-quest.service';
 import { QuestAwareResponse } from '../../../../quests/quest-response.dto';
 import { QuestService } from '../../../../quests/quest.service';
 import { TrainDTO } from '../../../../troops/dtos/trainDTO';
@@ -34,6 +37,8 @@ export class TroopsTrainingService {
   constructor(
     private dbAccessorService: DbAccessorService,
     private questService: QuestService,
+    private dailyQuestService: DailyQuestService,
+    private clanQuestService: ClanQuestService,
   ) {}
 
   async trainTroops(trainDTO: TrainDTO): Promise<QuestAwareResponse> {
@@ -105,6 +110,17 @@ export class TroopsTrainingService {
       },
       trainDTO.villageIndex,
     );
+
+    const totalTrained =
+      trainDTO.troopsAmount.spearFighters + trainDTO.troopsAmount.swordFighters +
+      trainDTO.troopsAmount.axeFighters + trainDTO.troopsAmount.archers +
+      trainDTO.troopsAmount.magicians + trainDTO.troopsAmount.horsemen +
+      trainDTO.troopsAmount.catapults;
+
+    this.dailyQuestService.incrementProgress(trainDTO.username, DailyQuestTrackingType.TRAIN_TROOPS, totalTrained).catch(() => {});
+    if (user.clanName) {
+      this.clanQuestService.incrementClanProgress(user.clanName, trainDTO.username, ClanQuestTrackingType.TOTAL_TROOPS_TRAINED, totalTrained).catch(() => {});
+    }
 
     const updateResult: UpdateResult = await this.dbAccessorService
       .getCollection(USER_COLLECTIONS)

@@ -7,7 +7,15 @@ import {
     TOTAL_QUESTS,
     warehouseStorageByLevel,
     scaleQuestReward,
+    scaleQuestTarget,
     DailyQuestTrackingType,
+    spearFighterAttackingStat,
+    swordFighterAttackingStat,
+    axeFighterAttackingStat,
+    archerAttackingStat,
+    magicianAttackingStat,
+    horsemenAttackingStat,
+    catapultsAttackingStat,
 } from 'utils';
 import { DbAccessorService } from '../database/services/db-accessor.service';
 
@@ -70,10 +78,7 @@ export class DailyQuestService {
         for (const quest of matchingQuests) {
             const idx = quests.findIndex((q) => q.id === quest.id);
             if (idx >= 0 && progress[idx] && !progress[idx].claimed) {
-                progress[idx].progress = Math.min(
-                    progress[idx].progress + amount,
-                    quest.target,
-                );
+                progress[idx].progress += amount;
             }
         }
 
@@ -111,8 +116,22 @@ export class DailyQuestService {
         const idx = questIds.indexOf(questId);
         if (idx < 0) return null;
 
+        let totalAttackPower = 0;
+        for (const v of user.villages) {
+            const t = v.troops;
+            totalAttackPower +=
+                (t.spearFighters || 0) * spearFighterAttackingStat +
+                (t.swordFighters || 0) * swordFighterAttackingStat +
+                (t.axeFighters || 0) * axeFighterAttackingStat +
+                (t.archers || 0) * archerAttackingStat +
+                (t.magicians || 0) * magicianAttackingStat +
+                (t.horsemen || 0) * horsemenAttackingStat +
+                (t.catapults || 0) * catapultsAttackingStat;
+        }
+        const scaledTarget = scaleQuestTarget(quest.target, quest.trackingType, totalAttackPower);
+
         const entry = progress[idx];
-        if (!entry || entry.claimed || entry.progress < quest.target) return null;
+        if (!entry || entry.claimed || entry.progress < scaledTarget) return null;
 
         const village = user.villages[villageIndex];
         if (!village) return null;

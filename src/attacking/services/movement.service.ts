@@ -4,13 +4,15 @@ import { ObjectId } from 'mongodb';
 import { DbAccessorService } from '../../database/services/db-accessor.service';
 import { ServerContextService } from '../../database/services/server-context.service';
 import { ReportsService } from '../../reports/services/reports/reports.service';
+import { DailyQuestService } from '../../dailyQuests/daily-quest.service';
+import { ClanQuestService } from '../../clanQuests/clan-quest.service';
 import { User } from '../../user/models/user.entity';
 import { Village } from '../../user/models/village.entity';
 import { TroopsAmounts } from '../../user/models/troopsAmounts';
 import { ResourcesAmounts } from '../../user/models/resourcesAmounts';
 import { BossService } from '../../bosses/services/boss.service';
 import { OasisService } from '../../oasis/oasis.service';
-import { RELIC_NAMES, RELIC_TRANSFER_COOLDOWN_MS } from 'utils';
+import { RELIC_NAMES, RELIC_TRANSFER_COOLDOWN_MS, DailyQuestTrackingType, ClanQuestTrackingType } from 'utils';
 import {
     wallDefenseByLevel,
     spearFighterDefenceStat,
@@ -71,6 +73,8 @@ export class MovementService {
         private relicsService: RelicsService,
         private announcementsService: AnnouncementsService,
         private messagesService: MessagesService,
+        private dailyQuestService: DailyQuestService,
+        private clanQuestService: ClanQuestService,
         @Inject(forwardRef(() => BossService)) private bossService: BossService,
         @Inject(forwardRef(() => OasisService)) private oasisService: OasisService,
     ) {}
@@ -390,9 +394,35 @@ export class MovementService {
             attacker.totalStats.lifetimeResourcesStolen += lootTotal;
             attacker.totalStats.totalBattlesWon += 1;
             unlockAchievements(attacker, ['totalStats.lifetimeResourcesStolen', 'totalStats.totalBattlesWon']);
+
+            // Daily + clan quest progress for attacker win
+            const totalAttackerTroopsSent =
+                attackerTroops.spearFighters + attackerTroops.swordFighters +
+                attackerTroops.axeFighters + attackerTroops.archers +
+                attackerTroops.magicians + attackerTroops.horsemen +
+                attackerTroops.catapults;
+            this.dailyQuestService.incrementProgress(attacker.username, DailyQuestTrackingType.WIN_PVP_ATTACKS, 1).catch(() => {});
+            if (lootTotal > 0) {
+                this.dailyQuestService.incrementProgress(attacker.username, DailyQuestTrackingType.STEAL_RESOURCES, lootTotal).catch(() => {});
+            }
+            if (totalAttackerTroopsSent > 0 && attackerTroopsKilled / totalAttackerTroopsSent < 0.2) {
+                this.dailyQuestService.incrementProgress(attacker.username, DailyQuestTrackingType.WIN_WITH_LOW_LOSSES, 1).catch(() => {});
+            }
+            if (attacker.clanName) {
+                this.clanQuestService.incrementClanProgress(attacker.clanName, attacker.username, ClanQuestTrackingType.TOTAL_PVP_WINS, 1).catch(() => {});
+                if (lootTotal > 0) {
+                    this.clanQuestService.incrementClanProgress(attacker.clanName, attacker.username, ClanQuestTrackingType.TOTAL_RESOURCES_STOLEN, lootTotal).catch(() => {});
+                }
+            }
         } else {
             defender.totalStats.totalBattlesWon += 1;
             unlockAchievements(defender, ['weeklyStats.successfulDefenses', 'totalStats.totalBattlesWon']);
+
+            // Daily + clan quest progress for defender win
+            this.dailyQuestService.incrementProgress(defender.username, DailyQuestTrackingType.DEFEND_ATTACKS, 1).catch(() => {});
+            if (defender.clanName) {
+                this.clanQuestService.incrementClanProgress(defender.clanName, defender.username, ClanQuestTrackingType.TOTAL_DEFENSES, 1).catch(() => {});
+            }
         }
 
         await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(

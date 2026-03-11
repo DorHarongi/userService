@@ -2,6 +2,9 @@ import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { UpdateResult } from 'mongodb';
 import { Village } from 'src/user/models/village.entity';
 import { DbAccessorService } from '../../database/services/db-accessor.service';
+import { DailyQuestTrackingType, ClanQuestTrackingType } from 'utils';
+import { DailyQuestService } from '../../dailyQuests/daily-quest.service';
+import { ClanQuestService } from '../../clanQuests/clan-quest.service';
 import { QuestAwareResponse } from '../../quests/quest-response.dto';
 import { QuestService } from '../../quests/quest.service';
 import { UserDTO } from '../../user/dtos/userDTO';
@@ -16,6 +19,8 @@ export class WorkersService {
   constructor(
     private dbAccessorService: DbAccessorService,
     private questService: QuestService,
+    private dailyQuestService: DailyQuestService,
+    private clanQuestService: ClanQuestService,
   ) {}
 
   async hireWorkers(workersDTO: WorkersDTO): Promise<QuestAwareResponse> {
@@ -53,6 +58,16 @@ export class WorkersService {
       },
       workersDTO.villageIndex,
     );
+
+    const totalHired =
+      workersDTO.resourcesWorkers.cropWorkers +
+      workersDTO.resourcesWorkers.stoneWorkers +
+      workersDTO.resourcesWorkers.woodWorkers;
+
+    this.dailyQuestService.incrementProgress(workersDTO.username, DailyQuestTrackingType.HIRE_WORKERS, totalHired).catch(() => {});
+    if (user.clanName) {
+      this.clanQuestService.incrementClanProgress(user.clanName, workersDTO.username, ClanQuestTrackingType.TOTAL_WORKERS_HIRED, totalHired).catch(() => {});
+    }
 
     const updateResult: UpdateResult = await this.dbAccessorService
       .getCollection(USER_COLLECTIONS)
