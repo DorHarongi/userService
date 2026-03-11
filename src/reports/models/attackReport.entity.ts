@@ -40,6 +40,7 @@ export class AttackReport implements IAttackReport {
     bossTier?: string;
     bossHpBefore?: number;
     bossHpAfter?: number;
+    bossMaxHp?: number;
     bossDamageDealt?: number;
     bossReward?: ResourcesAmounts;
     /** Mythic only: relic bound to this boss */
@@ -71,6 +72,7 @@ export class AttackReport implements IAttackReport {
         bossHpBefore?: number,
         bossHpAfter?: number,
         bossDamageDealt?: number,
+        bossMaxHp?: number,
         bossReward?: ResourcesAmounts,
     ) {
         this.attackerName = attackerName;
@@ -98,6 +100,7 @@ export class AttackReport implements IAttackReport {
         this.bossTier = bossTier;
         this.bossHpBefore = bossHpBefore;
         this.bossHpAfter = bossHpAfter;
+        this.bossMaxHp = bossMaxHp;
         this.bossDamageDealt = bossDamageDealt;
 
         if (bossReward) {

@@ -643,6 +643,7 @@ export class BossService {
       bossHpBefore,
       bossHpAfter,
       actualDamage,
+      boss.maxHp,
       undefined,
     );
     if (boss.tier === BossTier.MYTHIC && (boss as any).relicId) {
