@@ -210,26 +210,26 @@ export class OasisService {
                     const harvestPerResource =
                         (troopCount * OASIS_HARVEST_RATE_PER_TROOP_PER_HOUR) / 3600 * secondsElapsed;
 
-                    const woodHarvested = Math.min(
+                    const woodHarvested = Math.floor(Math.min(
                         harvestPerResource,
                         oasis.resourcesRemaining.wood,
-                    );
-                    const stoneHarvested = Math.min(
+                    ));
+                    const stoneHarvested = Math.floor(Math.min(
                         harvestPerResource,
                         oasis.resourcesRemaining.stone,
-                    );
-                    const cropHarvested = Math.min(
+                    ));
+                    const cropHarvested = Math.floor(Math.min(
                         harvestPerResource,
                         oasis.resourcesRemaining.crop,
-                    );
+                    ));
 
-                    const newStashWood = (garrison.stash.wood || 0) + woodHarvested;
-                    const newStashStone = (garrison.stash.stone || 0) + stoneHarvested;
-                    const newStashCrop = (garrison.stash.crop || 0) + cropHarvested;
+                    const newStashWood = Math.floor((garrison.stash.wood || 0) + woodHarvested);
+                    const newStashStone = Math.floor((garrison.stash.stone || 0) + stoneHarvested);
+                    const newStashCrop = Math.floor((garrison.stash.crop || 0) + cropHarvested);
 
-                    const newWood = Math.max(0, oasis.resourcesRemaining.wood - woodHarvested);
-                    const newStone = Math.max(0, oasis.resourcesRemaining.stone - stoneHarvested);
-                    const newCrop = Math.max(0, oasis.resourcesRemaining.crop - cropHarvested);
+                    const newWood = Math.max(0, Math.floor(oasis.resourcesRemaining.wood - woodHarvested));
+                    const newStone = Math.max(0, Math.floor(oasis.resourcesRemaining.stone - stoneHarvested));
+                    const newCrop = Math.max(0, Math.floor(oasis.resourcesRemaining.crop - cropHarvested));
 
                     const allDrained = newWood <= 0 && newStone <= 0 && newCrop <= 0;
 
@@ -365,7 +365,7 @@ export class OasisService {
 
         if (!this.hasTroopsToSend(troopsObj)) {
             throw new HttpException(
-                'You must select at least one troop to garrison',
+                'You must select at least one troop to send',
                 HttpStatus.BAD_REQUEST,
             );
         }
@@ -428,7 +428,7 @@ export class OasisService {
 
         if (!atomicResult) {
             throw new HttpException(
-                'Garrison failed - not enough troops or energy',
+                'Failed to send troops - not enough troops or energy',
                 HttpStatus.CONFLICT,
             );
         }
@@ -477,14 +477,14 @@ export class OasisService {
 
         if (!oasis.garrison || oasis.garrison.username !== username) {
             throw new HttpException(
-                'You do not have a garrison at this oasis',
+                'You do not have troops stationed at this oasis',
                 HttpStatus.FORBIDDEN,
             );
         }
 
         if (oasis.garrison.villageName !== villageName) {
             throw new HttpException(
-                'Village name does not match the garrison',
+                'Village name does not match the stationed troops',
                 HttpStatus.BAD_REQUEST,
             );
         }
@@ -751,8 +751,8 @@ export class OasisService {
         // Send garrison notification message
         await this.messagesService.sendClanNotificationMessage(
             movement.senderUsername,
-            'Oasis Garrisoned',
-            `Your troops have garrisoned an oasis at (${oasis.x}, ${oasis.y}). You now control this oasis.`,
+            'Oasis Claimed',
+            `Your troops have occupied an oasis at (${oasis.x}, ${oasis.y}). You now control this oasis.`,
         );
 
         const updatedUser = (await this.dbAccessorService
