@@ -164,6 +164,8 @@ export class QuestService {
             'cropWarehouse': village.buildingsLevels?.cropWarehouseLevel || 1,
             'wall': village.buildingsLevels?.wallLevel || 1,
             'embassy': village.buildingsLevels?.embassyLevel || 1,
+            'stable': village.buildingsLevels?.stableLevel || 1,
+            'academy': village.buildingsLevels?.academyLevel || 1,
         };
         return buildingMap[buildingName] || 1;
     }
