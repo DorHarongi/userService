@@ -22,7 +22,7 @@ import {
     OasisTier,
 } from 'utils';
 import { AttackReport } from '../reports/models/attackReport.entity';
-import { Oasis } from '../oasis/models/oasis.entity';
+import { Oasis, getTotalGarrisonTroops } from '../oasis/models/oasis.entity';
 import { DailyQuestTrackingType, ClanQuestTrackingType } from 'utils';
 import { DailyQuestService } from '../dailyQuests/daily-quest.service';
 import { ClanQuestService } from '../clanQuests/clan-quest.service';
@@ -502,17 +502,14 @@ export class ScoutingService {
         const ownerUsername = oasis.garrison?.username || '';
         const oasisName = mission.oasisName || 'Oasis';
 
-        const garrisonTroops = oasis.garrison?.troops
-            ? new TroopsAmounts(
-                oasis.garrison.troops.spearFighters || 0,
-                oasis.garrison.troops.swordFighters || 0,
-                oasis.garrison.troops.axeFighters || 0,
-                oasis.garrison.troops.archers || 0,
-                oasis.garrison.troops.magicians || 0,
-                oasis.garrison.troops.horsemen || 0,
-                oasis.garrison.troops.catapults || 0,
-            )
-            : emptyTroops;
+        let garrisonTroops = emptyTroops;
+        if (oasis.garrison) {
+            const total = getTotalGarrisonTroops(oasis.garrison);
+            garrisonTroops = new TroopsAmounts(
+                total.spearFighters, total.swordFighters, total.axeFighters,
+                total.archers, total.magicians, total.horsemen, total.catapults,
+            );
+        }
 
         const report = new AttackReport(
             attackerName,
