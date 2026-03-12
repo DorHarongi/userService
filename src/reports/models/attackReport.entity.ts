@@ -43,6 +43,13 @@ export class AttackReport implements IAttackReport {
     bossMaxHp?: number;
     bossDamageDealt?: number;
     bossReward?: ResourcesAmounts;
+    bossX?: number;
+    bossY?: number;
+    bossId?: string;
+    attackerVillageX?: number;
+    attackerVillageY?: number;
+    defenderVillageX?: number;
+    defenderVillageY?: number;
     /** Mythic only: relic bound to this boss */
     bossRelicId?: string;
     bossRelicName?: string;

@@ -275,6 +275,10 @@ export class MovementService {
             killedSupportTroops,
             'pvp',
         );
+        attackReport.attackerVillageX = attackerVillage.location.x;
+        attackReport.attackerVillageY = attackerVillage.location.y;
+        attackReport.defenderVillageX = defenderVillage.location.x;
+        attackReport.defenderVillageY = defenderVillage.location.y;
 
         await this.reportsService.saveAttackReport(attackReport);
 

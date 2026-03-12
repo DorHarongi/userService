@@ -663,6 +663,11 @@ export class BossService {
       boss.maxHp,
       undefined,
     );
+    bossReport.bossX = boss.x;
+    bossReport.bossY = boss.y;
+    bossReport.bossId = boss._id!.toHexString();
+    bossReport.attackerVillageX = village.location.x;
+    bossReport.attackerVillageY = village.location.y;
     if (boss.tier === BossTier.MYTHIC && (boss as any).relicId) {
       const relicDef = RELIC_NAMES.find((r) => r.id === (boss as any).relicId);
       bossReport.bossRelicId = (boss as any).relicId;

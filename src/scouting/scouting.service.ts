@@ -280,6 +280,10 @@ export class ScoutingService {
             emptyTroops, emptyTroops,
             'spy',
         );
+        report.attackerVillageX = attackerVillage.location.x;
+        report.attackerVillageY = attackerVillage.location.y;
+        report.defenderVillageX = defenderVillage.location.x;
+        report.defenderVillageY = defenderVillage.location.y;
 
         await this.reportsService.saveAttackReport(report);
     }
@@ -315,6 +319,10 @@ export class ScoutingService {
             new TroopsAmounts(0, 0, 0, 0, 0, 0, 0),
             'spy',
         );
+        report.attackerVillageX = attackerVillage.location.x;
+        report.attackerVillageY = attackerVillage.location.y;
+        report.defenderVillageX = defenderVillage.location.x;
+        report.defenderVillageY = defenderVillage.location.y;
 
         await this.reportsService.saveAttackReport(report);
     }

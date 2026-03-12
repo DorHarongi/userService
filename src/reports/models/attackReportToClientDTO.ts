@@ -38,6 +38,13 @@ export class AttackReportToClientDTO {
     bossMaxHp?: number;
     bossDamageDealt?: number;
     bossReward?: ResourcesAmounts;
+    bossX?: number;
+    bossY?: number;
+    bossId?: string;
+    attackerVillageX?: number;
+    attackerVillageY?: number;
+    defenderVillageX?: number;
+    defenderVillageY?: number;
     bossRelicId?: string;
     bossRelicName?: string;
 
@@ -80,6 +87,13 @@ export class AttackReportToClientDTO {
         this.bossMaxHp = attackReport.bossMaxHp;
         this.bossDamageDealt = attackReport.bossDamageDealt;
         this.bossReward = attackReport.bossReward;
+        this.bossX = attackReport.bossX;
+        this.bossY = attackReport.bossY;
+        this.bossId = attackReport.bossId;
+        this.attackerVillageX = attackReport.attackerVillageX;
+        this.attackerVillageY = attackReport.attackerVillageY;
+        this.defenderVillageX = attackReport.defenderVillageX;
+        this.defenderVillageY = attackReport.defenderVillageY;
         this.bossRelicId = attackReport.bossRelicId;
         this.bossRelicName = attackReport.bossRelicName;
     }

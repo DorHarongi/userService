@@ -345,7 +345,7 @@ export class OasisService {
         await this.messagesService.sendClanNotificationMessage(
             garrison.username,
             'Oasis Depleted',
-            `The ${autoOasisName} has been fully harvested. Your troops are returning to ${garrison.villageName} with the remaining loot.`,
+            `The {oasis:${autoOasisName}|${oasis.x}|${oasis.y}|${oasis._id}} has been fully harvested. Your troops are returning to {village:${garrison.villageName}|${village.location.x}|${village.location.y}} with the remaining loot.`,
         );
     }
 
@@ -602,7 +602,7 @@ export class OasisService {
         await this.messagesService.sendClanNotificationMessage(
             username,
             'Troops Returning',
-            `Your troops are returning from the ${retreatOasisName} to ${villageName}.`,
+            `Your troops are returning from {oasis:${retreatOasisName}|${oasis.x}|${oasis.y}|${oasis._id}} to {village:${villageName}|${village.location.x}|${village.location.y}}.`,
         );
 
         return { travelTimeMs };
@@ -952,6 +952,8 @@ export class OasisService {
             new TroopsAmounts(0, 0, 0, 0, 0, 0, 0),
             'oasis',
         );
+        attackReport.attackerVillageX = attackerVillage.location.x;
+        attackReport.attackerVillageY = attackerVillage.location.y;
         await this.reportsService.saveAttackReport(attackReport);
 
         const survivingAttackers = new TroopsAmounts(
