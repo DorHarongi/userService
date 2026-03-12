@@ -55,6 +55,11 @@ export class OasisController {
         );
     }
 
+    @Get('exists/:oasisId')
+    async oasisExists(@Param('oasisId') oasisId: string) {
+        return this.oasisService.oasisExists(oasisId);
+    }
+
     @Get('info/:oasisId')
     async getOasisInfo(@Request() req: any, @Param('oasisId') oasisId: string) {
         return this.oasisService.getOasisInfo(oasisId, req.user.username);

@@ -102,7 +102,7 @@ export class BossService {
       if (currentMythic > 0) return;
       const location = await this.findSpawnLocation();
       if (!location) return;
-      await this.spawnBoss(BossTier.MYTHIC, location.x, location.y);
+      const mythicBoss = await this.spawnBoss(BossTier.MYTHIC, location.x, location.y);
       this.logger.log(`Mythic boss spawned at (${location.x}, ${location.y})`);
       await this.announcementsService.createAnnouncement(
         'mythic_spawn',
@@ -111,7 +111,7 @@ export class BossService {
       );
       await this.messagesService.sendGlobalInboxMessage(
         `⚡ A Mythic Boss has appeared!`,
-        `A terrifying Ancient Titan has emerged at coordinates {coords:${location.x}|${location.y}}.\nRally your clan and prepare for battle!\n\nHint:\nEach Ancient Titan guards a unique Divine Relic.\nThe clan that deals the most damage claims the relic once the titan falls.\nRelics can be stolen by defeating the village that holds one — so keep it safe and guard it well.\nOnly entrust a relic to the clan member you trust most; a disloyal holder could leave and take it with them.\n\nThe first clan to collect all 5 Divine Relics will achieve ultimate victory.`,
+        `A terrifying {boss:${mythicBoss.name}|${location.x}|${location.y}|${mythicBoss.id}} has emerged!\nRally your clan and prepare for battle!\n\nHint:\nEach Ancient Titan guards a unique Divine Relic.\nThe clan that deals the most damage claims the relic once the titan falls.\nRelics can be stolen by defeating the village that holds one — so keep it safe and guard it well.\nOnly entrust a relic to the clan member you trust most; a disloyal holder could leave and take it with them.\n\nThe first clan to collect all 5 Divine Relics will achieve ultimate victory.`,
       );
     });
   }
@@ -290,6 +290,17 @@ export class BossService {
       .toArray()) as IBoss[];
 
     return bosses.map((b) => new BossDTO(b));
+  }
+
+  async bossExists(bossId: string): Promise<{ exists: boolean }> {
+    try {
+      const boss = await this.dbAccessorService
+        .getCollection(BOSSES_COLLECTION)
+        .findOne({ _id: new ObjectId(bossId), isDefeated: false }, { projection: { _id: 1 } });
+      return { exists: !!boss };
+    } catch {
+      return { exists: false };
+    }
   }
 
   async getBossById(bossId: string): Promise<BossDTO | null> {

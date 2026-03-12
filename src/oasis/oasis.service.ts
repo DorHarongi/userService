@@ -179,6 +179,17 @@ export class OasisService {
         return oasis;
     }
 
+    async oasisExists(oasisId: string): Promise<{ exists: boolean }> {
+        try {
+            const oasis = await this.dbAccessorService
+                .getCollection(OASES_COLLECTION)
+                .findOne({ _id: new ObjectId(oasisId) }, { projection: { _id: 1 } });
+            return { exists: !!oasis };
+        } catch {
+            return { exists: false };
+        }
+    }
+
     @Cron('*/10 * * * * *')
     async harvestOases(): Promise<void> {
         await this.serverContextService.forEachServer(async () => {
@@ -210,26 +221,26 @@ export class OasisService {
                     const harvestPerResource =
                         (troopCount * OASIS_HARVEST_RATE_PER_TROOP_PER_HOUR) / 3600 * secondsElapsed;
 
-                    const woodHarvested = Math.floor(Math.min(
+                    const woodHarvested = Math.min(
                         harvestPerResource,
                         oasis.resourcesRemaining.wood,
-                    ));
-                    const stoneHarvested = Math.floor(Math.min(
+                    );
+                    const stoneHarvested = Math.min(
                         harvestPerResource,
                         oasis.resourcesRemaining.stone,
-                    ));
-                    const cropHarvested = Math.floor(Math.min(
+                    );
+                    const cropHarvested = Math.min(
                         harvestPerResource,
                         oasis.resourcesRemaining.crop,
-                    ));
+                    );
 
-                    const newStashWood = Math.floor((garrison.stash.wood || 0) + woodHarvested);
-                    const newStashStone = Math.floor((garrison.stash.stone || 0) + stoneHarvested);
-                    const newStashCrop = Math.floor((garrison.stash.crop || 0) + cropHarvested);
+                    const newStashWood = (garrison.stash.wood || 0) + woodHarvested;
+                    const newStashStone = (garrison.stash.stone || 0) + stoneHarvested;
+                    const newStashCrop = (garrison.stash.crop || 0) + cropHarvested;
 
-                    const newWood = Math.max(0, Math.floor(oasis.resourcesRemaining.wood - woodHarvested));
-                    const newStone = Math.max(0, Math.floor(oasis.resourcesRemaining.stone - stoneHarvested));
-                    const newCrop = Math.max(0, Math.floor(oasis.resourcesRemaining.crop - cropHarvested));
+                    const newWood = Math.max(0, oasis.resourcesRemaining.wood - woodHarvested);
+                    const newStone = Math.max(0, oasis.resourcesRemaining.stone - stoneHarvested);
+                    const newCrop = Math.max(0, oasis.resourcesRemaining.crop - cropHarvested);
 
                     const allDrained = newWood <= 0 && newStone <= 0 && newCrop <= 0;
 
@@ -290,9 +301,9 @@ export class OasisService {
         );
 
         const resources = new ResourcesAmounts(
-            garrison.stash.wood || 0,
-            garrison.stash.stone || 0,
-            garrison.stash.crop || 0,
+            Math.floor(garrison.stash.wood || 0),
+            Math.floor(garrison.stash.stone || 0),
+            Math.floor(garrison.stash.crop || 0),
         );
 
         const distance = calculateDistance(
@@ -328,6 +339,13 @@ export class OasisService {
             garrison.username,
             garrison.villageName,
             oasis._id!.toHexString(),
+        );
+
+        const autoOasisName = oasisTierConfigs[oasis.tier]?.name || 'Oasis';
+        await this.messagesService.sendClanNotificationMessage(
+            garrison.username,
+            'Oasis Depleted',
+            `The ${autoOasisName} has been fully harvested. Your troops are returning to ${garrison.villageName} with the remaining loot.`,
         );
     }
 
@@ -524,9 +542,9 @@ export class OasisService {
         );
 
         const resources = new ResourcesAmounts(
-            garrison.stash.wood || 0,
-            garrison.stash.stone || 0,
-            garrison.stash.crop || 0,
+            Math.floor(garrison.stash.wood || 0),
+            Math.floor(garrison.stash.stone || 0),
+            Math.floor(garrison.stash.crop || 0),
         );
 
         const distance = calculateDistance(
@@ -579,6 +597,13 @@ export class OasisService {
         }
 
         await this.removeOasisTroopsTracking(username, villageName, oasisId);
+
+        const retreatOasisName = oasisTierConfigs[oasis.tier]?.name || 'Oasis';
+        await this.messagesService.sendClanNotificationMessage(
+            username,
+            'Troops Returning',
+            `Your troops are returning from the ${retreatOasisName} to ${villageName}.`,
+        );
 
         return { travelTimeMs };
     }
@@ -782,10 +807,11 @@ export class OasisService {
             this.clanQuestService.incrementClanProgress(user.clanName, movement.senderUsername, ClanQuestTrackingType.TOTAL_OASES_CONQUERED, 1).catch(() => {});
         }
 
+        const oasisName = oasisTierConfigs[oasis.tier]?.name || 'Oasis';
         await this.messagesService.sendClanNotificationMessage(
             movement.senderUsername,
             'Oasis Claimed',
-            `Your troops have occupied an oasis at {coords:${oasis.x}|${oasis.y}}. You now control this oasis.`,
+            `Your troops have occupied {oasis:${oasisName}|${oasis.x}|${oasis.y}|${oasis._id}}. You now control this oasis.`,
         );
 
         const updatedUser = (await this.dbAccessorService

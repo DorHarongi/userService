@@ -20,6 +20,11 @@ export class BossController {
         return this.bossService.getBossDamageLeaderboard(bossId);
     }
 
+    @Get('exists/:bossId')
+    async bossExists(@Param('bossId') bossId: string): Promise<{ exists: boolean }> {
+        return this.bossService.bossExists(bossId);
+    }
+
     @Get(':bossId')
     async getBoss(@Param('bossId') bossId: string): Promise<BossDTO | null> {
         return this.bossService.getBossById(bossId);
