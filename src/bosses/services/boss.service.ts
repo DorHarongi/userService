@@ -111,7 +111,7 @@ export class BossService {
       );
       await this.messagesService.sendGlobalInboxMessage(
         `⚡ A Mythic Boss has appeared!`,
-        `A terrifying Ancient Titan has emerged at coordinates (${location.x}, ${location.y}).\nRally your clan and prepare for battle!\n\nHint:\nEach Ancient Titan guards a unique Divine Relic.\nThe clan that deals the most damage claims the relic once the titan falls.\nRelics can be stolen by defeating the village that holds one — so keep it safe and guard it well.\nOnly entrust a relic to the clan member you trust most; a disloyal holder could leave and take it with them.\n\nThe first clan to collect all 5 Divine Relics will achieve ultimate victory.`,
+        `A terrifying Ancient Titan has emerged at coordinates {coords:${location.x}|${location.y}}.\nRally your clan and prepare for battle!\n\nHint:\nEach Ancient Titan guards a unique Divine Relic.\nThe clan that deals the most damage claims the relic once the titan falls.\nRelics can be stolen by defeating the village that holds one — so keep it safe and guard it well.\nOnly entrust a relic to the clan member you trust most; a disloyal holder could leave and take it with them.\n\nThe first clan to collect all 5 Divine Relics will achieve ultimate victory.`,
       );
     });
   }
@@ -802,7 +802,7 @@ export class BossService {
 
     await this.messagesService.sendGlobalInboxMessage(
       `The Mythic Beast has fallen!`,
-      `The world trembles — Clan ${topClanName} has slain the ${boss.name} and claimed the ${relicName}. Their power grows beyond measure.`,
+      `The world trembles — {clan:${topClanName}} has slain the ${boss.name} and claimed the ${relicName}. Their power grows beyond measure.`,
     );
   }
 

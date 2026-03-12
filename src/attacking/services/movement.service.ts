@@ -303,11 +303,11 @@ export class MovementService {
             }
             for (const relicName of stolenNames) {
                 const attackerLabel = attacker.clanName
-                    ? `Clan ${attacker.clanName}`
-                    : `${attacker.username} (clanless)`;
+                    ? `{clan:${attacker.clanName}}`
+                    : `{player:${attacker.username}} (clanless)`;
                 const defenderLabel = defender.clanName
-                    ? `${defender.username} of clan ${defender.clanName}`
-                    : `${defender.username} (clanless)`;
+                    ? `{player:${defender.username}} of {clan:${defender.clanName}}`
+                    : `{player:${defender.username}} (clanless)`;
                 await this.messagesService.sendGlobalInboxMessage(
                     `A Divine Relic has been stolen!`,
                     `${attackerLabel} seized the ${relicName} from ${defenderLabel}. The balance of power shifts.`,
@@ -631,7 +631,7 @@ export class MovementService {
 
         await this.messagesService.sendGlobalInboxMessage(
             'A Divine Relic has been moved!',
-            `The ${relicName} has been transferred to ${movement.targetUsername} in ${movement.targetVillageName}.`,
+            `The ${relicName} has been transferred to {player:${movement.targetUsername}} in ${movement.targetVillageName}.`,
         );
     }
 

@@ -55,8 +55,8 @@ export class MessagesService {
         const message = new Message(
             leaderUsername,
             MessageType.CLAN_JOIN_REQUEST,
-            `Clan Join Request from ${requestUsername}`,
-            introMessage || `${requestUsername} wants to join your clan ${clanName}.`,
+            `Clan Join Request from {player:${requestUsername}}`,
+            introMessage || `{player:${requestUsername}} wants to join your clan {clan:${clanName}}.`,
             true, // actionable
             requestUsername,
             { clanName, requestUsername }
@@ -69,10 +69,10 @@ export class MessagesService {
         const message = new Message(
             username,
             accepted ? MessageType.CLAN_REQUEST_ACCEPTED : MessageType.CLAN_REQUEST_DECLINED,
-            accepted ? `Welcome to ${clanName}!` : `Clan Request Declined`,
+            accepted ? `Welcome to {clan:${clanName}}!` : `Clan Request Declined`,
             accepted 
-                ? `Your request to join ${clanName} has been accepted. Welcome to the clan!`
-                : `Your request to join ${clanName} has been declined.`,
+                ? `Your request to join {clan:${clanName}} has been accepted. Welcome to the clan!`
+                : `Your request to join {clan:${clanName}} has been declined.`,
             false // not actionable - just informational
         );
 
@@ -208,8 +208,8 @@ export class MessagesService {
             const message = new Message(
                 senderUsername,
                 MessageType.RESOURCES_SENT,
-                `Resources sent to ${recipientUsername}`,
-                `You sent resources to ${recipientUsername} (${recipientVillageName})`,
+                `Resources sent to {player:${recipientUsername}}`,
+                `You sent resources to {player:${recipientUsername}} (${recipientVillageName})`,
                 false,
                 senderUsername,
                 { resources: resourcesData }
@@ -220,8 +220,8 @@ export class MessagesService {
             const message = new Message(
                 recipientUsername,
                 MessageType.RESOURCES_RECEIVED,
-                `Resources received from ${senderUsername}`,
-                `You received resources from ${senderUsername} (${senderVillageName})`,
+                `Resources received from {player:${senderUsername}}`,
+                `You received resources from {player:${senderUsername}} (${senderVillageName})`,
                 false,
                 senderUsername,
                 { resources: resourcesData }
@@ -249,8 +249,8 @@ export class MessagesService {
             const message = new Message(
                 senderUsername,
                 MessageType.SUPPORT_SENT,
-                `Support troops sent to ${recipientUsername}`,
-                `You sent support troops to ${recipientUsername} (${recipientVillageName})`,
+                `Support troops sent to {player:${recipientUsername}}`,
+                `You sent support troops to {player:${recipientUsername}} (${recipientVillageName})`,
                 false,
                 senderUsername,
                 { troops: troopsData }
@@ -261,8 +261,8 @@ export class MessagesService {
             const message = new Message(
                 recipientUsername,
                 MessageType.SUPPORT_RECEIVED,
-                `Support troops received from ${senderUsername}`,
-                `You received support troops from ${senderUsername} (${senderVillageName})`,
+                `Support troops received from {player:${senderUsername}}`,
+                `You received support troops from {player:${senderUsername}} (${senderVillageName})`,
                 false,
                 senderUsername,
                 { troops: troopsData }
@@ -329,8 +329,8 @@ export class MessagesService {
         const message = new Message(
             recipientUsername,
             MessageType.SUPPORT_WITHDRAWN,
-            `Support troops withdrawn by ${ownerUsername}`,
-            `${ownerUsername} withdrew support troops from ${recipientVillageName}`,
+            `Support troops withdrawn by {player:${ownerUsername}}`,
+            `{player:${ownerUsername}} withdrew support troops from ${recipientVillageName}`,
             false,
             ownerUsername,
             { troops: troopsData }

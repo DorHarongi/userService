@@ -49,7 +49,7 @@ export class ClansController {
             await this.messagesService.sendClanNotificationMessage(
                 clan.leaderUsername,
                 'New Member Joined',
-                `${joinRequest.username} has joined ${joinRequest.clanName}!`
+                `{player:${joinRequest.username}} has joined {clan:${joinRequest.clanName}}!`
             );
         } else {
             // Closed clan - notify leader of the request
@@ -82,7 +82,7 @@ export class ClansController {
             await this.messagesService.sendClanNotificationMessage(
                 handleRequest.leaderUsername,
                 'New Member Joined',
-                `${handleRequest.requestUsername} has been accepted to ${handleRequest.clanName}!`
+                `{player:${handleRequest.requestUsername}} has been accepted to {clan:${handleRequest.clanName}}!`
             );
         }
         
@@ -117,7 +117,7 @@ export class ClansController {
         await this.messagesService.sendClanNotificationMessage(
             kickMemberDTO.memberUsername,
             'Kicked from Clan',
-            `You have been kicked from ${kickMemberDTO.clanName}.`
+            `You have been kicked from {clan:${kickMemberDTO.clanName}}.`
         );
         
         return result;

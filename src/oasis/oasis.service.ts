@@ -708,7 +708,29 @@ export class OasisService {
             return;
         }
 
-        if (oasis.garrison) return;
+        if (oasis.garrison && oasis.garrison.username === movement.senderUsername) {
+            const mergedTroops = {
+                spearFighters: (oasis.garrison.troops.spearFighters || 0) + (movement.troops.spearFighters || 0),
+                swordFighters: (oasis.garrison.troops.swordFighters || 0) + (movement.troops.swordFighters || 0),
+                axeFighters: (oasis.garrison.troops.axeFighters || 0) + (movement.troops.axeFighters || 0),
+                archers: (oasis.garrison.troops.archers || 0) + (movement.troops.archers || 0),
+                magicians: (oasis.garrison.troops.magicians || 0) + (movement.troops.magicians || 0),
+                horsemen: (oasis.garrison.troops.horsemen || 0) + (movement.troops.horsemen || 0),
+                catapults: (oasis.garrison.troops.catapults || 0) + (movement.troops.catapults || 0),
+            };
+
+            await this.dbAccessorService.getCollection(OASES_COLLECTION).updateOne(
+                { _id: oasis._id },
+                { $set: { 'garrison.troops': mergedTroops } },
+            );
+
+            await this.removeOasisTroopsTracking(movement.senderUsername, movement.senderVillageName, movement.oasisId);
+            await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+                { username: movement.senderUsername, 'villages.villageName': movement.senderVillageName },
+                { $push: { 'villages.$.oasisTroopsSent': { oasisId: movement.oasisId, troops: mergedTroops } } as any },
+            );
+            return;
+        }
 
         const user = (await this.dbAccessorService
             .getCollection(USERS_COLLECTION)
@@ -760,11 +782,10 @@ export class OasisService {
             this.clanQuestService.incrementClanProgress(user.clanName, movement.senderUsername, ClanQuestTrackingType.TOTAL_OASES_CONQUERED, 1).catch(() => {});
         }
 
-        // Send garrison notification message
         await this.messagesService.sendClanNotificationMessage(
             movement.senderUsername,
             'Oasis Claimed',
-            `Your troops have occupied an oasis at (${oasis.x}, ${oasis.y}). You now control this oasis.`,
+            `Your troops have occupied an oasis at {coords:${oasis.x}|${oasis.y}}. You now control this oasis.`,
         );
 
         const updatedUser = (await this.dbAccessorService

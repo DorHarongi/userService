@@ -360,7 +360,7 @@ export class ClansService {
           await this.messagesService.sendClanNotificationMessage(
             member,
             'A Divine Relic Has Arrived!',
-            `${username} has joined the clan bringing the ${relicNamesList}! Your clan grows stronger.`,
+            `{player:${username}} has joined the clan bringing the ${relicNamesList}! Your clan grows stronger.`,
           );
         }
       }
@@ -432,7 +432,7 @@ export class ClansService {
         await this.messagesService.sendClanNotificationMessage(
           member,
           'A Relic Has Been Lost!',
-          `${leaveClanDTO.username} has left the clan and taken the ${relicNamesList} with them. Your clan no longer controls this relic.`,
+            `{player:${leaveClanDTO.username}} has left the clan and taken the ${relicNamesList} with them. Your clan no longer controls this relic.`,
         );
       }
     }
@@ -705,7 +705,7 @@ export class ClansService {
 
       await this.messagesService.sendGlobalInboxMessage(
         'A Divine Relic has been forsaken!',
-        `Clan ${clanName} has expelled ${memberUsername}, who carries the ${relicNamesList}. ${theseRelics}.`,
+        `{clan:${clanName}} has expelled {player:${memberUsername}}, who carries the ${relicNamesList}. ${theseRelics}.`,
       );
 
       for (const member of clan.members) {
@@ -713,7 +713,7 @@ export class ClansService {
         await this.messagesService.sendClanNotificationMessage(
           member,
           'A Relic Has Been Lost!',
-          `${memberUsername} has been kicked from the clan, taking the ${relicNamesList} with them. Your clan no longer controls ${heldRelicIds.length > 1 ? 'these ' + relicWord : 'this ' + relicWord}.`,
+          `{player:${memberUsername}} has been kicked from the clan, taking the ${relicNamesList} with them. Your clan no longer controls ${heldRelicIds.length > 1 ? 'these ' + relicWord : 'this ' + relicWord}.`,
         );
       }
     }
