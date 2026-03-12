@@ -47,7 +47,7 @@ const MOVEMENTS_COLLECTION = 'movements';
 
 export interface Movement {
     _id?: ObjectId;
-    type: 'attack' | 'support' | 'resources' | 'return' | 'boss_attack' | 'relic_transfer' | 'oasis_garrison' | 'oasis_attack';
+    type: 'attack' | 'support' | 'resources' | 'return' | 'oasis_return' | 'boss_attack' | 'relic_transfer' | 'oasis_garrison' | 'oasis_attack';
     senderUsername: string;
     senderVillageName: string;
     targetUsername: string;
@@ -60,6 +60,9 @@ export interface Movement {
     bossId?: string;
     relicId?: string;
     oasisId?: string;
+    oasisName?: string;
+    oasisX?: number;
+    oasisY?: number;
 }
 
 @Injectable()
@@ -104,6 +107,8 @@ export class MovementService {
                         await this.resolveResourcesMovement(movement);
                     } else if (movement.type === 'return') {
                         await this.resolveReturnMovement(movement);
+                    } else if (movement.type === 'oasis_return') {
+                        await this.resolveOasisReturnMovement(movement);
                     } else if (movement.type === 'relic_transfer') {
                         await this.resolveRelicTransferMovement(movement);
                     }
@@ -521,6 +526,35 @@ export class MovementService {
         await this.dbAccessorService
             .getCollection(USERS_COLLECTION)
             .updateOne({ username: user.username }, { $set: user });
+    }
+
+    private async resolveOasisReturnMovement(movement: Movement): Promise<void> {
+        await this.resolveReturnMovement(movement);
+
+        const wood = movement.resources?.woodAmount || 0;
+        const stone = movement.resources?.stonesAmount || 0;
+        const crop = movement.resources?.cropAmount || 0;
+        const hasLoot = wood > 0 || stone > 0 || crop > 0;
+        const oasisLabel = movement.oasisName && movement.oasisX != null && movement.oasisId
+            ? `{oasis:${movement.oasisName}|${movement.oasisX}|${movement.oasisY}|${movement.oasisId}}`
+            : movement.oasisName || 'the oasis';
+
+        let content: string;
+        if (hasLoot) {
+            const parts: string[] = [];
+            if (wood > 0) parts.push(`Wood: ${wood.toLocaleString('en-US')}`);
+            if (stone > 0) parts.push(`Stone: ${stone.toLocaleString('en-US')}`);
+            if (crop > 0) parts.push(`Crop: ${crop.toLocaleString('en-US')}`);
+            content = `Your troops have returned from ${oasisLabel} to ${movement.targetVillageName}.\n\nResources gathered:\n${parts.join('\n')}`;
+        } else {
+            content = `Your troops have returned from ${oasisLabel} to ${movement.targetVillageName} with no resources.`;
+        }
+
+        await this.messagesService.sendClanNotificationMessage(
+            movement.targetUsername,
+            'Oasis Troops Returned',
+            content,
+        );
     }
 
     private async resolveSupportMovement(movement: Movement): Promise<void> {

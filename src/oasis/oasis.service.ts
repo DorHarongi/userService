@@ -318,8 +318,9 @@ export class OasisService {
         const departureTime = new Date();
         const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
 
+        const autoOasisName = oasisTierConfigs[oasis.tier]?.name || 'Oasis';
         await this.dbAccessorService.getCollection(MOVEMENTS_COLLECTION).insertOne({
-            type: 'return',
+            type: 'oasis_return',
             senderUsername: garrison.username,
             senderVillageName: garrison.villageName,
             targetUsername: garrison.username,
@@ -329,6 +330,10 @@ export class OasisService {
             departureTime,
             arrivalTime,
             status: 'in_transit',
+            oasisName: autoOasisName,
+            oasisX: oasis.x,
+            oasisY: oasis.y,
+            oasisId: oasis._id!.toHexString(),
         });
 
         await this.dbAccessorService.getCollection(OASES_COLLECTION).deleteOne(
@@ -339,13 +344,6 @@ export class OasisService {
             garrison.username,
             garrison.villageName,
             oasis._id!.toHexString(),
-        );
-
-        const autoOasisName = oasisTierConfigs[oasis.tier]?.name || 'Oasis';
-        await this.messagesService.sendClanNotificationMessage(
-            garrison.username,
-            'Oasis Depleted',
-            `The {oasis:${autoOasisName}|${oasis.x}|${oasis.y}|${oasis._id}} has been fully harvested. Your troops are returning to {village:${garrison.villageName}|${village.location.x}|${village.location.y}} with the remaining loot.`,
         );
     }
 
@@ -559,8 +557,9 @@ export class OasisService {
         const departureTime = new Date();
         const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
 
+        const retreatOasisName = oasisTierConfigs[oasis.tier]?.name || 'Oasis';
         await this.dbAccessorService.getCollection(MOVEMENTS_COLLECTION).insertOne({
-            type: 'return',
+            type: 'oasis_return',
             senderUsername: username,
             senderVillageName: villageName,
             targetUsername: username,
@@ -570,6 +569,10 @@ export class OasisService {
             departureTime,
             arrivalTime,
             status: 'in_transit',
+            oasisName: retreatOasisName,
+            oasisX: oasis.x,
+            oasisY: oasis.y,
+            oasisId: oasis._id!.toHexString(),
         });
 
         const totalStash = (garrison.stash.wood || 0) + (garrison.stash.stone || 0) + (garrison.stash.crop || 0);
@@ -597,13 +600,6 @@ export class OasisService {
         }
 
         await this.removeOasisTroopsTracking(username, villageName, oasisId);
-
-        const retreatOasisName = oasisTierConfigs[oasis.tier]?.name || 'Oasis';
-        await this.messagesService.sendClanNotificationMessage(
-            username,
-            'Troops Returning',
-            `Your troops are returning from {oasis:${retreatOasisName}|${oasis.x}|${oasis.y}|${oasis._id}} to {village:${villageName}|${village.location.x}|${village.location.y}}.`,
-        );
 
         return { travelTimeMs };
     }
@@ -996,8 +992,9 @@ export class OasisService {
                 const departureTime = new Date();
                 const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
 
+                const combatOasisName = oasisTierConfigs[oasis.tier]?.name || 'Oasis';
                 await this.dbAccessorService.getCollection(MOVEMENTS_COLLECTION).insertOne({
-                    type: 'return',
+                    type: 'oasis_return',
                     senderUsername: movement.senderUsername,
                     senderVillageName: movement.senderVillageName,
                     targetUsername: movement.senderUsername,
@@ -1007,6 +1004,10 @@ export class OasisService {
                     departureTime,
                     arrivalTime,
                     status: 'in_transit',
+                    oasisName: combatOasisName,
+                    oasisX: oasis.x,
+                    oasisY: oasis.y,
+                    oasisId: oasis._id!.toHexString(),
                 });
             }
 
