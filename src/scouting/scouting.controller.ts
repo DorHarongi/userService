@@ -9,6 +9,11 @@ interface ScoutDTO {
     defenderVillageName: string;
 }
 
+interface ScoutOasisDTO {
+    attackerVillageName: string;
+    oasisId: string;
+}
+
 @Controller('scouting')
 @UseGuards(AuthGuard, ServerStatusGuard)
 export class ScoutingController {
@@ -22,6 +27,17 @@ export class ScoutingController {
             dto.attackerVillageName,
             dto.defenderUsername,
             dto.defenderVillageName,
+        );
+        return { success: true, travelTimeMs };
+    }
+
+    @Post('scout-oasis')
+    async scoutOasis(@Request() req: any, @Body() dto: ScoutOasisDTO): Promise<{ success: boolean; travelTimeMs: number }> {
+        const attackerUsername = req.user.username;
+        const travelTimeMs = await this.scoutingService.scoutOasis(
+            attackerUsername,
+            dto.attackerVillageName,
+            dto.oasisId,
         );
         return { success: true, travelTimeMs };
     }

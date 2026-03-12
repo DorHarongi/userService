@@ -54,6 +54,12 @@ export class AttackReport implements IAttackReport {
     bossRelicId?: string;
     bossRelicName?: string;
 
+    oasisId?: string;
+    oasisName?: string;
+    oasisX?: number;
+    oasisY?: number;
+    oasisResources?: { wood: number; stone: number; crop: number };
+
     constructor(
         attackerName: string,
         attackerVillageName: string,

@@ -18,14 +18,18 @@ import {
     getSkillBonus,
     SkillCategory,
     warehouseStorageByLevel,
+    oasisTierConfigs,
+    OasisTier,
 } from 'utils';
 import { AttackReport } from '../reports/models/attackReport.entity';
+import { Oasis } from '../oasis/models/oasis.entity';
 import { DailyQuestTrackingType, ClanQuestTrackingType } from 'utils';
 import { DailyQuestService } from '../dailyQuests/daily-quest.service';
 import { ClanQuestService } from '../clanQuests/clan-quest.service';
 
 const USERS_COLLECTION = 'users';
 const SPY_MISSIONS_COLLECTION = 'spyMissions';
+const OASES_COLLECTION = 'oases';
 
 @Injectable()
 export class ScoutingService {
@@ -113,6 +117,75 @@ export class ScoutingService {
         return travelTimeMs;
     }
 
+    async scoutOasis(attackerUsername: string, attackerVillageName: string, oasisId: string): Promise<number> {
+        const attacker = await this.dbAccessorService
+            .getCollection(USERS_COLLECTION)
+            .findOne({ username: attackerUsername }) as User;
+        if (!attacker) {
+            throw new HttpException("Attacker not found", HttpStatus.NOT_FOUND);
+        }
+
+        const oasis = await this.dbAccessorService
+            .getCollection(OASES_COLLECTION)
+            .findOne({ _id: new ObjectId(oasisId) }) as Oasis;
+        if (!oasis) {
+            throw new HttpException("Oasis not found", HttpStatus.NOT_FOUND);
+        }
+
+        const attackerVillage = attacker.villages.find(v => v.villageName?.trim() === attackerVillageName?.trim());
+        if (!attackerVillage) {
+            throw new HttpException("Attacker village not found", HttpStatus.NOT_FOUND);
+        }
+
+        if (attackerVillage.buildingsLevels.stableLevel <= 0) {
+            throw new HttpException("You need a Stable to send spies", HttpStatus.BAD_REQUEST);
+        }
+
+        const aliveSpies = attackerVillage.aliveSpies ?? 0;
+        if (aliveSpies <= 0) {
+            throw new HttpException("No available spies", HttpStatus.BAD_REQUEST);
+        }
+
+        const oasisName = oasisTierConfigs[oasis.tier as OasisTier]?.name || 'Oasis';
+
+        const distance = calculateDistance(
+            attackerVillage.location.x,
+            attackerVillage.location.y,
+            oasis.x,
+            oasis.y,
+        );
+
+        const quickStepBonus = getSkillBonus(attackerVillage.skills, SkillCategory.QUICK_STEP);
+        const travelTimeMs = calculateTravelTimeMs(distance, SPY_SPEED, quickStepBonus);
+
+        const departureTime = new Date();
+        const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
+
+        const mission: SpyMission = {
+            attackerUsername,
+            attackerVillageName,
+            defenderUsername: '',
+            defenderVillageName: '',
+            departureTime,
+            arrivalTime,
+            status: 'in_transit',
+            targetType: 'oasis',
+            oasisId: oasisId,
+            oasisX: oasis.x,
+            oasisY: oasis.y,
+            oasisName,
+        };
+
+        attackerVillage.aliveSpies = Math.max(0, (attackerVillage.aliveSpies ?? 0) - 1);
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username: attackerUsername },
+            { $set: { [`villages.${attacker.villages.indexOf(attackerVillage)}.aliveSpies`]: attackerVillage.aliveSpies } },
+        );
+
+        await this.dbAccessorService.getCollection(SPY_MISSIONS_COLLECTION).insertOne(mission);
+        return travelTimeMs;
+    }
+
     @Cron('*/10 * * * * *')
     async resolveSpyMissions(): Promise<void> {
         await this.serverContextService.forEachServer(async () => {
@@ -137,6 +210,11 @@ export class ScoutingService {
     }
 
     private async resolveArrival(mission: SpyMission): Promise<void> {
+        if (mission.targetType === 'oasis') {
+            await this.resolveOasisArrival(mission);
+            return;
+        }
+
         const attacker = await this.dbAccessorService
             .getCollection(USERS_COLLECTION)
             .findOne({ username: mission.attackerUsername }) as User;
@@ -167,7 +245,6 @@ export class ScoutingService {
         const collection = this.dbAccessorService.getCollection(SPY_MISSIONS_COLLECTION);
 
         if (roll < detectionChance) {
-            // Spy caught - already decremented on send, just add death timestamp for regen tracking
             attackerVillage.spyDeathTimestamps = attackerVillage.spyDeathTimestamps || [];
             attackerVillage.spyDeathTimestamps.push(new Date());
 
@@ -189,7 +266,6 @@ export class ScoutingService {
                 attacker.username, defender.username,
             );
         } else {
-            // Spy succeeds: create spy report and start return trip
             await this.createSpyReport(attackerVillage, defenderVillage, attacker.username, defender.username);
 
             attacker.totalStats = attacker.totalStats || { lifetimeBossDamage: 0, lifetimeResourcesStolen: 0, totalBattlesWon: 0, successfulSpies: 0, relicsStolen: 0, resourcesSentToClan: 0, mythicBossDamage: 0, supportTroopsSent: 0, oasesConquered: 0 };
@@ -209,6 +285,98 @@ export class ScoutingService {
                 attackerVillage.location.y,
                 defenderVillage.location.x,
                 defenderVillage.location.y,
+            );
+            const quickStepBonus = getSkillBonus(attackerVillage.skills, SkillCategory.QUICK_STEP);
+            const travelTimeMs = calculateTravelTimeMs(distance, SPY_SPEED, quickStepBonus);
+            const departureTime = new Date();
+            const returnArrival = new Date(departureTime.getTime() + travelTimeMs);
+
+            await collection.updateOne(
+                { _id: mission._id },
+                {
+                    $set: {
+                        status: 'returning' as const,
+                        departureTime,
+                        arrivalTime: returnArrival,
+                    },
+                },
+            );
+        }
+    }
+
+    private async resolveOasisArrival(mission: SpyMission): Promise<void> {
+        const attacker = await this.dbAccessorService
+            .getCollection(USERS_COLLECTION)
+            .findOne({ username: mission.attackerUsername }) as User;
+        if (!attacker) {
+            await this.markMissionCompleted(mission);
+            return;
+        }
+
+        const attackerVillage = attacker.villages.find(v => v.villageName === mission.attackerVillageName);
+        if (!attackerVillage) {
+            await this.markMissionCompleted(mission);
+            return;
+        }
+
+        const oasis = await this.dbAccessorService
+            .getCollection(OASES_COLLECTION)
+            .findOne({ _id: new ObjectId(mission.oasisId) }) as Oasis;
+
+        if (!oasis) {
+            await this.createOasisGoneCaughtReport(attackerVillage, attacker.username, mission);
+            await this.markMissionCompleted(mission);
+            return;
+        }
+
+        const collection = this.dbAccessorService.getCollection(SPY_MISSIONS_COLLECTION);
+        const isOccupied = !!oasis.garrison;
+
+        let detected = false;
+        if (isOccupied) {
+            const silentStealthBonus = getSkillBonus(attackerVillage.skills, SkillCategory.SILENT_STEALTH);
+            const detectionChance = Math.max(5, 25 - silentStealthBonus);
+            detected = Math.random() * 100 < detectionChance;
+        }
+
+        if (detected) {
+            attackerVillage.spyDeathTimestamps = attackerVillage.spyDeathTimestamps || [];
+            attackerVillage.spyDeathTimestamps.push(new Date());
+
+            const villageIdx = attacker.villages.findIndex(v => v.villageName === mission.attackerVillageName);
+            if (villageIdx >= 0) {
+                await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+                    { username: attacker.username },
+                    { $set: { [`villages.${villageIdx}.spyDeathTimestamps`]: attackerVillage.spyDeathTimestamps } },
+                );
+            }
+
+            await collection.updateOne(
+                { _id: mission._id },
+                { $set: { status: 'caught' as const } },
+            );
+
+            await this.createOasisCaughtReport(attackerVillage, attacker.username, mission, oasis);
+        } else {
+            await this.createOasisSpyReport(attackerVillage, attacker.username, mission, oasis);
+
+            attacker.totalStats = attacker.totalStats || { lifetimeBossDamage: 0, lifetimeResourcesStolen: 0, totalBattlesWon: 0, successfulSpies: 0, relicsStolen: 0, resourcesSentToClan: 0, mythicBossDamage: 0, supportTroopsSent: 0, oasesConquered: 0 };
+            attacker.totalStats.successfulSpies = (attacker.totalStats.successfulSpies || 0) + 1;
+            await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+                { username: attacker.username },
+                { $set: { 'totalStats.successfulSpies': attacker.totalStats.successfulSpies } },
+            );
+
+            this.dailyQuestService.incrementProgress(attacker.username, DailyQuestTrackingType.SUCCESSFUL_SPIES, 1).catch(() => {});
+            if (attacker.clanName) {
+                this.clanQuestService.incrementClanProgress(attacker.clanName, attacker.username, ClanQuestTrackingType.TOTAL_SUCCESSFUL_SPIES, 1).catch(() => {});
+            }
+
+            const distance = calculateDistance(
+                attackerVillage.location.x,
+                attackerVillage.location.y,
+                oasis.x,
+                oasis.y,
             );
             const quickStepBonus = getSkillBonus(attackerVillage.skills, SkillCategory.QUICK_STEP);
             const travelTimeMs = calculateTravelTimeMs(distance, SPY_SPEED, quickStepBonus);
@@ -323,6 +491,111 @@ export class ScoutingService {
         report.attackerVillageY = attackerVillage.location.y;
         report.defenderVillageX = defenderVillage.location.x;
         report.defenderVillageY = defenderVillage.location.y;
+
+        await this.reportsService.saveAttackReport(report);
+    }
+
+    private async createOasisSpyReport(attackerVillage: Village, attackerName: string, mission: SpyMission, oasis: Oasis): Promise<void> {
+        const emptyTroops = new TroopsAmounts(0, 0, 0, 0, 0, 0, 0);
+        const lootedResources = new ResourcesAmounts(0, 0, 0);
+
+        const ownerUsername = oasis.garrison?.username || '';
+        const oasisName = mission.oasisName || 'Oasis';
+
+        const garrisonTroops = oasis.garrison?.troops
+            ? new TroopsAmounts(
+                oasis.garrison.troops.spearFighters || 0,
+                oasis.garrison.troops.swordFighters || 0,
+                oasis.garrison.troops.axeFighters || 0,
+                oasis.garrison.troops.archers || 0,
+                oasis.garrison.troops.magicians || 0,
+                oasis.garrison.troops.horsemen || 0,
+                oasis.garrison.troops.catapults || 0,
+            )
+            : emptyTroops;
+
+        const report = new AttackReport(
+            attackerName,
+            attackerVillage.villageName,
+            ownerUsername,
+            oasisName,
+            new Date(),
+            true,
+            lootedResources,
+            0, 0, 0, 0, 0,
+            emptyTroops, emptyTroops,
+            garrisonTroops,
+            emptyTroops,
+            emptyTroops,
+            emptyTroops,
+            'oasis_spy',
+        );
+        report.attackerVillageX = attackerVillage.location.x;
+        report.attackerVillageY = attackerVillage.location.y;
+        report.oasisId = oasis._id?.toHexString();
+        report.oasisName = oasisName;
+        report.oasisX = oasis.x;
+        report.oasisY = oasis.y;
+        report.oasisResources = {
+            wood: Math.floor(oasis.resourcesRemaining?.wood || 0),
+            stone: Math.floor(oasis.resourcesRemaining?.stone || 0),
+            crop: Math.floor(oasis.resourcesRemaining?.crop || 0),
+        };
+
+        await this.reportsService.saveAttackReport(report);
+    }
+
+    private async createOasisCaughtReport(attackerVillage: Village, attackerName: string, mission: SpyMission, oasis: Oasis): Promise<void> {
+        const emptyTroops = new TroopsAmounts(0, 0, 0, 0, 0, 0, 0);
+        const emptyResources = new ResourcesAmounts(0, 0, 0);
+        const oasisName = mission.oasisName || 'Oasis';
+
+        const report = new AttackReport(
+            attackerName,
+            attackerVillage.villageName,
+            oasis.garrison?.username || '',
+            oasisName,
+            new Date(),
+            false,
+            emptyResources,
+            0, 0, 0, 0, 0,
+            emptyTroops, emptyTroops,
+            emptyTroops, emptyTroops,
+            emptyTroops, emptyTroops,
+            'oasis_spy',
+        );
+        report.attackerVillageX = attackerVillage.location.x;
+        report.attackerVillageY = attackerVillage.location.y;
+        report.oasisId = oasis._id?.toHexString();
+        report.oasisName = oasisName;
+        report.oasisX = oasis.x;
+        report.oasisY = oasis.y;
+
+        await this.reportsService.saveAttackReport(report);
+    }
+
+    private async createOasisGoneCaughtReport(attackerVillage: Village, attackerName: string, mission: SpyMission): Promise<void> {
+        const emptyTroops = new TroopsAmounts(0, 0, 0, 0, 0, 0, 0);
+        const emptyResources = new ResourcesAmounts(0, 0, 0);
+        const oasisName = mission.oasisName || 'Oasis';
+
+        const report = new AttackReport(
+            attackerName,
+            attackerVillage.villageName,
+            '',
+            oasisName,
+            new Date(),
+            false,
+            emptyResources,
+            0, 0, 0, 0, 0,
+            emptyTroops, emptyTroops,
+            emptyTroops, emptyTroops,
+            emptyTroops, emptyTroops,
+            'oasis_spy',
+        );
+        report.attackerVillageX = attackerVillage.location.x;
+        report.attackerVillageY = attackerVillage.location.y;
+        report.oasisName = oasisName;
 
         await this.reportsService.saveAttackReport(report);
     }

@@ -48,6 +48,12 @@ export class AttackReportToClientDTO {
     bossRelicId?: string;
     bossRelicName?: string;
 
+    oasisId?: string;
+    oasisName?: string;
+    oasisX?: number;
+    oasisY?: number;
+    oasisResources?: { wood: number; stone: number; crop: number };
+
     constructor(attackReport: AttackReport, viewingUsername?: string) {
         this.id = attackReport._id?.toString() || '';
         this.attackerName = attackReport.attackerName;
@@ -96,5 +102,10 @@ export class AttackReportToClientDTO {
         this.defenderVillageY = attackReport.defenderVillageY;
         this.bossRelicId = attackReport.bossRelicId;
         this.bossRelicName = attackReport.bossRelicName;
+        this.oasisId = attackReport.oasisId;
+        this.oasisName = attackReport.oasisName;
+        this.oasisX = attackReport.oasisX;
+        this.oasisY = attackReport.oasisY;
+        this.oasisResources = attackReport.oasisResources;
     }
 }
