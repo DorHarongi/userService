@@ -11,7 +11,8 @@ export enum MessageType {
     SUPPORT_SENT = "support_sent",
     SUPPORT_RECEIVED = "support_received",
     SUPPORT_WITHDRAWN = "support_withdrawn",
-    BOSS_DEFEATED = "boss_defeated"
+    BOSS_DEFEATED = "boss_defeated",
+    OASIS_RETURN = "oasis_return"
 }
 
 export interface ResourcesMetadata {

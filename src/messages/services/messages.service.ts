@@ -177,13 +177,21 @@ export class MessagesService {
         return count;
     }
 
-    async sendClanNotificationMessage(username: string, subject: string, content: string): Promise<void> {
+    async sendClanNotificationMessage(
+        username: string,
+        subject: string,
+        content: string,
+        type: MessageType = MessageType.SYSTEM_MESSAGE,
+        metadata?: { resources?: { wood: number; stone: number; crop: number } },
+    ): Promise<void> {
         const message = new Message(
             username,
-            MessageType.SYSTEM_MESSAGE,
+            type,
             subject,
             content,
-            false // not actionable
+            false,
+            undefined,
+            metadata as any,
         );
 
         await this.dbAccessorService.getCollection(MESSAGES_COLLECTION).insertOne(message);
