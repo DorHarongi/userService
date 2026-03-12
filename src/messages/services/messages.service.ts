@@ -94,7 +94,8 @@ export class MessagesService {
                 MessageType.SUPPORT_SENT,
                 MessageType.SUPPORT_RECEIVED,
                 MessageType.SUPPORT_WITHDRAWN,
-                MessageType.BOSS_DEFEATED
+                MessageType.BOSS_DEFEATED,
+                MessageType.OASIS_RETURN
             ] };
         }
 
@@ -123,7 +124,8 @@ export class MessagesService {
                 MessageType.SUPPORT_SENT,
                 MessageType.SUPPORT_RECEIVED,
                 MessageType.SUPPORT_WITHDRAWN,
-                MessageType.BOSS_DEFEATED
+                MessageType.BOSS_DEFEATED,
+                MessageType.OASIS_RETURN
             ] };
         }
 
