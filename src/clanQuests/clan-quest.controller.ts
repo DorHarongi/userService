@@ -37,7 +37,13 @@ export class ClanQuestController {
             );
             status.quest = {
                 ...status.quest,
+                description: status.quest.description.replace('{target}', status.quest.target.toLocaleString('en-US')),
                 reward: scaleQuestReward(status.quest.reward, lowestWarehouse),
+            };
+        } else {
+            status.quest = {
+                ...status.quest,
+                description: status.quest.description.replace('{target}', status.quest.target.toLocaleString('en-US')),
             };
         }
 

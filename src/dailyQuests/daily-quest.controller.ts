@@ -92,17 +92,21 @@ export class DailyQuestController {
                 (t.catapults || 0) * catapultsAttackingStat;
         }
 
-        const questsWithProgress: DailyQuestWithProgress[] = quests.map((quest, idx) => ({
-            quest: {
-                id: quest.id,
-                title: quest.title,
-                description: quest.description,
-                target: scaleQuestTarget(quest.target, quest.trackingType, totalAttackPower),
-                reward: scaleQuestReward(quest.reward, lowestWarehouse),
-            },
-            progress: progress[idx]?.progress ?? 0,
-            claimed: progress[idx]?.claimed ?? false,
-        }));
+        const questsWithProgress: DailyQuestWithProgress[] = quests.map((quest, idx) => {
+            const scaledTarget = scaleQuestTarget(quest.target, quest.trackingType, totalAttackPower);
+            const formattedTarget = scaledTarget.toLocaleString('en-US');
+            return {
+                quest: {
+                    id: quest.id,
+                    title: quest.title,
+                    description: quest.description.replace('{target}', formattedTarget),
+                    target: scaledTarget,
+                    reward: scaleQuestReward(quest.reward, lowestWarehouse),
+                },
+                progress: progress[idx]?.progress ?? 0,
+                claimed: progress[idx]?.claimed ?? false,
+            };
+        });
 
         return {
             quests: questsWithProgress,
