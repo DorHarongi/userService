@@ -69,8 +69,8 @@ export class ClanQuestService {
                 clanName,
                 weekSeed,
                 questId: quest.id,
-                progress: Math.min(amount, quest.target),
-                contributions: [{ username, amount }],
+                progress: Math.min(Math.max(0, amount), quest.target),
+                contributions: [{ username, amount: Math.max(0, amount) }],
             };
             if (newDoc.progress >= quest.target) {
                 newDoc.completedAt = new Date();
@@ -81,8 +81,8 @@ export class ClanQuestService {
 
         const contributionEntry = existing.contributions.find((c) => c.username === username);
         const currentUserAmount = contributionEntry?.amount ?? 0;
-        const newUserAmount = currentUserAmount + amount;
-        const totalProgress = existing.progress + amount;
+        const newUserAmount = Math.max(0, currentUserAmount + amount);
+        const totalProgress = Math.max(0, existing.progress + amount);
 
         const newContributions = existing.contributions.filter((c) => c.username !== username);
         newContributions.push({ username, amount: newUserAmount });

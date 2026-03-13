@@ -78,7 +78,7 @@ export class DailyQuestService {
         for (const quest of matchingQuests) {
             const idx = quests.findIndex((q) => q.id === quest.id);
             if (idx >= 0 && progress[idx] && !progress[idx].claimed) {
-                progress[idx].progress += amount;
+                progress[idx].progress = Math.max(0, progress[idx].progress + amount);
             }
         }
 
