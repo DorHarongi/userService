@@ -111,7 +111,7 @@ export class BossService {
       );
       await this.messagesService.sendGlobalInboxMessage(
         `⚡ A Mythic Boss has appeared!`,
-        `A terrifying {boss:${mythicBoss.name}|${location.x}|${location.y}|${mythicBoss.id}} has emerged!\nRally your clan and prepare for battle!\n\nHint:\nEach Ancient Titan guards a unique Divine Relic.\nThe clan that deals the most damage claims the relic once the titan falls.\nRelics can be stolen by defeating the village that holds one — so keep it safe and guard it well.\nOnly entrust a relic to the clan member you trust most; a disloyal holder could leave and take it with them.\n\nThe first clan to collect all 5 Divine Relics will achieve ultimate victory.`,
+        `A terrifying {boss:${mythicBoss.name}|${location.x}|${location.y}|${mythicBoss.id}} has emerged!\nAll clans, ready yourselves for battle — you will need to give everything you have got to bring it down.\n\nHint:\nEach Ancient Titan guards a unique Divine Relic.\nThe clan that deals the most damage claims the relic once the titan falls.\nRelics can be stolen by defeating the village where the relic is being kept — so keep it safe and guard it well.\nOnly entrust a relic to the clan member you trust most; a disloyal holder could leave and take it with them.\n\nThe first clan to collect all 5 Divine Relics will achieve ultimate victory.`,
       );
     });
   }
