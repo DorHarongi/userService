@@ -605,6 +605,17 @@ export class ScoutingService {
                 .find({})
                 .toArray() as User[];
 
+            const activeMissions = await this.dbAccessorService
+                .getCollection(SPY_MISSIONS_COLLECTION)
+                .find({ status: { $in: ['in_transit', 'returning'] } })
+                .toArray() as SpyMission[];
+
+            const missionsPerVillage = new Map<string, number>();
+            for (const m of activeMissions) {
+                const key = `${m.attackerUsername}::${m.attackerVillageName}`;
+                missionsPerVillage.set(key, (missionsPerVillage.get(key) || 0) + 1);
+            }
+
             const now = new Date();
 
             for (const user of users) {
@@ -619,12 +630,15 @@ export class ScoutingService {
                     village.aliveSpies = village.aliveSpies ?? maxSpies;
                     village.spyDeathTimestamps = village.spyDeathTimestamps || [];
 
-                    if (village.aliveSpies < maxSpies && village.spyDeathTimestamps.length === 0) {
+                    const key = `${user.username}::${village.villageName}`;
+                    const onMission = missionsPerVillage.get(key) || 0;
+
+                    if (village.aliveSpies < maxSpies && village.spyDeathTimestamps.length === 0 && onMission === 0) {
                         village.aliveSpies = maxSpies;
                         updated = true;
                     }
 
-                    while (village.aliveSpies < maxSpies && village.spyDeathTimestamps.length > 0) {
+                    while (village.aliveSpies + onMission < maxSpies && village.spyDeathTimestamps.length > 0) {
                         const oldest = village.spyDeathTimestamps[0];
                         const regenReady = new Date(oldest.getTime() + (12 * 60 * 60 * 1000));
                         if (regenReady <= now) {
