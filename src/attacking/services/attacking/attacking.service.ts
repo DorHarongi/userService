@@ -212,6 +212,14 @@ export class AttackingService {
             [`${troopsPath}.magicians`]: -attackDTO.attackingTroops.magicians,
             [`${troopsPath}.horsemen`]: -attackDTO.attackingTroops.horsemen,
             [`${troopsPath}.catapults`]: -attackDTO.attackingTroops.catapults,
+            [`villages.${attackDTO.attackerVillageIndex}.troopsInTransit`]:
+              attackDTO.attackingTroops.spearFighters +
+              attackDTO.attackingTroops.swordFighters +
+              attackDTO.attackingTroops.axeFighters +
+              attackDTO.attackingTroops.archers +
+              attackDTO.attackingTroops.magicians +
+              attackDTO.attackingTroops.horsemen +
+              attackDTO.attackingTroops.catapults,
           },
         },
         { returnDocument: 'after' },

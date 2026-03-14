@@ -435,6 +435,24 @@ export class MovementService {
             }
         }
 
+        // Decrement troopsInTransit: dead troops are gone, survivors remain in transit for return
+        const totalSent =
+            attackerTroops.spearFighters + attackerTroops.swordFighters +
+            attackerTroops.axeFighters + attackerTroops.archers +
+            attackerTroops.magicians + attackerTroops.horsemen +
+            attackerTroops.catapults;
+        const totalSurviving =
+            survivingAttackers.spearFighters +
+            survivingAttackers.swordFighters +
+            survivingAttackers.axeFighters +
+            survivingAttackers.archers +
+            survivingAttackers.magicians +
+            survivingAttackers.horsemen +
+            survivingAttackers.catapults;
+        const willHaveReturnMovement = totalSurviving > 0 || lootTotal > 0;
+        const transitDecrement = willHaveReturnMovement ? attackerTroopsKilled : totalSent;
+        attackerVillage.troopsInTransit = Math.max(0, (attackerVillage.troopsInTransit || 0) - transitDecrement);
+
         await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
             { username: attacker.username },
             { $set: attacker },
@@ -445,17 +463,7 @@ export class MovementService {
             { $set: { weeklyStats: defender.weeklyStats, totalStats: defender.totalStats, unlockedAchievements: (defender as any).unlockedAchievements } },
         );
 
-        // Create return movement with surviving troops and loot
-        const totalSurviving =
-            survivingAttackers.spearFighters +
-            survivingAttackers.swordFighters +
-            survivingAttackers.axeFighters +
-            survivingAttackers.archers +
-            survivingAttackers.magicians +
-            survivingAttackers.horsemen +
-            survivingAttackers.catapults;
-
-        if (totalSurviving > 0 || lootTotal > 0) {
+        if (willHaveReturnMovement) {
             const distance = calculateDistance(
                 attackerVillage.location.x,
                 attackerVillage.location.y,
@@ -503,6 +511,12 @@ export class MovementService {
 
         if (movement.troops) {
             this.addTroops(village.troops, movement.troops);
+            const returningCount =
+                (movement.troops.spearFighters || 0) + (movement.troops.swordFighters || 0) +
+                (movement.troops.axeFighters || 0) + (movement.troops.archers || 0) +
+                (movement.troops.magicians || 0) + (movement.troops.horsemen || 0) +
+                (movement.troops.catapults || 0);
+            village.troopsInTransit = Math.max(0, (village.troopsInTransit || 0) - returningCount);
         }
 
         if (movement.resources) {

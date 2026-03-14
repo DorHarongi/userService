@@ -23,6 +23,7 @@ export class Village {
   supportSent: SupportSentEntry[];
   oasisTroopsSent: OasisTroopsSentEntry[];
   skills: Skills;
+  troopsInTransit: number;
   aliveSpies: number;
   spyDeathTimestamps: Date[];
 
@@ -58,6 +59,7 @@ export class Village {
     this.supportSent = [];
     this.oasisTroopsSent = [];
     this.skills = { ...EMPTY_SKILLS };
+    this.troopsInTransit = 0;
     this.aliveSpies = 0;
     this.spyDeathTimestamps = [];
   }
@@ -121,7 +123,8 @@ export class Village {
       Village.getTotalTroops(village) +
       Village.getTotalWorkers(village) +
       Village.getTotalSupportSent(village) +
-      Village.getTotalOasisTroops(village);
+      Village.getTotalOasisTroops(village) +
+      (village.troopsInTransit || 0);
     return max - used;
   }
 }

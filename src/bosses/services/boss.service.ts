@@ -437,6 +437,14 @@ export class BossService {
             [`${troopsPath}.magicians`]: -dto.troops.magicians,
             [`${troopsPath}.horsemen`]: -dto.troops.horsemen,
             [`${troopsPath}.catapults`]: -dto.troops.catapults,
+            [`villages.${villageIndex}.troopsInTransit`]:
+              (dto.troops.spearFighters || 0) +
+              (dto.troops.swordFighters || 0) +
+              (dto.troops.axeFighters || 0) +
+              (dto.troops.archers || 0) +
+              (dto.troops.magicians || 0) +
+              (dto.troops.horsemen || 0) +
+              (dto.troops.catapults || 0),
           },
         },
         { returnDocument: 'after' },
@@ -604,6 +612,21 @@ export class BossService {
     }
 
     const lostTroops = this.calculateKilledTroops(dto, damageRatio);
+
+    const deadCount =
+      (lostTroops.spearFighters || 0) + (lostTroops.swordFighters || 0) +
+      (lostTroops.axeFighters || 0) + (lostTroops.archers || 0) +
+      (lostTroops.magicians || 0) + (lostTroops.horsemen || 0) +
+      (lostTroops.catapults || 0);
+    if (deadCount > 0) {
+      const villageIdx = user.villages.findIndex(v => v.villageName === movement.senderVillageName);
+      if (villageIdx >= 0) {
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+          { username },
+          { $inc: { [`villages.${villageIdx}.troopsInTransit`]: -deadCount } },
+        );
+      }
+    }
 
     const bossHpBefore = boss.currentHp;
     const bossHpAfter = Math.max(0, boss.currentHp - actualDamage);
@@ -841,6 +864,13 @@ export class BossService {
     village.troops.magicians += troops.magicians || 0;
     village.troops.horsemen += troops.horsemen || 0;
     village.troops.catapults += troops.catapults || 0;
+
+    const returningCount =
+      (troops.spearFighters || 0) + (troops.swordFighters || 0) +
+      (troops.axeFighters || 0) + (troops.archers || 0) +
+      (troops.magicians || 0) + (troops.horsemen || 0) +
+      (troops.catapults || 0);
+    village.troopsInTransit = Math.max(0, (village.troopsInTransit || 0) - returningCount);
 
     await this.dbAccessorService
       .getCollection(USERS_COLLECTION)
