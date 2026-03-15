@@ -20,7 +20,8 @@ import {
   getSkillBonus,
   horsemenAttackingStat,
   magicianAttackingStat,
-  MAX_BOSSES_ON_MAP,
+  getMaxBossesOnMap,
+  getMaxClaimsPerClan,
   MYTHIC_BOSS_DAILY_SPAWN_CHANCE,
   RELIC_NAMES,
   SkillCategory,
@@ -122,13 +123,18 @@ export class BossService {
       try {
         await this.cleanupExpiredBosses();
 
+        const playerCount = await this.dbAccessorService
+          .getCollection(USERS_COLLECTION)
+          .countDocuments({});
+        const maxBosses = getMaxBossesOnMap(playerCount);
+
         const currentBossCount = await this.dbAccessorService
           .getCollection(BOSSES_COLLECTION)
           .countDocuments({ isDefeated: false, tier: { $ne: BossTier.MYTHIC } });
 
-        if (currentBossCount >= MAX_BOSSES_ON_MAP) {
+        if (currentBossCount >= maxBosses) {
           this.logger.log(
-            `Boss cap reached (${currentBossCount}/${MAX_BOSSES_ON_MAP}), skipping spawn`,
+            `Boss cap reached (${currentBossCount}/${maxBosses}), skipping spawn`,
           );
           return;
         }
@@ -292,6 +298,39 @@ export class BossService {
     return bosses.map((b) => new BossDTO(b));
   }
 
+  async getClanClaimInfo(username: string): Promise<{ clanClaims: number; maxClaims: number }> {
+    const user = await this.dbAccessorService
+      .getCollection(USERS_COLLECTION)
+      .findOne({ username });
+
+    if (!user?.clanName) {
+      return { clanClaims: 0, maxClaims: 0 };
+    }
+
+    const clan = await this.dbAccessorService
+      .getCollection(CLANS_COLLECTION)
+      .findOne({ clanName: user.clanName });
+
+    if (!clan?._id) {
+      return { clanClaims: 0, maxClaims: 0 };
+    }
+
+    const playerCount = await this.dbAccessorService
+      .getCollection(USERS_COLLECTION)
+      .countDocuments({});
+    const maxBosses = getMaxBossesOnMap(playerCount);
+    const maxClaims = getMaxClaimsPerClan(maxBosses);
+
+    const clanClaims = await this.dbAccessorService
+      .getCollection(BOSSES_COLLECTION)
+      .countDocuments({
+        claimedByClanId: clan._id.toHexString(),
+        isDefeated: false,
+      });
+
+    return { clanClaims, maxClaims };
+  }
+
   async bossExists(bossId: string): Promise<{ exists: boolean }> {
     try {
       const boss = await this.dbAccessorService
@@ -398,6 +437,25 @@ export class BossService {
         );
       }
       if (!boss.claimedByClanId) {
+        const playerCount = await this.dbAccessorService
+          .getCollection(USERS_COLLECTION)
+          .countDocuments({});
+        const maxBosses = getMaxBossesOnMap(playerCount);
+        const maxClaims = getMaxClaimsPerClan(maxBosses);
+        const clanClaimCount = await this.dbAccessorService
+          .getCollection(BOSSES_COLLECTION)
+          .countDocuments({
+            claimedByClanId: clan._id?.toHexString(),
+            isDefeated: false,
+          });
+
+        if (clanClaimCount >= maxClaims) {
+          throw new HttpException(
+            `Your clan has reached the maximum number of boss claims (${maxClaims}). Defeat a claimed boss to free up a slot.`,
+            HttpStatus.FORBIDDEN,
+          );
+        }
+
         await this.dbAccessorService.getCollection(BOSSES_COLLECTION).updateOne(
           { _id: boss._id },
           {

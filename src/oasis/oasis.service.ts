@@ -6,7 +6,7 @@ import {
     oasisTierConfigs,
     generateOasisResources,
     selectRandomOasisTier,
-    MAX_OASES_ON_MAP,
+    getMaxOasesOnMap,
     OASIS_SPAWN_CHANCE,
     OASIS_HARVEST_RATE_PER_TROOP_PER_HOUR,
     OASIS_UNCLAIMED_DESPAWN_MS,
@@ -72,13 +72,18 @@ export class OasisService {
             try {
                 await this.cleanupUnclaimedOases();
 
+                const playerCount = await this.dbAccessorService
+                    .getCollection(USERS_COLLECTION)
+                    .countDocuments({});
+                const maxOases = getMaxOasesOnMap(playerCount);
+
                 const currentOasisCount = await this.dbAccessorService
                     .getCollection(OASES_COLLECTION)
                     .countDocuments({});
 
-                if (currentOasisCount >= MAX_OASES_ON_MAP) {
+                if (currentOasisCount >= maxOases) {
                     this.logger.log(
-                        `Oasis cap reached (${currentOasisCount}/${MAX_OASES_ON_MAP}), skipping spawn`,
+                        `Oasis cap reached (${currentOasisCount}/${maxOases}), skipping spawn`,
                     );
                     return;
                 }

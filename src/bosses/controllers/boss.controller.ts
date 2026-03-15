@@ -15,6 +15,14 @@ export class BossController {
         return this.bossService.getAllActiveBosses();
     }
 
+    @Get('clan-claims/:username')
+    async getClanClaimInfo(
+        @Request() req: any,
+        @Param('username') username: string
+    ): Promise<{ clanClaims: number; maxClaims: number }> {
+        return this.bossService.getClanClaimInfo(req.user.username);
+    }
+
     @Get('damage-leaderboard/:bossId')
     async getBossDamageLeaderboard(@Param('bossId') bossId: string) {
         return this.bossService.getBossDamageLeaderboard(bossId);
