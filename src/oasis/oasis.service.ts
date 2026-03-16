@@ -413,9 +413,32 @@ export class OasisService {
         const isReinforcement = !!oasis.garrison && oasis.garrison.username === username;
 
         if (!isReinforcement) {
-            const villageOasisEntries = village.oasisTroopsSent || [];
-            const alreadyAtOasis = villageOasisEntries.some(e => e.oasisId !== oasisId);
-            if (alreadyAtOasis) {
+            const existingOasisForVillage = await this.dbAccessorService
+                .getCollection(OASES_COLLECTION)
+                .findOne({
+                    'garrison.username': username,
+                    'garrison.contributions.villageName': villageName,
+                    _id: { $ne: new ObjectId(oasisId) },
+                });
+
+            if (existingOasisForVillage) {
+                throw new HttpException(
+                    'This village is already stationed at an oasis. Withdraw troops first to support another oasis.',
+                    HttpStatus.BAD_REQUEST,
+                );
+            }
+
+            const inTransitToOtherOasis = await this.dbAccessorService
+                .getCollection(MOVEMENTS_COLLECTION)
+                .findOne({
+                    senderUsername: username,
+                    senderVillageName: villageName,
+                    type: { $in: ['oasis_garrison', 'oasis_attack'] },
+                    status: 'in_transit',
+                    oasisId: { $ne: oasisId },
+                });
+
+            if (inTransitToOtherOasis) {
                 throw new HttpException(
                     'This village is already stationed at an oasis. Withdraw troops first to support another oasis.',
                     HttpStatus.BAD_REQUEST,
