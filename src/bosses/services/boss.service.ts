@@ -992,39 +992,21 @@ export class BossService {
     // Generate a unique reward ID for this boss defeat - shared across all clan members
     const rewardId = new ObjectId().toHexString();
 
-    // Add pending rewards to each clan member instead of direct deposit
+    const pendingReward = {
+      rewardId,
+      bossName,
+      defeatedAt: new Date(),
+      rewards: { wood: rewardAmount, stone: rewardAmount, crop: rewardAmount },
+    };
+
     for (const memberUsername of clan.members) {
-      const member = (await this.dbAccessorService
-        .getCollection(USERS_COLLECTION)
-        .findOne({ username: memberUsername })) as User;
-
-      if (!member) continue;
-
-      // Initialize pendingBossRewards if not exists
-      if (!member.pendingBossRewards) {
-        member.pendingBossRewards = [];
-      }
-
-      // Add pending reward with unique ID
-      member.pendingBossRewards.push({
-        rewardId: rewardId,
-        bossName: bossName,
-        defeatedAt: new Date(),
-        rewards: {
-          wood: rewardAmount,
-          stone: rewardAmount,
-          crop: rewardAmount,
-        },
-      });
-
       await this.dbAccessorService
         .getCollection(USERS_COLLECTION)
         .updateOne(
           { username: memberUsername },
-          { $set: { pendingBossRewards: member.pendingBossRewards } },
+          { $push: { pendingBossRewards: pendingReward } } as any,
         );
 
-      // Send message to clan member with claim info (include rewardId)
       await this.messagesService.sendBossDefeatedMessage(
         memberUsername,
         bossName,
