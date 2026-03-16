@@ -54,6 +54,8 @@ export class User implements IUser
         quests: { questId: string; progress: number; claimed: boolean }[];
     };
     clanQuestRewardClaimedWeek?: number;
+    lastLoginDate?: Date;
+    loginCount?: number;
 
     constructor(userFromClientDTO: userFromClientDTO, initialLocation: Location = new Location(0, 0))
     {
@@ -87,5 +89,7 @@ export class User implements IUser
         this.selectedTitle = undefined;
         this.unlockedAchievements = [];
         this.theme = 'default';
+        this.lastLoginDate = new Date();
+        this.loginCount = 0;
     }
 }

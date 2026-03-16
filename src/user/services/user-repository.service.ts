@@ -69,6 +69,12 @@ export class UserRepositoryService {
         let result: User = (await this.dbAccessorService.getCollection(COLLECTION_NAME).findOne({username: userFromClient.username, password: userFromClient.password})) as User;
         if(!result)
             throw new HttpException("Username or password is incorrect. Please try again.", HttpStatus.UNAUTHORIZED);
+
+        await this.dbAccessorService.getCollection(COLLECTION_NAME).updateOne(
+            { _id: result._id },
+            { $set: { lastLoginDate: new Date() }, $inc: { loginCount: 1 } },
+        );
+
         return new UserDTO(result);
     }
 
