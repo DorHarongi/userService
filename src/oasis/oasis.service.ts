@@ -410,6 +410,18 @@ export class OasisService {
         }
 
         const isAttack = !!oasis.garrison && oasis.garrison.username !== username;
+        const isReinforcement = !!oasis.garrison && oasis.garrison.username === username;
+
+        if (!isReinforcement) {
+            const villageOasisEntries = village.oasisTroopsSent || [];
+            const alreadyAtOasis = villageOasisEntries.some(e => e.oasisId !== oasisId);
+            if (alreadyAtOasis) {
+                throw new HttpException(
+                    'This village is already stationed at an oasis. Withdraw troops first to support another oasis.',
+                    HttpStatus.BAD_REQUEST,
+                );
+            }
+        }
 
         if (isAttack && user.energy < 1) {
             throw new HttpException('You need 1 energy to attack an occupied oasis', HttpStatus.BAD_REQUEST);
@@ -605,6 +617,132 @@ export class OasisService {
                 { $unset: { garrison: '' } },
             );
         }
+
+        return { travelTimeMs: maxTravelTimeMs };
+    }
+
+    async retreatVillagesFromOasis(
+        username: string,
+        oasisId: string,
+        villageNames: string[],
+    ): Promise<{ travelTimeMs: number }> {
+        const oasis = (await this.dbAccessorService
+            .getCollection(OASES_COLLECTION)
+            .findOne({ _id: new ObjectId(oasisId) })) as Oasis | null;
+
+        if (!oasis) {
+            throw new HttpException('Oasis not found', HttpStatus.NOT_FOUND);
+        }
+
+        if (!oasis.garrison || oasis.garrison.username !== username) {
+            throw new HttpException(
+                'You do not have troops stationed at this oasis',
+                HttpStatus.FORBIDDEN,
+            );
+        }
+
+        const user = (await this.dbAccessorService
+            .getCollection(USERS_COLLECTION)
+            .findOne({ username })) as User;
+
+        if (!user) {
+            throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+        }
+
+        const allContributions = getGarrisonContributions(oasis.garrison);
+        const retreatingContribs = allContributions.filter(c => villageNames.includes(c.villageName));
+        const remainingContribs = allContributions.filter(c => !villageNames.includes(c.villageName));
+
+        if (retreatingContribs.length === 0) {
+            throw new HttpException('No matching villages found at this oasis', HttpStatus.BAD_REQUEST);
+        }
+
+        const isFullRetreat = remainingContribs.length === 0 || remainingContribs.every(c => getTotalTroopCount(c.troops) === 0);
+
+        if (isFullRetreat) {
+            return this.retreatFromOasis(username, oasisId);
+        }
+
+        const garrison = oasis.garrison;
+        const resourceSplits = this.splitResourcesByContributions(
+            allContributions,
+            Math.floor(garrison.stash.wood || 0),
+            Math.floor(garrison.stash.stone || 0),
+            Math.floor(garrison.stash.crop || 0),
+        );
+
+        const retreatOasisName = oasisTierConfigs[oasis.tier]?.name || 'Oasis';
+        const oasisIdStr = oasis._id!.toHexString();
+        let maxTravelTimeMs = 0;
+        let retreatedStash = { wood: 0, stone: 0, crop: 0 };
+
+        for (let i = 0; i < allContributions.length; i++) {
+            const contrib = allContributions[i];
+            if (!villageNames.includes(contrib.villageName)) continue;
+
+            const village = user.villages.find((v) => v.villageName === contrib.villageName);
+            if (!village) continue;
+
+            const troops = new TroopsAmounts(
+                contrib.troops.spearFighters || 0,
+                contrib.troops.swordFighters || 0,
+                contrib.troops.axeFighters || 0,
+                contrib.troops.archers || 0,
+                contrib.troops.magicians || 0,
+                contrib.troops.horsemen || 0,
+                contrib.troops.catapults || 0,
+            );
+
+            const split = resourceSplits[i];
+            retreatedStash.wood += split.wood;
+            retreatedStash.stone += split.stone;
+            retreatedStash.crop += split.crop;
+            const resources = new ResourcesAmounts(split.wood, split.stone, split.crop);
+
+            const distance = calculateDistance(village.location.x, village.location.y, oasis.x, oasis.y);
+            const armySpeed = getArmySpeed(troops as any);
+            const quickStepBonus = getSkillBonus(village.skills, SkillCategory.QUICK_STEP);
+            const travelTimeMs = calculateTravelTimeMs(distance, armySpeed, quickStepBonus);
+            if (travelTimeMs > maxTravelTimeMs) maxTravelTimeMs = travelTimeMs;
+
+            const departureTime = new Date();
+            const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
+
+            await this.dbAccessorService.getCollection(MOVEMENTS_COLLECTION).insertOne({
+                type: 'oasis_return',
+                senderUsername: username,
+                senderVillageName: contrib.villageName,
+                targetUsername: username,
+                targetVillageName: contrib.villageName,
+                troops,
+                resources,
+                departureTime,
+                arrivalTime,
+                status: 'in_transit',
+                oasisName: retreatOasisName,
+                oasisX: oasis.x,
+                oasisY: oasis.y,
+                oasisId: oasisIdStr,
+            });
+
+            await this.removeOasisTroopsTracking(username, contrib.villageName, oasisIdStr);
+        }
+
+        const remainingStash = {
+            wood: Math.max(0, (garrison.stash.wood || 0) - retreatedStash.wood),
+            stone: Math.max(0, (garrison.stash.stone || 0) - retreatedStash.stone),
+            crop: Math.max(0, (garrison.stash.crop || 0) - retreatedStash.crop),
+        };
+
+        await this.dbAccessorService.getCollection(OASES_COLLECTION).updateOne(
+            { _id: oasis._id },
+            {
+                $set: {
+                    'garrison.contributions': remainingContribs,
+                    'garrison.stash': remainingStash,
+                },
+            },
+        );
 
         return { travelTimeMs: maxTravelTimeMs };
     }

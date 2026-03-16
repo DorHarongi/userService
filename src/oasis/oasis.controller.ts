@@ -33,8 +33,15 @@ export class OasisController {
     @Post('retreat')
     async retreat(
         @Request() req: any,
-        @Body() body: { oasisId: string },
+        @Body() body: { oasisId: string; villageNames?: string[] },
     ) {
+        if (body.villageNames && body.villageNames.length > 0) {
+            return this.oasisService.retreatVillagesFromOasis(
+                req.user.username,
+                body.oasisId,
+                body.villageNames,
+            );
+        }
         return this.oasisService.retreatFromOasis(
             req.user.username,
             body.oasisId,

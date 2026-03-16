@@ -544,12 +544,30 @@ export class MovementService {
     }
 
     private async resolveOasisReturnMovement(movement: Movement): Promise<void> {
+        const sent = {
+            wood: Math.floor(movement.resources?.woodAmount || 0),
+            stone: Math.floor(movement.resources?.stonesAmount || 0),
+            crop: Math.floor(movement.resources?.cropAmount || 0),
+        };
+
+        let received = { ...sent };
+        const userBefore = await this.dbAccessorService
+            .getCollection(USERS_COLLECTION)
+            .findOne({ username: movement.targetUsername }) as User;
+        const villageBefore = userBefore?.villages?.find(v => v.villageName === movement.targetVillageName);
+        if (villageBefore && movement.resources) {
+            const maxWood = warehouseStorageByLevel[villageBefore.buildingsLevels.woodWarehouseLevel];
+            const maxStone = warehouseStorageByLevel[villageBefore.buildingsLevels.stoneWarehouseLevel];
+            const maxCrop = warehouseStorageByLevel[villageBefore.buildingsLevels.cropWarehouseLevel];
+
+            received.wood = Math.min(sent.wood, Math.max(0, maxWood - villageBefore.resourcesAmounts.woodAmount));
+            received.stone = Math.min(sent.stone, Math.max(0, maxStone - villageBefore.resourcesAmounts.stonesAmount));
+            received.crop = Math.min(sent.crop, Math.max(0, maxCrop - villageBefore.resourcesAmounts.cropAmount));
+        }
+
         await this.resolveReturnMovement(movement);
 
-        const wood = Math.floor(movement.resources?.woodAmount || 0);
-        const stone = Math.floor(movement.resources?.stonesAmount || 0);
-        const crop = Math.floor(movement.resources?.cropAmount || 0);
-        const hasLoot = wood > 0 || stone > 0 || crop > 0;
+        const hasLoot = sent.wood > 0 || sent.stone > 0 || sent.crop > 0;
         const oasisLabel = movement.oasisName && movement.oasisX != null && movement.oasisId
             ? `{oasis:${movement.oasisName}|${movement.oasisX}|${movement.oasisY}|${movement.oasisId}}`
             : movement.oasisName || 'the oasis';
@@ -562,16 +580,25 @@ export class MovementService {
             ? `{village:${movement.targetVillageName}|${village.location.x}|${village.location.y}}`
             : movement.targetVillageName;
 
+        const hasOverflow = received.wood < sent.wood || received.stone < sent.stone || received.crop < sent.crop;
         const content = hasLoot
-            ? `Your troops have returned from ${oasisLabel} to ${villageLabel}.`
+            ? hasOverflow
+                ? `Your troops have returned from ${oasisLabel} to ${villageLabel}. Some resources were lost due to full warehouses.`
+                : `Your troops have returned from ${oasisLabel} to ${villageLabel}.`
             : `Your troops have returned from ${oasisLabel} to ${villageLabel} with no resources.`;
+
+        const metadata: any = {};
+        if (hasLoot) {
+            metadata.resources = sent;
+            metadata.received = received;
+        }
 
         await this.messagesService.sendClanNotificationMessage(
             movement.targetUsername,
             'Oasis Troops Returned',
             content,
             MessageType.OASIS_RETURN,
-            hasLoot ? { resources: { wood, stone, crop } } : undefined,
+            hasLoot ? metadata : undefined,
         );
     }
 
