@@ -383,7 +383,7 @@ export class OasisService {
             horsemen?: number;
             catapults?: number;
         },
-    ): Promise<{ travelTimeMs: number; isAttack: boolean }> {
+    ): Promise<{ travelTimeMs: number; isAttack: boolean; user?: any }> {
         const user = (await this.dbAccessorService
             .getCollection(USERS_COLLECTION)
             .findOne({ username })) as User;
