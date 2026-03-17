@@ -12,6 +12,11 @@ export interface OasisGarrisonContribution {
         horsemen: number;
         catapults: number;
     };
+    stash?: {
+        wood: number;
+        stone: number;
+        crop: number;
+    };
 }
 
 export interface OasisGarrison {
@@ -43,13 +48,20 @@ export interface OasisGarrison {
 }
 
 export function getGarrisonContributions(garrison: OasisGarrison): OasisGarrisonContribution[] {
+    let contribs: OasisGarrisonContribution[];
     if (garrison.contributions && garrison.contributions.length > 0) {
-        return garrison.contributions;
+        contribs = garrison.contributions;
+    } else if (garrison.villageName && garrison.troops) {
+        contribs = [{ villageName: garrison.villageName, troops: { ...garrison.troops } }];
+    } else {
+        return [];
     }
-    if (garrison.villageName && garrison.troops) {
-        return [{ villageName: garrison.villageName, troops: { ...garrison.troops } }];
+    for (const c of contribs) {
+        if (!c.stash) {
+            c.stash = { wood: 0, stone: 0, crop: 0 };
+        }
     }
-    return [];
+    return contribs;
 }
 
 export function getTotalGarrisonTroops(garrison: OasisGarrison): {

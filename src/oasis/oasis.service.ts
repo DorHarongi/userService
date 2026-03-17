@@ -237,6 +237,33 @@ export class OasisService {
                     const newStashStone = (garrison.stash.stone || 0) + stoneHarvested;
                     const newStashCrop = (garrison.stash.crop || 0) + cropHarvested;
 
+                    const contributions = getGarrisonContributions(garrison);
+                    const hasContribsInDb = Array.isArray(garrison.contributions) && garrison.contributions.length > 0;
+                    const contribTroopCounts = contributions.map(c => getTotalTroopCount(c.troops));
+                    const contribUpdates: Record<string, any> = {};
+
+                    if (hasContribsInDb) {
+                        for (let ci = 0; ci < contributions.length; ci++) {
+                            const ratio = troopCount > 0 ? contribTroopCounts[ci] / troopCount : 0;
+                            const cs = contributions[ci].stash || { wood: 0, stone: 0, crop: 0 };
+                            contribUpdates[`garrison.contributions.${ci}.stash`] = {
+                                wood: cs.wood + woodHarvested * ratio,
+                                stone: cs.stone + stoneHarvested * ratio,
+                                crop: cs.crop + cropHarvested * ratio,
+                            };
+                        }
+                    } else {
+                        for (let ci = 0; ci < contributions.length; ci++) {
+                            const ratio = troopCount > 0 ? contribTroopCounts[ci] / troopCount : 0;
+                            contributions[ci].stash = {
+                                wood: (contributions[ci].stash?.wood || 0) + woodHarvested * ratio,
+                                stone: (contributions[ci].stash?.stone || 0) + stoneHarvested * ratio,
+                                crop: (contributions[ci].stash?.crop || 0) + cropHarvested * ratio,
+                            };
+                        }
+                        contribUpdates['garrison.contributions'] = contributions;
+                    }
+
                     const newWood = Math.max(0, oasis.resourcesRemaining.wood - woodHarvested);
                     const newStone = Math.max(0, oasis.resourcesRemaining.stone - stoneHarvested);
                     const newCrop = Math.max(0, oasis.resourcesRemaining.crop - cropHarvested);
@@ -257,6 +284,7 @@ export class OasisService {
                                     'garrison.stash.stone': newStashStone,
                                     'garrison.stash.crop': newStashCrop,
                                     lastHarvestTick: now,
+                                    ...contribUpdates,
                                 },
                             },
                         );
@@ -289,13 +317,6 @@ export class OasisService {
             return;
         }
 
-        const resourceSplits = this.splitResourcesByContributions(
-            contributions,
-            Math.floor(garrison.stash.wood || 0),
-            Math.floor(garrison.stash.stone || 0),
-            Math.floor(garrison.stash.crop || 0),
-        );
-
         const autoOasisName = oasisTierConfigs[oasis.tier]?.name || 'Oasis';
         const oasisIdStr = oasis._id!.toHexString();
 
@@ -314,7 +335,7 @@ export class OasisService {
                 contrib.troops.catapults || 0,
             );
 
-            const split = resourceSplits[i];
+            const split = this.getResourcesForContrib(contrib, i, contributions, garrison);
             const resources = new ResourcesAmounts(split.wood, split.stone, split.crop);
 
             const distance = calculateDistance(village.location.x, village.location.y, oasis.x, oasis.y);
@@ -522,7 +543,7 @@ export class OasisService {
             status: 'in_transit',
         });
 
-        return { travelTimeMs, isAttack };
+        return { travelTimeMs, isAttack, user: atomicResult };
     }
 
     async retreatFromOasis(
@@ -559,13 +580,6 @@ export class OasisService {
             throw new HttpException('No troops to retreat', HttpStatus.BAD_REQUEST);
         }
 
-        const resourceSplits = this.splitResourcesByContributions(
-            contributions,
-            Math.floor(garrison.stash.wood || 0),
-            Math.floor(garrison.stash.stone || 0),
-            Math.floor(garrison.stash.crop || 0),
-        );
-
         const retreatOasisName = oasisTierConfigs[oasis.tier]?.name || 'Oasis';
         const oasisIdStr = oasis._id!.toHexString();
         let maxTravelTimeMs = 0;
@@ -585,7 +599,7 @@ export class OasisService {
                 contrib.troops.catapults || 0,
             );
 
-            const split = resourceSplits[i];
+            const split = this.getResourcesForContrib(contrib, i, contributions, garrison);
             const resources = new ResourcesAmounts(split.wood, split.stone, split.crop);
 
             const distance = calculateDistance(village.location.x, village.location.y, oasis.x, oasis.y);
@@ -687,22 +701,13 @@ export class OasisService {
         }
 
         const garrison = oasis.garrison;
-        const resourceSplits = this.splitResourcesByContributions(
-            allContributions,
-            Math.floor(garrison.stash.wood || 0),
-            Math.floor(garrison.stash.stone || 0),
-            Math.floor(garrison.stash.crop || 0),
-        );
 
         const retreatOasisName = oasisTierConfigs[oasis.tier]?.name || 'Oasis';
         const oasisIdStr = oasis._id!.toHexString();
         let maxTravelTimeMs = 0;
         let retreatedStash = { wood: 0, stone: 0, crop: 0 };
 
-        for (let i = 0; i < allContributions.length; i++) {
-            const contrib = allContributions[i];
-            if (!villageNames.includes(contrib.villageName)) continue;
-
+        for (const contrib of retreatingContribs) {
             const village = user.villages.find((v) => v.villageName === contrib.villageName);
             if (!village) continue;
 
@@ -716,7 +721,8 @@ export class OasisService {
                 contrib.troops.catapults || 0,
             );
 
-            const split = resourceSplits[i];
+            const contribIdx = allContributions.indexOf(contrib);
+            const split = this.getResourcesForContrib(contrib, contribIdx, allContributions, garrison);
             retreatedStash.wood += split.wood;
             retreatedStash.stone += split.stone;
             retreatedStash.crop += split.crop;
@@ -789,13 +795,39 @@ export class OasisService {
         }));
     }
 
-    async getOasisInfo(oasisId: string, username: string): Promise<any> {
+    async getOasisInfo(oasisId: string, username: string, villageName?: string): Promise<any> {
         const oasis = (await this.dbAccessorService
             .getCollection(OASES_COLLECTION)
             .findOne({ _id: new ObjectId(oasisId) })) as Oasis | null;
 
         if (!oasis) {
             throw new HttpException('Oasis not found', HttpStatus.NOT_FOUND);
+        }
+
+        let villageAtOtherOasis = false;
+        if (villageName) {
+            const oasisObjId = new ObjectId(oasisId);
+            const atOtherOasis = await this.dbAccessorService
+                .getCollection(OASES_COLLECTION)
+                .findOne({
+                    'garrison.username': username,
+                    'garrison.contributions.villageName': villageName,
+                    _id: { $ne: oasisObjId },
+                });
+            if (!atOtherOasis) {
+                const inTransit = await this.dbAccessorService
+                    .getCollection(MOVEMENTS_COLLECTION)
+                    .findOne({
+                        senderUsername: username,
+                        senderVillageName: villageName,
+                        type: { $in: ['oasis_garrison', 'oasis_attack'] },
+                        status: 'in_transit',
+                        oasisId: { $ne: oasisId },
+                    });
+                villageAtOtherOasis = !!inTransit;
+            } else {
+                villageAtOtherOasis = true;
+            }
         }
 
         const isOccupier = oasis.garrison?.username === username;
@@ -818,6 +850,7 @@ export class OasisService {
                 garrison: normalizedGarrison,
                 spawnedAt: oasis.spawnedAt,
                 lastHarvestTick: oasis.lastHarvestTick,
+                villageAtOtherOasis,
             };
         }
 
@@ -837,6 +870,7 @@ export class OasisService {
                         y: oasis.y,
                         tier: oasis.tier,
                         clanOwner: oasis.garrison.username,
+                        villageAtOtherOasis,
                     };
                 }
             }
@@ -849,6 +883,7 @@ export class OasisService {
             tier: oasis.tier,
             resourcesRemaining: oasis.resourcesRemaining,
             occupied: !!oasis.garrison,
+            villageAtOtherOasis,
         };
     }
 
@@ -930,7 +965,7 @@ export class OasisService {
                     catapults: (existing.catapults || 0) + incomingTroops.catapults,
                 };
             } else {
-                existingContribs.push({ villageName: movement.senderVillageName, troops: incomingTroops });
+                existingContribs.push({ villageName: movement.senderVillageName, troops: incomingTroops, stash: { wood: 0, stone: 0, crop: 0 } });
             }
 
             await this.dbAccessorService.getCollection(OASES_COLLECTION).updateOne(
@@ -967,6 +1002,7 @@ export class OasisService {
                 horsemen: movement.troops.horsemen || 0,
                 catapults: movement.troops.catapults || 0,
             },
+            stash: { wood: 0, stone: 0, crop: 0 },
         };
 
         const garrison: OasisGarrison = {
@@ -1229,6 +1265,7 @@ export class OasisService {
                             horsemen: survivingAttackers.horsemen,
                             catapults: survivingAttackers.catapults,
                         },
+                        stash: { wood: 0, stone: 0, crop: 0 },
                     }],
                     stash: { wood: 0, stone: 0, crop: 0 },
                     totalForOccupier: {
@@ -1308,9 +1345,22 @@ export class OasisService {
                 getGarrisonContributions(garrison), killedDefenderTroops,
             );
 
+            const survivingStashSum = survivingContribs.reduce((sum, c) => ({
+                wood: sum.wood + (c.stash?.wood || 0),
+                stone: sum.stone + (c.stash?.stone || 0),
+                crop: sum.crop + (c.stash?.crop || 0),
+            }), { wood: 0, stone: 0, crop: 0 });
+            const totalSurvivingStash = survivingStashSum.wood + survivingStashSum.stone + survivingStashSum.crop;
+            const totalGarrisonStash = (garrison.stash.wood || 0) + (garrison.stash.stone || 0) + (garrison.stash.crop || 0);
+
+            const updateFields: Record<string, any> = { 'garrison.contributions': survivingContribs };
+            if (totalSurvivingStash > 0 && totalSurvivingStash >= totalGarrisonStash * 0.5) {
+                updateFields['garrison.stash'] = survivingStashSum;
+            }
+
             await this.dbAccessorService.getCollection(OASES_COLLECTION).updateOne(
                 { _id: oasis._id },
-                { $set: { 'garrison.contributions': survivingContribs } },
+                { $set: updateFields },
             );
 
             const oasisIdStr = oasis._id!.toHexString();
@@ -1398,6 +1448,31 @@ export class OasisService {
         );
     }
 
+    private getResourcesForContrib(
+        contrib: OasisGarrisonContribution,
+        index: number,
+        allContribs: OasisGarrisonContribution[],
+        garrison: OasisGarrison,
+    ): { wood: number; stone: number; crop: number } {
+        const totalContribStash = allContribs.reduce(
+            (sum, c) => sum + (c.stash?.wood || 0) + (c.stash?.stone || 0) + (c.stash?.crop || 0), 0,
+        );
+        const totalGarrisonStash = (garrison.stash.wood || 0) + (garrison.stash.stone || 0) + (garrison.stash.crop || 0);
+
+        if (totalContribStash >= totalGarrisonStash * 0.5 && totalContribStash > 0) {
+            const s = contrib.stash || { wood: 0, stone: 0, crop: 0 };
+            return { wood: Math.floor(s.wood), stone: Math.floor(s.stone), crop: Math.floor(s.crop) };
+        }
+
+        const splits = this.splitResourcesByContributions(
+            allContribs,
+            Math.floor(garrison.stash.wood || 0),
+            Math.floor(garrison.stash.stone || 0),
+            Math.floor(garrison.stash.crop || 0),
+        );
+        return splits[index] || { wood: 0, stone: 0, crop: 0 };
+    }
+
     private splitResourcesByContributions(
         contributions: OasisGarrisonContribution[],
         totalWood: number,
@@ -1448,6 +1523,7 @@ export class OasisService {
         const result: OasisGarrisonContribution[] = contributions.map(c => ({
             villageName: c.villageName,
             troops: { ...c.troops },
+            stash: c.stash ? { ...c.stash } : { wood: 0, stone: 0, crop: 0 },
         }));
 
         for (const type of troopTypes) {

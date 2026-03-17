@@ -67,8 +67,12 @@ export class OasisController {
     }
 
     @Get('info/:oasisId')
-    async getOasisInfo(@Request() req: any, @Param('oasisId') oasisId: string) {
-        return this.oasisService.getOasisInfo(oasisId, req.user.username);
+    async getOasisInfo(
+        @Request() req: any,
+        @Param('oasisId') oasisId: string,
+        @Query('villageName') villageName?: string,
+    ) {
+        return this.oasisService.getOasisInfo(oasisId, req.user.username, villageName);
     }
 
     @Get('map')
