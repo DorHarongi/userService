@@ -111,12 +111,7 @@ export class DbConnectorService {
     await createIndexSafe('users', { joinDate: 1 });
     await createIndexSafe('bosses', { isDefeated: 1, x: 1, y: 1 });
     await createIndexSafe('bosses', { claimedByClanId: 1 });
-    // Drop legacy wrong index (was on 'name' but clans use 'clanName') - caused E11000 on 2nd+ clan creation
-    try {
-      await db.collection('clans').dropIndex('name_1');
-    } catch {
-      /* index may not exist on fresh DBs */
-    }
+    // Unique clan names use field clanName (see Clan entity). Legacy wrong index on "name" is fixed by one-off script only.
     await createIndexSafe('clans', { clanName: 1 }, { unique: true });
 
     await createIndexSafe('oases', { x: 1, y: 1 });
