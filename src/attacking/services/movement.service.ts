@@ -57,7 +57,7 @@ export interface Movement {
     resources?: ResourcesAmounts;
     departureTime: Date;
     arrivalTime: Date;
-    status: 'in_transit' | 'completed';
+    status: 'in_transit' | 'processing' | 'completed';
     bossId?: string;
     relicId?: string;
     oasisId?: string;
@@ -93,6 +93,13 @@ export class MovementService {
                 .toArray() as Movement[];
 
             for (const movement of movements) {
+                const claimed = await collection.findOneAndUpdate(
+                    { _id: movement._id, status: 'in_transit' },
+                    { $set: { status: 'processing' } },
+                );
+                const claimedDoc = (claimed as any)?.value ?? claimed;
+                if (!claimedDoc) continue;
+
                 try {
                     if (movement.type === 'attack') {
                         await this.resolveAttackMovement(movement);
@@ -113,14 +120,14 @@ export class MovementService {
                     } else if (movement.type === 'relic_transfer') {
                         await this.resolveRelicTransferMovement(movement);
                     }
-
-                    await collection.updateOne(
-                        { _id: movement._id },
-                        { $set: { status: 'completed' } },
-                    );
                 } catch (error) {
                     this.logger.error(`Error processing movement ${movement._id}: ${error?.message || error}`);
                 }
+
+                await collection.updateOne(
+                    { _id: movement._id },
+                    { $set: { status: 'completed' } },
+                );
             }
         });
     }
@@ -128,7 +135,7 @@ export class MovementService {
     async getUserMovements(username: string): Promise<any[]> {
         const movements = await this.dbAccessorService.getCollection(MOVEMENTS_COLLECTION)
             .find({
-                status: 'in_transit',
+                status: { $in: ['in_transit', 'processing'] },
                 $or: [{ senderUsername: username }, { targetUsername: username }],
             })
             .sort({ arrivalTime: 1 })
