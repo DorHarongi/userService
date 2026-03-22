@@ -13,6 +13,8 @@ import { MovementService } from '../../attacking/services/movement.service';
 import { ServerService } from '../../server/server.service';
 
 const MAX_INTRO_LENGTH = 200;
+const MAX_USERNAME_LENGTH = 15;
+const MIN_USERNAME_LENGTH = 3;
 
 export interface LoginResponseDTO {
     user: UserDTO;
@@ -59,6 +61,14 @@ export class UserController {
         if (closed) {
             throw new HttpException('Registration is closed for this server', HttpStatus.BAD_REQUEST);
         }
+        const trimmedName = (userFromClient.username || '').trim();
+        if (!trimmedName || trimmedName.length < MIN_USERNAME_LENGTH) {
+            throw new HttpException(`Username must be at least ${MIN_USERNAME_LENGTH} characters`, HttpStatus.BAD_REQUEST);
+        }
+        if (trimmedName.length > MAX_USERNAME_LENGTH) {
+            throw new HttpException(`Username cannot exceed ${MAX_USERNAME_LENGTH} characters`, HttpStatus.BAD_REQUEST);
+        }
+        userFromClient.username = trimmedName;
         userFromClient.password = crypto.createHash("shake256")
         .update(userFromClient.password)
         .digest("hex");
@@ -105,6 +115,13 @@ export class UserController {
     async getNumberOfUserStatisticsPages(): Promise<number>
     {
         return await this.userRepositorService.getNumberOfUserStatisticsPages();
+    }
+
+    @Get('statistics/page-for/:username')
+    async getUserStatisticsPage(@Param('username') username: string): Promise<{ page: number }>
+    {
+        const page = await this.userRepositorService.getUserStatisticsPage(username);
+        return { page };
     }
 
     // Public - statistics

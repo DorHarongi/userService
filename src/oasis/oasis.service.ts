@@ -121,8 +121,7 @@ export class OasisService {
     private async findSpawnLocation(): Promise<{ x: number; y: number } | null> {
         const villages = await this.dbAccessorService
             .getCollection(GRIDS_COLLECTION)
-            .find({ taken: true })
-            .limit(20)
+            .aggregate([{ $match: { taken: true } }, { $sample: { size: 20 } }])
             .toArray();
 
         if (villages.length === 0) {
@@ -363,6 +362,21 @@ export class OasisService {
             });
 
             await this.removeOasisTroopsTracking(garrison.username, contrib.villageName, oasisIdStr);
+
+            const returningTroopCount =
+                (troops.spearFighters || 0) +
+                (troops.swordFighters || 0) +
+                (troops.axeFighters || 0) +
+                (troops.archers || 0) +
+                (troops.magicians || 0) +
+                (troops.horsemen || 0) +
+                (troops.catapults || 0);
+            if (returningTroopCount > 0) {
+                await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+                    { username: garrison.username, 'villages.villageName': contrib.villageName },
+                    { $inc: { 'villages.$.troopsInTransit': returningTroopCount } },
+                );
+            }
         }
 
         await this.dbAccessorService.getCollection(OASES_COLLECTION).deleteOne(
@@ -629,6 +643,21 @@ export class OasisService {
             });
 
             await this.removeOasisTroopsTracking(username, contrib.villageName, oasisIdStr);
+
+            const returningTroopCount =
+                (troops.spearFighters || 0) +
+                (troops.swordFighters || 0) +
+                (troops.axeFighters || 0) +
+                (troops.archers || 0) +
+                (troops.magicians || 0) +
+                (troops.horsemen || 0) +
+                (troops.catapults || 0);
+            if (returningTroopCount > 0) {
+                await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+                    { username, 'villages.villageName': contrib.villageName },
+                    { $inc: { 'villages.$.troopsInTransit': returningTroopCount } },
+                );
+            }
         }
 
         const totalStash = (garrison.stash.wood || 0) + (garrison.stash.stone || 0) + (garrison.stash.crop || 0);
@@ -755,6 +784,21 @@ export class OasisService {
             });
 
             await this.removeOasisTroopsTracking(username, contrib.villageName, oasisIdStr);
+
+            const returningTroopCount =
+                (troops.spearFighters || 0) +
+                (troops.swordFighters || 0) +
+                (troops.axeFighters || 0) +
+                (troops.archers || 0) +
+                (troops.magicians || 0) +
+                (troops.horsemen || 0) +
+                (troops.catapults || 0);
+            if (returningTroopCount > 0) {
+                await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+                    { username, 'villages.villageName': contrib.villageName },
+                    { $inc: { 'villages.$.troopsInTransit': returningTroopCount } },
+                );
+            }
         }
 
         const remainingStash = {

@@ -177,11 +177,9 @@ export class BossService {
   }
 
   private async findSpawnLocation(): Promise<{ x: number; y: number } | null> {
-    // Find existing villages to spawn near them
     const villages = await this.dbAccessorService
       .getCollection(GRIDS_COLLECTION)
-      .find({ taken: true })
-      .limit(20)
+      .aggregate([{ $match: { taken: true } }, { $sample: { size: 20 } }])
       .toArray();
 
     if (villages.length === 0) {

@@ -31,6 +31,12 @@ export class ClansController {
         return await this.clansService.getNumberOfClanStatisticsPages();
     }
 
+    @Get('statistics/page-for/:clanName')
+    async getClanStatisticsPage(@Param('clanName') clanName: string): Promise<{ page: number }> {
+        const page = await this.clansService.getClanStatisticsPage(clanName);
+        return { page };
+    }
+
     // Public endpoint - statistics
     @Get('statistics/page/:page')
     async getClanStatistics(@Param('page') page: number): Promise<ClanStatisticDTO[]> {

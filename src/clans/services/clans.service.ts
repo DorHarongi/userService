@@ -40,6 +40,15 @@ export class ClansService {
   ) {}
 
   async createClan(createClanDTO: CreateClanDTO): Promise<ClanDTO> {
+    const trimmedName = (createClanDTO.clanName || '').trim();
+    if (!trimmedName) {
+      throw new HttpException('Clan name is required', HttpStatus.BAD_REQUEST);
+    }
+    if (trimmedName.length > 15) {
+      throw new HttpException('Clan name cannot exceed 15 characters', HttpStatus.BAD_REQUEST);
+    }
+    createClanDTO.clanName = trimmedName;
+
     // Check if clan name already exists
     const existingClan = await this.dbAccessorService
       .getCollection(CLANS_COLLECTION)
@@ -115,6 +124,41 @@ export class ClansService {
       .getCollection(CLANS_COLLECTION)
       .estimatedDocumentCount();
     return Math.ceil(numberOfClans / MAX_CLANS_IN_EACH_STATISTICS_PAGE);
+  }
+
+  async getClanStatisticsPage(clanName: string): Promise<number> {
+    const ranked = await this.dbAccessorService
+      .getCollection(CLANS_COLLECTION)
+      .aggregate([
+        {
+          $lookup: {
+            from: USERS_COLLECTION,
+            localField: 'members',
+            foreignField: 'username',
+            as: 'memberUsers',
+          },
+        },
+        {
+          $addFields: {
+            totalPopulation: {
+              $sum: {
+                $map: {
+                  input: '$memberUsers',
+                  as: 'user',
+                  in: { $sum: { $map: { input: '$$user.villages', as: 'village', in: '$$village.population' } } },
+                },
+              },
+            },
+          },
+        },
+        { $sort: { totalPopulation: -1, clanName: 1 } },
+        { $project: { clanName: 1 } },
+      ])
+      .toArray();
+
+    const index = ranked.findIndex((c: any) => c.clanName === clanName);
+    if (index === -1) return 1;
+    return Math.floor(index / MAX_CLANS_IN_EACH_STATISTICS_PAGE) + 1;
   }
 
   async getClanStatistics(page: number): Promise<ClanStatisticDTO[]> {

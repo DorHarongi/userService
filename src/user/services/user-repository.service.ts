@@ -156,6 +156,22 @@ export class UserRepositoryService {
         };
     }
 
+    async getUserStatisticsPage(username: string): Promise<number> {
+        const ranked = await this.dbAccessorService.getCollection(COLLECTION_NAME).aggregate([
+            { "$unwind": "$villages" },
+            { "$group": {
+                "_id": "$_id",
+                "totalPopulation": { $sum: "$villages.population" },
+                "username": { $first: "$username" },
+            }},
+            { "$sort": { "totalPopulation": -1, "username": 1 } },
+        ]).toArray();
+
+        const index = ranked.findIndex((u: any) => u.username === username);
+        if (index === -1) return 1;
+        return Math.floor(index / MAX_USERS_IN_EACH_STATISTICS_PAGE) + 1;
+    }
+
     async getUserStatistics(page: number): Promise<Array<any>>
     {
         const BEGINNER_SHIELD_HOURS = 24;
@@ -236,6 +252,7 @@ export class UserRepositoryService {
                     stat: { $ifNull: [`$${field}`, 0] },
                 },
             },
+            { $match: { stat: { $gt: 0 } } },
             { $sort: { stat: -1, username: 1 } },
             { $limit: 50 },
         ];
@@ -268,6 +285,7 @@ export class UserRepositoryService {
                     totalStat: { $sum: { $ifNull: [`$${field}`, 0] } },
                 },
             },
+            { $match: { totalStat: { $gt: 0 } } },
             { $sort: { totalStat: -1, _id: 1 } },
             { $limit: 50 },
         ];

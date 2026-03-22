@@ -345,6 +345,24 @@ export class InteractionsService {
       status: 'in_transit',
     });
 
+    const returningTroopCount =
+      (dto.troops.spearFighters || 0) +
+      (dto.troops.swordFighters || 0) +
+      (dto.troops.axeFighters || 0) +
+      (dto.troops.archers || 0) +
+      (dto.troops.magicians || 0) +
+      (dto.troops.horsemen || 0) +
+      (dto.troops.catapults || 0);
+    if (returningTroopCount > 0) {
+      await this.dbAccessorService
+        .getCollection(USERS_COLLECTION)
+        .updateOne(
+          { username: dto.ownerUsername, 'villages.villageName': ownerVillage.villageName },
+          { $inc: { 'villages.$.troopsInTransit': returningTroopCount } },
+        );
+      ownerVillage.troopsInTransit = (ownerVillage.troopsInTransit || 0) + returningTroopCount;
+    }
+
     // Send withdrawal message to recipient
     const troopsData = {
       spearFighters: dto.troops.spearFighters,
