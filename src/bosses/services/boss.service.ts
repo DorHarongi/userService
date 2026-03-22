@@ -506,7 +506,8 @@ export class BossService {
         { returnDocument: 'after' },
       );
 
-    if (!atomicResult) {
+    const atomicUser = atomicResult?.value ?? atomicResult;
+    if (!atomicUser) {
       throw new HttpException(
         'Attack failed - not enough energy or troops',
         HttpStatus.CONFLICT,
@@ -1033,14 +1034,15 @@ export class BossService {
         { returnDocument: 'before' },
       )) as any;
 
-    if (!result) {
+    const resultDoc = result?.value ?? result;
+    if (!resultDoc) {
       throw new HttpException(
         'Reward not found or already claimed',
         HttpStatus.NOT_FOUND,
       );
     }
 
-    const user = result as User;
+    const user = resultDoc as User;
     const reward = user.pendingBossRewards?.find(
       (r) => r.rewardId === rewardId,
     );

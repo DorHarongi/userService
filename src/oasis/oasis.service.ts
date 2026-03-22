@@ -524,7 +524,8 @@ export class OasisService {
                 { returnDocument: 'after' },
             );
 
-        if (!atomicResult) {
+        const updatedUser = atomicResult?.value ?? atomicResult;
+        if (!updatedUser) {
             throw new HttpException(
                 'Failed to send troops - not enough troops or energy',
                 HttpStatus.CONFLICT,
@@ -557,7 +558,7 @@ export class OasisService {
             status: 'in_transit',
         });
 
-        return { travelTimeMs, isAttack, user: atomicResult };
+        return { travelTimeMs, isAttack, user: updatedUser };
     }
 
     async retreatFromOasis(

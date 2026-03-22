@@ -225,15 +225,15 @@ export class AttackingService {
         { returnDocument: 'after' },
       );
 
-    if (!atomicResult) {
+    const atomicUser = atomicResult?.value ?? atomicResult;
+    if (!atomicUser) {
       throw new HttpException(
         'Attack failed - not enough energy or troops (concurrent modification)',
         HttpStatus.CONFLICT,
       );
     }
 
-    // Update attacker reference with the atomically updated document
-    attacker = atomicResult as unknown as User;
+    attacker = atomicUser as unknown as User;
 
     // Create movement entry for delayed attack
     const distance = calculateDistance(
