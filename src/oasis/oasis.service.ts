@@ -486,7 +486,14 @@ export class OasisService {
         }
 
         const troopsPath = `villages.${villageIndex}.troops`;
-        const oasisEntry = { oasisId, troops: { ...troopsObj } };
+        const troopCount =
+            (troopsObj.spearFighters || 0) +
+            (troopsObj.swordFighters || 0) +
+            (troopsObj.axeFighters || 0) +
+            (troopsObj.archers || 0) +
+            (troopsObj.magicians || 0) +
+            (troopsObj.horsemen || 0) +
+            (troopsObj.catapults || 0);
         const updateOps: any = {
             $inc: {
                 [`${troopsPath}.spearFighters`]: -(troopsObj.spearFighters || 0),
@@ -496,9 +503,7 @@ export class OasisService {
                 [`${troopsPath}.magicians`]: -(troopsObj.magicians || 0),
                 [`${troopsPath}.horsemen`]: -(troopsObj.horsemen || 0),
                 [`${troopsPath}.catapults`]: -(troopsObj.catapults || 0),
-            },
-            $push: {
-                [`villages.${villageIndex}.oasisTroopsSent`]: oasisEntry,
+                [`villages.${villageIndex}.troopsInTransit`]: troopCount,
             },
         };
 
@@ -1018,11 +1023,22 @@ export class OasisService {
                 { $set: { 'garrison.contributions': existingContribs } },
             );
 
+            const reinforceTroopCount =
+                (incomingTroops.spearFighters || 0) +
+                (incomingTroops.swordFighters || 0) +
+                (incomingTroops.axeFighters || 0) +
+                (incomingTroops.archers || 0) +
+                (incomingTroops.magicians || 0) +
+                (incomingTroops.horsemen || 0) +
+                (incomingTroops.catapults || 0);
             await this.removeOasisTroopsTracking(movement.senderUsername, movement.senderVillageName, movement.oasisId);
             const villageContrib = existingContribs.find(c => c.villageName === movement.senderVillageName);
             await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
                 { username: movement.senderUsername, 'villages.villageName': movement.senderVillageName },
-                { $push: { 'villages.$.oasisTroopsSent': { oasisId: movement.oasisId, troops: villageContrib?.troops || incomingTroops } } as any },
+                {
+                    $inc: { 'villages.$.troopsInTransit': -reinforceTroopCount },
+                    $push: { 'villages.$.oasisTroopsSent': { oasisId: movement.oasisId, troops: villageContrib?.troops || incomingTroops } } as any,
+                },
             );
             return;
         }
@@ -1069,6 +1085,22 @@ export class OasisService {
                     garrison,
                     lastHarvestTick: new Date(),
                 },
+            },
+        );
+
+        const arrivedTroopCount =
+            (movement.troops.spearFighters || 0) +
+            (movement.troops.swordFighters || 0) +
+            (movement.troops.axeFighters || 0) +
+            (movement.troops.archers || 0) +
+            (movement.troops.magicians || 0) +
+            (movement.troops.horsemen || 0) +
+            (movement.troops.catapults || 0);
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username: movement.senderUsername, 'villages.villageName': movement.senderVillageName },
+            {
+                $inc: { 'villages.$.troopsInTransit': -arrivedTroopCount },
+                $push: { 'villages.$.oasisTroopsSent': { oasisId: movement.oasisId, troops: newContribution.troops } } as any,
             },
         );
 
@@ -1342,13 +1374,28 @@ export class OasisService {
             for (const dc of defenderContribs) {
                 await this.removeOasisTroopsTracking(garrison.username, dc.villageName, oasisIdStr);
             }
+
+            const originalTroopCount =
+                (movement.troops.spearFighters || 0) +
+                (movement.troops.swordFighters || 0) +
+                (movement.troops.axeFighters || 0) +
+                (movement.troops.archers || 0) +
+                (movement.troops.magicians || 0) +
+                (movement.troops.horsemen || 0) +
+                (movement.troops.catapults || 0);
+
             if (totalSurviving > 0) {
-                await this.updateOasisTroopsTracking(
-                    movement.senderUsername, movement.senderVillageName, oasisIdStr, survivingAttackers,
+                await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+                    { username: movement.senderUsername, 'villages.villageName': movement.senderVillageName },
+                    {
+                        $inc: { 'villages.$.troopsInTransit': -originalTroopCount },
+                        $push: { 'villages.$.oasisTroopsSent': { oasisId: oasisIdStr, troops: survivingAttackers } } as any,
+                    },
                 );
             } else {
-                await this.removeOasisTroopsTracking(
-                    movement.senderUsername, movement.senderVillageName, oasisIdStr,
+                await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+                    { username: movement.senderUsername, 'villages.villageName': movement.senderVillageName },
+                    { $inc: { 'villages.$.troopsInTransit': -originalTroopCount } },
                 );
             }
 
@@ -1409,8 +1456,17 @@ export class OasisService {
             );
 
             const oasisIdStr = oasis._id!.toHexString();
-            await this.removeOasisTroopsTracking(
-                movement.senderUsername, movement.senderVillageName, oasisIdStr,
+            const lostTroopCount =
+                (movement.troops.spearFighters || 0) +
+                (movement.troops.swordFighters || 0) +
+                (movement.troops.axeFighters || 0) +
+                (movement.troops.archers || 0) +
+                (movement.troops.magicians || 0) +
+                (movement.troops.horsemen || 0) +
+                (movement.troops.catapults || 0);
+            await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+                { username: movement.senderUsername, 'villages.villageName': movement.senderVillageName },
+                { $inc: { 'villages.$.troopsInTransit': -lostTroopCount } },
             );
             for (const sc of survivingContribs) {
                 const scTotal = getTotalTroopCount(sc.troops);
