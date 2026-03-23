@@ -549,7 +549,7 @@ export class OasisService {
         const departureTime = new Date();
         const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
 
-        const movementType = isAttack ? 'oasis_attack' : 'oasis_garrison';
+        const movementType = 'oasis_garrison';
         await this.dbAccessorService.getCollection(MOVEMENTS_COLLECTION).insertOne({
             type: movementType,
             senderUsername: username,
@@ -1147,6 +1147,11 @@ export class OasisService {
 
         if (!oasis || !oasis.garrison) return;
 
+        if (oasis.garrison.username === movement.senderUsername) {
+            await this.resolveOasisGarrisonMovement(movement);
+            return;
+        }
+
         await this.resolveOasisCombat(movement, oasis, 'oasis_attack');
     }
 
@@ -1285,45 +1290,6 @@ export class OasisService {
                 survivingAttackers.horsemen +
                 survivingAttackers.catapults;
 
-            if (loot.woodAmount + loot.stonesAmount + loot.cropAmount > 0) {
-                const distance = calculateDistance(
-                    attackerVillage.location.x,
-                    attackerVillage.location.y,
-                    oasis.x,
-                    oasis.y,
-                );
-                const armySpeed = getArmySpeed(attackerTroops as any);
-                const quickStepBonus = getSkillBonus(
-                    attackerVillage.skills,
-                    SkillCategory.QUICK_STEP,
-                );
-                const travelTimeMs = calculateTravelTimeMs(
-                    distance,
-                    armySpeed,
-                    quickStepBonus,
-                );
-                const departureTime = new Date();
-                const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
-
-                const combatOasisName = oasisTierConfigs[oasis.tier]?.name || 'Oasis';
-                await this.dbAccessorService.getCollection(MOVEMENTS_COLLECTION).insertOne({
-                    type: 'oasis_return',
-                    senderUsername: movement.senderUsername,
-                    senderVillageName: movement.senderVillageName,
-                    targetUsername: movement.senderUsername,
-                    targetVillageName: movement.senderVillageName,
-                    troops: new TroopsAmounts(0, 0, 0, 0, 0, 0, 0),
-                    resources: loot,
-                    departureTime,
-                    arrivalTime,
-                    status: 'in_transit',
-                    oasisName: combatOasisName,
-                    oasisX: oasis.x,
-                    oasisY: oasis.y,
-                    oasisId: oasis._id!.toHexString(),
-                });
-            }
-
             if (totalSurviving > 0) {
                 const lootWood = garrison.stash.wood || 0;
                 const lootStone = garrison.stash.stone || 0;
@@ -1342,9 +1308,9 @@ export class OasisService {
                             horsemen: survivingAttackers.horsemen,
                             catapults: survivingAttackers.catapults,
                         },
-                        stash: { wood: 0, stone: 0, crop: 0 },
+                        stash: { wood: lootWood, stone: lootStone, crop: lootCrop },
                     }],
-                    stash: { wood: 0, stone: 0, crop: 0 },
+                    stash: { wood: lootWood, stone: lootStone, crop: lootCrop },
                     totalForOccupier: {
                         wood: oasis.resourcesRemaining.wood + lootWood,
                         stone: oasis.resourcesRemaining.stone + lootStone,
