@@ -5,6 +5,8 @@ import { Location } from '../../user/models/location';
 
 const GRID_COLLECTION = "grids";
 const USERS_COLLECTION = "users";
+const OASES_COLLECTION = "oases";
+const BOSSES_COLLECTION = "bosses";
 const WORLD_SIZE = 100;
 
 // V2 spawning parameters
@@ -81,41 +83,54 @@ export class WorldService {
         return grids as IGrid[];
     }
 
+    private async getOccupiedCoords(): Promise<Array<{ x: number; y: number }>> {
+        const [oases, bosses] = await Promise.all([
+            this.dbAccessorService.getCollection(OASES_COLLECTION).find({}, { projection: { x: 1, y: 1 } }).toArray(),
+            this.dbAccessorService.getCollection(BOSSES_COLLECTION).find({ isDefeated: false }, { projection: { x: 1, y: 1 } }).toArray(),
+        ]);
+        return [...oases, ...bosses].map(e => ({ x: e.x, y: e.y }));
+    }
+
+    private buildExclusionFilter(occupied: Array<{ x: number; y: number }>): Record<string, any> {
+        if (occupied.length === 0) return {};
+        return { $nor: occupied.map(c => ({ x: c.x, y: c.y })) };
+    }
+
     async findLocationForNewVillage(): Promise<Location> {
         const totalGrids = await this.dbAccessorService.getCollection(GRID_COLLECTION).countDocuments({});
         if (totalGrids === 0) {
             return new Location(Math.floor(WORLD_SIZE / 2), Math.floor(WORLD_SIZE / 2));
         }
 
+        const occupied = await this.getOccupiedCoords();
+        const exclusion = this.buildExclusionFilter(occupied);
+
         const existingVillageCount = await this.dbAccessorService.getCollection(GRID_COLLECTION).countDocuments({ taken: true });
 
         if (existingVillageCount === 0) {
             const centerX = Math.floor(WORLD_SIZE / 2);
             const centerY = Math.floor(WORLD_SIZE / 2);
-            const nearbyGrid = await this.sampleFreeNear(centerX, centerY, 5);
+            const nearbyGrid = await this.sampleFreeNear(centerX, centerY, 5, exclusion);
             if (nearbyGrid) return new Location(nearbyGrid.x, nearbyGrid.y);
         }
 
-        // V2: 35% sparse (low-density anywhere on map), 65% proximity (near random village)
         if (Math.random() < SPARSE_CHANCE) {
-            const loc = await this.findSparseLocation();
+            const loc = await this.findSparseLocation(exclusion);
             if (loc) return loc;
         }
 
-        // Proximity: pick a random existing village via $sample (no .limit bias)
         const anchor = await this.dbAccessorService.getCollection(GRID_COLLECTION).aggregate([
             { $match: { taken: true } },
             { $sample: { size: 1 } },
         ]).next() as IGrid;
 
         if (anchor) {
-            const spot = await this.sampleFreeNear(anchor.x, anchor.y, PROXIMITY_RANGE);
+            const spot = await this.sampleFreeNear(anchor.x, anchor.y, PROXIMITY_RANGE, exclusion);
             if (spot) return new Location(spot.x, spot.y);
         }
 
-        // Fallback
         const any = await this.dbAccessorService.getCollection(GRID_COLLECTION).aggregate([
-            { $match: { taken: false } },
+            { $match: { taken: false, ...exclusion } },
             { $sample: { size: 1 } },
         ]).next() as IGrid;
 
@@ -124,14 +139,13 @@ export class WorldService {
         throw new HttpException("No available grid locations", HttpStatus.SERVICE_UNAVAILABLE);
     }
 
-    private async findSparseLocation(): Promise<Location | null> {
+    private async findSparseLocation(exclusion: Record<string, any>): Promise<Location | null> {
         let best: IGrid | null = null;
         let bestDensity = Infinity;
 
         for (let i = 0; i < CANDIDATES; i++) {
-            // Sample from ENTIRE map, not near center
             const candidate = await this.dbAccessorService.getCollection(GRID_COLLECTION).aggregate([
-                { $match: { taken: false } },
+                { $match: { taken: false, ...exclusion } },
                 { $sample: { size: 1 } },
             ]).next() as IGrid | null;
             if (!candidate) continue;
@@ -151,13 +165,14 @@ export class WorldService {
         return best ? new Location(best.x, best.y) : null;
     }
 
-    private async sampleFreeNear(cx: number, cy: number, range: number): Promise<IGrid | null> {
+    private async sampleFreeNear(cx: number, cy: number, range: number, exclusion: Record<string, any> = {}): Promise<IGrid | null> {
         return await this.dbAccessorService.getCollection(GRID_COLLECTION).aggregate([
             {
                 $match: {
                     taken: false,
                     x: { $gte: Math.max(0, cx - range), $lte: Math.min(WORLD_SIZE - 1, cx + range) },
                     y: { $gte: Math.max(0, cy - range), $lte: Math.min(WORLD_SIZE - 1, cy + range) },
+                    ...exclusion,
                 },
             },
             { $sample: { size: 1 } },
@@ -200,6 +215,19 @@ export class WorldService {
             taken: false
         }).toArray();
         return grids as IGrid[];
+    }
+
+    async isCellOccupiedByOasis(x: number, y: number): Promise<boolean> {
+        const oasis = await this.dbAccessorService.getCollection(OASES_COLLECTION).findOne({ x, y });
+        return !!oasis;
+    }
+
+    async isCellOccupiedByBossOrOasis(x: number, y: number): Promise<boolean> {
+        const [oasis, boss] = await Promise.all([
+            this.dbAccessorService.getCollection(OASES_COLLECTION).findOne({ x, y }),
+            this.dbAccessorService.getCollection(BOSSES_COLLECTION).findOne({ x, y, isDefeated: false }),
+        ]);
+        return !!(oasis || boss);
     }
 
     getWorldSize(): number {

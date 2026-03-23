@@ -650,11 +650,19 @@ export class InteractionsService {
       );
     }
 
-    // Check if a boss is occupying this cell
+    // Check if a boss or oasis is occupying this cell
     const hasBoss = await this.bossService.isCellOccupiedByBoss(dto.x, dto.y);
     if (hasBoss) {
       throw new HttpException(
         'Cannot create village on a cell occupied by a raid boss',
+        HttpStatus.CONFLICT,
+      );
+    }
+
+    const hasOasis = await this.worldService.isCellOccupiedByOasis(dto.x, dto.y);
+    if (hasOasis) {
+      throw new HttpException(
+        'Cannot create village on a cell occupied by an oasis',
         HttpStatus.CONFLICT,
       );
     }
