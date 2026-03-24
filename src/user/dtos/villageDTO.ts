@@ -28,6 +28,7 @@ export class VillageDTO {
     stoneProductionPerSecond: number;
     cropProductionPerSecond: number;
     skills: Skills;
+    troopsInTransit: number;
     aliveSpies: number;
     spyDeathTimestamps: Date[];
 
@@ -43,6 +44,7 @@ export class VillageDTO {
         this.supportSent = village.supportSent || [];
         this.oasisTroopsSent = village.oasisTroopsSent || [];
         this.skills = village.skills;
+        this.troopsInTransit = village.troopsInTransit || 0;
         this.aliveSpies = village.aliveSpies;
         this.spyDeathTimestamps = village.spyDeathTimestamps || [];
 

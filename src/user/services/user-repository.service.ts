@@ -14,6 +14,7 @@ import { VillageDTO } from '../dtos/villageDTO';
 import { WorldService } from '../../world/services/world.service';
 import { Location } from '../models/location';
 import { ACHIEVEMENTS } from 'utils';
+import { reconcileAllVillages } from '../population-utils';
 
 const MAX_USERS_IN_EACH_STATISTICS_PAGE = 10;
 const COLLECTION_NAME = "users";
@@ -74,6 +75,8 @@ export class UserRepositoryService {
             { _id: result._id },
             { $set: { lastLoginDate: new Date() }, $inc: { loginCount: 1 } },
         );
+
+        await reconcileAllVillages(this.dbAccessorService, result);
 
         return new UserDTO(result);
     }
@@ -312,7 +315,9 @@ export class UserRepositoryService {
         let result: User = (await this.dbAccessorService.getCollection(COLLECTION_NAME).findOne({username: username})) as User;
         if(!result)
             throw new HttpException("User doesnt exist", HttpStatus.NOT_FOUND);
-        
+
+        await reconcileAllVillages(this.dbAccessorService, result);
+
         return new UserDTO(result);
     }
 

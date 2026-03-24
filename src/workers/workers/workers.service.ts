@@ -1,5 +1,4 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { UpdateResult } from 'mongodb';
 import { Village } from 'src/user/models/village.entity';
 import { DbAccessorService } from '../../database/services/db-accessor.service';
 import { DailyQuestTrackingType, ClanQuestTrackingType } from 'utils';
@@ -11,6 +10,7 @@ import { UserDTO } from '../../user/dtos/userDTO';
 import { ResourcesWorkers } from '../../user/models/resourcesWorkers';
 import { User } from '../../user/models/user.entity';
 import { WorkersDTO } from '../dtos/workersDTO';
+import { getAccurateFreePopulation, reconcileAllVillages } from '../../user/population-utils';
 
 const USER_COLLECTIONS = 'users';
 
@@ -33,28 +33,51 @@ export class WorkersService {
     if (!village)
       throw new HttpException('Village doesnt exist', HttpStatus.NOT_FOUND);
 
-    let freePopulation: number = Village.getFreePopulation(village);
-    if (
-      !this.checkIfVillageHasEnoughFreePopulation(
-        freePopulation,
-        workersDTO.resourcesWorkers,
-      )
-    )
-      throw new HttpException(
-        'You tried to hire too many workers',
-        HttpStatus.FORBIDDEN,
-      );
+    const totalWorkerDelta =
+      workersDTO.resourcesWorkers.cropWorkers +
+      workersDTO.resourcesWorkers.stoneWorkers +
+      workersDTO.resourcesWorkers.woodWorkers;
 
-    // everything good -> changeWorkers workers
+    if (totalWorkerDelta > 0) {
+      const freePopulation = await getAccurateFreePopulation(
+        this.dbAccessorService,
+        village,
+        workersDTO.username,
+      );
+      if (totalWorkerDelta > freePopulation)
+        throw new HttpException(
+          'You tried to hire too many workers',
+          HttpStatus.FORBIDDEN,
+        );
+    }
 
     this.addWorkersToVillage(village, workersDTO.resourcesWorkers);
 
-    // Check if quest is now claimable (rewards must be claimed manually)
+    const vp = `villages.${workersDTO.villageIndex}`;
+    await this.dbAccessorService
+      .getCollection(USER_COLLECTIONS)
+      .updateOne(
+        { username: workersDTO.username },
+        {
+          $set: {
+            [`${vp}.resourcesWorkers`]: village.resourcesWorkers,
+          },
+        },
+      );
+
+    const updatedUser: User = (await this.dbAccessorService
+      .getCollection(USER_COLLECTIONS)
+      .findOne({ username: workersDTO.username })) as User;
+
+    await reconcileAllVillages(this.dbAccessorService, updatedUser);
+
+    const updatedVillage = updatedUser.villages[workersDTO.villageIndex];
+
     const isQuestClaimable = this.questService.checkIfQuestNowClaimable(
-      user,
+      updatedUser,
       {
         type: 'HIRE_WORKERS',
-        totalWorkers: this.calculateTotalWorkers(village),
+        totalWorkers: this.calculateTotalWorkers(updatedVillage),
       },
       workersDTO.villageIndex,
     );
@@ -65,14 +88,11 @@ export class WorkersService {
       workersDTO.resourcesWorkers.woodWorkers;
 
     this.dailyQuestService.incrementProgress(workersDTO.username, DailyQuestTrackingType.HIRE_WORKERS, totalHired).catch(() => {});
-    if (user.clanName) {
-      this.clanQuestService.incrementClanProgress(user.clanName, workersDTO.username, ClanQuestTrackingType.TOTAL_WORKERS_HIRED, totalHired).catch(() => {});
+    if (updatedUser.clanName) {
+      this.clanQuestService.incrementClanProgress(updatedUser.clanName, workersDTO.username, ClanQuestTrackingType.TOTAL_WORKERS_HIRED, totalHired).catch(() => {});
     }
 
-    const updateResult: UpdateResult = await this.dbAccessorService
-      .getCollection(USER_COLLECTIONS)
-      .updateOne({ username: workersDTO.username }, { $set: user });
-    return { user: new UserDTO(user), isQuestClaimable };
+    return { user: new UserDTO(updatedUser), isQuestClaimable };
   }
 
   addWorkersToVillage(

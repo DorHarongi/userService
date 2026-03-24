@@ -1,5 +1,4 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { UpdateResult } from 'mongodb';
 import { TroopsAmounts } from 'src/user/models/troopsAmounts';
 import {
   archerMaterialsCost,
@@ -29,6 +28,7 @@ import { UserDTO } from '../../../../user/dtos/userDTO';
 import { ResourcesAmounts } from '../../../../user/models/resourcesAmounts';
 import { User } from '../../../../user/models/user.entity';
 import { Village } from '../../../../user/models/village.entity';
+import { getAccurateFreePopulation, reconcileAllVillages } from '../../../../user/population-utils';
 
 const USER_COLLECTIONS = 'users';
 
@@ -56,8 +56,6 @@ export class TroopsTrainingService {
         HttpStatus.BAD_REQUEST,
       );
 
-    //check if user have enough materials for training this amount of troops, and that he is not training troops he cant by his level
-
     let materialsCost: MaterialsCost = this.calculateMaterialsCostForTraining(
       trainDTO.troopsAmount,
     );
@@ -81,7 +79,12 @@ export class TroopsTrainingService {
         'You still cant train some of the troops you tried to',
         HttpStatus.FORBIDDEN,
       );
-    let freePopulation: number = Village.getFreePopulation(village);
+
+    const freePopulation = await getAccurateFreePopulation(
+      this.dbAccessorService,
+      village,
+      trainDTO.username,
+    );
     if (
       !this.checkIfVillageHasEnoughFreePopulation(
         freePopulation,
@@ -93,39 +96,56 @@ export class TroopsTrainingService {
         HttpStatus.FORBIDDEN,
       );
 
-    // everything good -> train troops and decrease resources
-
-    village.resourcesAmounts.cropAmount -= materialsCost.crop;
-    village.resourcesAmounts.stonesAmount -= materialsCost.stones;
-    village.resourcesAmounts.woodAmount -= materialsCost.wood;
-
-    this.addTroopsToUser(village.troops, trainDTO.troopsAmount);
-
-    // Check if quest is now claimable (rewards must be claimed manually)
-    const isQuestClaimable = this.questService.checkIfQuestNowClaimable(
-      user,
-      {
-        type: 'TRAIN_TROOPS',
-        totalTroops: this.calculateTotalTroops(village),
-      },
-      trainDTO.villageIndex,
-    );
-
     const totalTrained =
       trainDTO.troopsAmount.spearFighters + trainDTO.troopsAmount.swordFighters +
       trainDTO.troopsAmount.axeFighters + trainDTO.troopsAmount.archers +
       trainDTO.troopsAmount.magicians + trainDTO.troopsAmount.horsemen +
       trainDTO.troopsAmount.catapults;
 
+    const vp = `villages.${trainDTO.villageIndex}`;
+    await this.dbAccessorService
+      .getCollection(USER_COLLECTIONS)
+      .updateOne(
+        { username: trainDTO.username },
+        {
+          $inc: {
+            [`${vp}.troops.spearFighters`]: trainDTO.troopsAmount.spearFighters,
+            [`${vp}.troops.swordFighters`]: trainDTO.troopsAmount.swordFighters,
+            [`${vp}.troops.axeFighters`]: trainDTO.troopsAmount.axeFighters,
+            [`${vp}.troops.archers`]: trainDTO.troopsAmount.archers,
+            [`${vp}.troops.magicians`]: trainDTO.troopsAmount.magicians,
+            [`${vp}.troops.horsemen`]: trainDTO.troopsAmount.horsemen,
+            [`${vp}.troops.catapults`]: trainDTO.troopsAmount.catapults,
+            [`${vp}.resourcesAmounts.cropAmount`]: -materialsCost.crop,
+            [`${vp}.resourcesAmounts.stonesAmount`]: -materialsCost.stones,
+            [`${vp}.resourcesAmounts.woodAmount`]: -materialsCost.wood,
+          },
+        },
+      );
+
+    const updatedUser: User = (await this.dbAccessorService
+      .getCollection(USER_COLLECTIONS)
+      .findOne({ username: trainDTO.username })) as User;
+
+    await reconcileAllVillages(this.dbAccessorService, updatedUser);
+
+    const updatedVillage = updatedUser.villages[trainDTO.villageIndex];
+
+    const isQuestClaimable = this.questService.checkIfQuestNowClaimable(
+      updatedUser,
+      {
+        type: 'TRAIN_TROOPS',
+        totalTroops: this.calculateTotalTroops(updatedVillage),
+      },
+      trainDTO.villageIndex,
+    );
+
     this.dailyQuestService.incrementProgress(trainDTO.username, DailyQuestTrackingType.TRAIN_TROOPS, totalTrained).catch(() => {});
-    if (user.clanName) {
-      this.clanQuestService.incrementClanProgress(user.clanName, trainDTO.username, ClanQuestTrackingType.TOTAL_TROOPS_TRAINED, totalTrained).catch(() => {});
+    if (updatedUser.clanName) {
+      this.clanQuestService.incrementClanProgress(updatedUser.clanName, trainDTO.username, ClanQuestTrackingType.TOTAL_TROOPS_TRAINED, totalTrained).catch(() => {});
     }
 
-    const updateResult: UpdateResult = await this.dbAccessorService
-      .getCollection(USER_COLLECTIONS)
-      .updateOne({ username: trainDTO.username }, { $set: user });
-    return { user: new UserDTO(user), isQuestClaimable };
+    return { user: new UserDTO(updatedUser), isQuestClaimable };
   }
 
   foundNegativeNumbersInDTO(trainDTO: TrainDTO) {
