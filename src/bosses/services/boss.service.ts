@@ -628,14 +628,12 @@ export class BossService {
     );
     const distanceMultiplier = getDistanceDamageMultiplier(distance);
 
-    let damageMultiplier = distanceMultiplier;
+    const distanceBonus = distanceMultiplier - 1;
     const sharperBladesBonus = getSkillBonus(
       village.skills,
       SkillCategory.SHARPER_BLADES,
     );
-    if (sharperBladesBonus > 0) {
-      damageMultiplier *= 1 + sharperBladesBonus;
-    }
+    const damageMultiplier = 1 + distanceBonus + sharperBladesBonus;
 
     const actualDamage = Math.floor(rawDamage * damageMultiplier);
 

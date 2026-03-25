@@ -244,23 +244,14 @@ export class MovementService {
         if (attackWon) {
             loot = this.calculateLoot(attackerTroops, defenderVillage.resourcesAmounts);
 
-            // Filthy Thief skill: increases looted resources
             const filthyThiefBonus = getSkillBonus(attackerSkills, SkillCategory.FILTHY_THIEF);
-            if (filthyThiefBonus > 0) {
-                loot = new ResourcesAmounts(
-                    Math.floor(loot.woodAmount * (1 + filthyThiefBonus)),
-                    Math.floor(loot.stonesAmount * (1 + filthyThiefBonus)),
-                    Math.floor(loot.cropAmount * (1 + filthyThiefBonus)),
-                );
-            }
-
-            // Iron Vault skill: protects a portion of defender resources
             const ironVaultBonus = getSkillBonus(defenderSkills, SkillCategory.IRON_VAULT);
-            if (ironVaultBonus > 0) {
+            const lootModifier = Math.max(0, 1 + filthyThiefBonus - ironVaultBonus);
+            if (lootModifier !== 1) {
                 loot = new ResourcesAmounts(
-                    Math.floor(loot.woodAmount * (1 - ironVaultBonus)),
-                    Math.floor(loot.stonesAmount * (1 - ironVaultBonus)),
-                    Math.floor(loot.cropAmount * (1 - ironVaultBonus)),
+                    Math.floor(loot.woodAmount * lootModifier),
+                    Math.floor(loot.stonesAmount * lootModifier),
+                    Math.floor(loot.cropAmount * lootModifier),
                 );
             }
 
