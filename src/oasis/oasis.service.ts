@@ -1166,6 +1166,7 @@ export class OasisService {
         movementType: string,
     ): Promise<void> {
         const garrison = oasis.garrison!;
+        const defenderContributions = getGarrisonContributions(garrison);
         const attackerTroops = new TroopsAmounts(
             movement.troops.spearFighters || 0,
             movement.troops.swordFighters || 0,
@@ -1186,7 +1187,11 @@ export class OasisService {
             totalDefTroops.horsemen,
             totalDefTroops.catapults,
         );
-        const defenderFirstVillageName = getGarrisonContributions(garrison)[0]?.villageName || '';
+        const defenderFirstVillageName = defenderContributions[0]?.villageName || '';
+
+        const defenderUser = (await this.dbAccessorService
+            .getCollection(USERS_COLLECTION)
+            .findOne({ username: garrison.username })) as User | null;
 
         const attackerUser = (await this.dbAccessorService
             .getCollection(USERS_COLLECTION)
@@ -1206,7 +1211,10 @@ export class OasisService {
         );
         const totalAttackingPower = Math.floor(attackingPower * (1 + sharperBladesBonus));
 
-        const defenderDefence = this.calculateDefence(defenderTroops);
+        const defenderDefence = this.calculateGarrisonDefenceWithVillageBonuses(
+            defenderContributions,
+            defenderUser,
+        );
 
         const attackToDefenceRatio = totalAttackingPower / (defenderDefence || 1);
         const defenceToAttackRatio = defenderDefence / (totalAttackingPower || 1);
@@ -1336,8 +1344,7 @@ export class OasisService {
             }
 
             const oasisIdStr = oasis._id!.toHexString();
-            const defenderContribs = getGarrisonContributions(garrison);
-            for (const dc of defenderContribs) {
+            for (const dc of defenderContributions) {
                 await this.removeOasisTroopsTracking(garrison.username, dc.villageName, oasisIdStr);
             }
 
@@ -1400,7 +1407,7 @@ export class OasisService {
             );
 
             const survivingContribs = this.distributeSurvivorsAcrossContributions(
-                getGarrisonContributions(garrison), killedDefenderTroops,
+                defenderContributions, killedDefenderTroops,
             );
 
             const survivingStashSum = survivingContribs.reduce((sum, c) => ({
@@ -1639,6 +1646,31 @@ export class OasisService {
             (troops.horsemen || 0) * horsemenDefenceStat +
             (troops.catapults || 0) * catapultsDefenceStat
         );
+    }
+
+    private calculateGarrisonDefenceWithVillageBonuses(
+        contributions: OasisGarrisonContribution[],
+        defenderUser: User | null,
+    ): number {
+        return contributions.reduce((sum, contribution) => {
+            const troops = new TroopsAmounts(
+                contribution.troops.spearFighters || 0,
+                contribution.troops.swordFighters || 0,
+                contribution.troops.axeFighters || 0,
+                contribution.troops.archers || 0,
+                contribution.troops.magicians || 0,
+                contribution.troops.horsemen || 0,
+                contribution.troops.catapults || 0,
+            );
+            const baseDefence = this.calculateDefence(troops);
+            const village = defenderUser?.villages.find(
+                (v) => v.villageName === contribution.villageName,
+            );
+            const heroicShieldBonus = village
+                ? getSkillBonus(village.skills, SkillCategory.HEROIC_SHIELD)
+                : 0;
+            return sum + Math.floor(baseDefence * (1 + heroicShieldBonus));
+        }, 0);
     }
 
     private calculateKilledTroopsByRatio(
