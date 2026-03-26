@@ -398,13 +398,17 @@ export class MovementService {
                 attackerTroops.axeFighters + attackerTroops.archers +
                 attackerTroops.magicians + attackerTroops.horsemen +
                 attackerTroops.catapults;
-            this.dailyQuestService.incrementProgress(attacker.username, DailyQuestTrackingType.WIN_PVP_ATTACKS, 1).catch(() => {});
+            let dailyChain = this.dailyQuestService.incrementProgress(attacker.username, DailyQuestTrackingType.WIN_PVP_ATTACKS, 1)
+                .then(() => this.dailyQuestService.handlePvpBattleResult(attacker.username, true));
             if (lootTotal > 0) {
-                this.dailyQuestService.incrementProgress(attacker.username, DailyQuestTrackingType.STEAL_RESOURCES, lootTotal).catch(() => {});
+                dailyChain = dailyChain.then(() =>
+                    this.dailyQuestService.incrementProgress(attacker.username, DailyQuestTrackingType.STEAL_RESOURCES, lootTotal));
             }
             if (totalAttackerTroopsSent > 0 && attackerTroopsKilled / totalAttackerTroopsSent < 0.2) {
-                this.dailyQuestService.incrementProgress(attacker.username, DailyQuestTrackingType.WIN_WITH_LOW_LOSSES, 1).catch(() => {});
+                dailyChain = dailyChain.then(() =>
+                    this.dailyQuestService.incrementProgress(attacker.username, DailyQuestTrackingType.WIN_WITH_LOW_LOSSES, 1));
             }
+            dailyChain.catch(() => {});
             if (attacker.clanName) {
                 this.clanQuestService.incrementClanProgress(attacker.clanName, attacker.username, ClanQuestTrackingType.TOTAL_PVP_WINS, 1).catch(() => {});
                 if (lootTotal > 0) {
@@ -412,14 +416,9 @@ export class MovementService {
                 }
             }
         } else {
+            this.dailyQuestService.handlePvpBattleResult(attacker.username, false).catch(() => {});
             defender.totalStats.totalBattlesWon += 1;
             unlockAchievements(defender, ['weeklyStats.successfulDefenses', 'totalStats.totalBattlesWon']);
-
-            // Daily + clan quest progress for defender win
-            this.dailyQuestService.incrementProgress(defender.username, DailyQuestTrackingType.DEFEND_ATTACKS, 1).catch(() => {});
-            if (defender.clanName) {
-                this.clanQuestService.incrementClanProgress(defender.clanName, defender.username, ClanQuestTrackingType.TOTAL_DEFENSES, 1).catch(() => {});
-            }
         }
 
         // Decrement troopsInTransit: dead troops are gone, survivors remain in transit for return

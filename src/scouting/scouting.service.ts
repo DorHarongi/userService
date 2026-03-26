@@ -367,9 +367,13 @@ export class ScoutingService {
                 { $set: { 'totalStats.successfulSpies': attacker.totalStats.successfulSpies } },
             );
 
-            this.dailyQuestService.incrementProgress(attacker.username, DailyQuestTrackingType.SUCCESSFUL_SPIES, 1).catch(() => {});
+            this.dailyQuestService.incrementProgress(attacker.username, DailyQuestTrackingType.SUCCESSFUL_SPIES, 1)
+                .then(() => this.dailyQuestService.incrementProgress(attacker.username, DailyQuestTrackingType.SPY_OASIS, 1))
+                .catch(() => {});
             if (attacker.clanName) {
-                this.clanQuestService.incrementClanProgress(attacker.clanName, attacker.username, ClanQuestTrackingType.TOTAL_SUCCESSFUL_SPIES, 1).catch(() => {});
+                this.clanQuestService.incrementClanProgress(attacker.clanName, attacker.username, ClanQuestTrackingType.TOTAL_SUCCESSFUL_SPIES, 1)
+                    .then(() => this.clanQuestService.incrementClanProgress(attacker.clanName, attacker.username, ClanQuestTrackingType.TOTAL_OASIS_SPIES, 1))
+                    .catch(() => {});
             }
 
             const distance = calculateDistance(

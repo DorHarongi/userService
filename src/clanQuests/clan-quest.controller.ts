@@ -3,7 +3,7 @@ import { ClanQuestService, ClanQuestStatusResponse } from './clan-quest.service'
 import { UserDTO } from '../user/dtos/userDTO';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { ServerStatusGuard } from '../server/server-status.guard';
-import { warehouseStorageByLevel, scaleQuestReward } from 'utils';
+import { warehouseStorageByLevel, scaleQuestReward, scaleClanQuestTarget } from 'utils';
 import { DbAccessorService } from '../database/services/db-accessor.service';
 import { User } from '../user/models/user.entity';
 
@@ -28,6 +28,19 @@ export class ClanQuestController {
         const user = (await this.dbAccessorService
             .getCollection('users')
             .findOne({ username })) as User;
+
+        let scaledTarget: number;
+        if (status.clanProgress?.scaledTarget) {
+            scaledTarget = status.clanProgress.scaledTarget;
+        } else if (user?.clanName) {
+            const scalingData = await this.clanQuestService.computeClanScalingData(user.clanName);
+            scaledTarget = scaleClanQuestTarget(status.quest, scalingData);
+        } else {
+            scaledTarget = status.quest.target;
+        }
+
+        const formattedTarget = scaledTarget.toLocaleString('en-US');
+
         if (user?.villages?.[0]) {
             const v = user.villages[0];
             const lowestWarehouse = Math.min(
@@ -37,13 +50,15 @@ export class ClanQuestController {
             );
             status.quest = {
                 ...status.quest,
-                description: status.quest.description.replace('{target}', status.quest.target.toLocaleString('en-US')),
+                target: scaledTarget,
+                description: status.quest.description.replace('{target}', formattedTarget),
                 reward: scaleQuestReward(status.quest.reward, lowestWarehouse),
             };
         } else {
             status.quest = {
                 ...status.quest,
-                description: status.quest.description.replace('{target}', status.quest.target.toLocaleString('en-US')),
+                target: scaledTarget,
+                description: status.quest.description.replace('{target}', formattedTarget),
             };
         }
 

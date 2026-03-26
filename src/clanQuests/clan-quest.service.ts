@@ -7,10 +7,20 @@ import {
     ClanQuestTrackingType,
     warehouseStorageByLevel,
     scaleQuestReward,
+    scaleClanQuestTarget,
+    ClanScalingData,
+    spearFighterAttackingStat,
+    swordFighterAttackingStat,
+    axeFighterAttackingStat,
+    archerAttackingStat,
+    magicianAttackingStat,
+    horsemenAttackingStat,
+    catapultsAttackingStat,
 } from 'utils';
 import { DbAccessorService } from '../database/services/db-accessor.service';
 
 const USERS_COLLECTION = 'users';
+const CLANS_COLLECTION = 'clans';
 const CLAN_QUEST_PROGRESS_COLLECTION = 'clanQuestProgress';
 
 export interface ClanQuestProgressDoc {
@@ -20,6 +30,8 @@ export interface ClanQuestProgressDoc {
     progress: number;
     completedAt?: Date;
     contributions: { username: string; amount: number }[];
+    scalingData: ClanScalingData;
+    scaledTarget: number;
 }
 
 export interface ClanQuestStatusResponse {
@@ -47,6 +59,44 @@ export class ClanQuestService {
         return doc;
     }
 
+    async computeClanScalingData(clanName: string): Promise<ClanScalingData> {
+        const clan = await this.dbAccessorService
+            .getCollection(CLANS_COLLECTION)
+            .findOne({ clanName }) as any;
+        if (!clan?.members?.length) {
+            return { totalAttackPower: 0, totalPopulation: 0, memberCount: 1 };
+        }
+
+        const members = await this.dbAccessorService
+            .getCollection(USERS_COLLECTION)
+            .find({ username: { $in: clan.members } })
+            .toArray() as User[];
+
+        let totalAttackPower = 0;
+        let totalPopulation = 0;
+
+        for (const member of members) {
+            for (const v of (member.villages || [])) {
+                const t = v.troops || {} as any;
+                totalAttackPower +=
+                    (t.spearFighters || 0) * spearFighterAttackingStat +
+                    (t.swordFighters || 0) * swordFighterAttackingStat +
+                    (t.axeFighters || 0) * axeFighterAttackingStat +
+                    (t.archers || 0) * archerAttackingStat +
+                    (t.magicians || 0) * magicianAttackingStat +
+                    (t.horsemen || 0) * horsemenAttackingStat +
+                    (t.catapults || 0) * catapultsAttackingStat;
+                totalPopulation += v.population || 0;
+            }
+        }
+
+        return {
+            totalAttackPower,
+            totalPopulation,
+            memberCount: clan.members.length,
+        };
+    }
+
     async incrementClanProgress(
         clanName: string,
         username: string,
@@ -65,19 +115,26 @@ export class ClanQuestService {
         const collection = this.dbAccessorService.getCollection(CLAN_QUEST_PROGRESS_COLLECTION);
 
         if (!existing) {
+            const scalingData = await this.computeClanScalingData(clanName);
+            const scaledTarget = scaleClanQuestTarget(quest, scalingData);
+
             const newDoc: ClanQuestProgressDoc = {
                 clanName,
                 weekSeed,
                 questId: quest.id,
-                progress: Math.min(Math.max(0, amount), quest.target),
+                progress: Math.min(Math.max(0, amount), scaledTarget),
                 contributions: [{ username, amount: Math.max(0, amount) }],
+                scalingData,
+                scaledTarget,
             };
-            if (newDoc.progress >= quest.target) {
+            if (newDoc.progress >= scaledTarget) {
                 newDoc.completedAt = new Date();
             }
             await collection.insertOne(newDoc);
             return;
         }
+
+        const target = existing.scaledTarget;
 
         const contributionEntry = existing.contributions.find((c) => c.username === username);
         const currentUserAmount = contributionEntry?.amount ?? 0;
@@ -88,11 +145,11 @@ export class ClanQuestService {
         newContributions.push({ username, amount: newUserAmount });
 
         const updateDoc: Partial<ClanQuestProgressDoc> = {
-            progress: Math.min(totalProgress, quest.target),
+            progress: Math.min(totalProgress, target),
             contributions: newContributions,
         };
 
-        if (totalProgress >= quest.target && !existing.completedAt) {
+        if (totalProgress >= target && !existing.completedAt) {
             updateDoc.completedAt = new Date();
         }
 

@@ -80,6 +80,7 @@ export class DailyQuestController {
         ) : 5000;
 
         let totalAttackPower = 0;
+        let totalPopulation = 0;
         for (const v of user.villages) {
             const t = v.troops;
             totalAttackPower +=
@@ -90,16 +91,21 @@ export class DailyQuestController {
                 (t.magicians || 0) * magicianAttackingStat +
                 (t.horsemen || 0) * horsemenAttackingStat +
                 (t.catapults || 0) * catapultsAttackingStat;
+            totalPopulation += v.population || 0;
         }
 
         const questsWithProgress: DailyQuestWithProgress[] = quests.map((quest, idx) => {
-            const scaledTarget = scaleQuestTarget(quest.target, quest.trackingType, totalAttackPower);
+            const scaledTarget = scaleQuestTarget(quest.target, quest.trackingType, totalAttackPower, totalPopulation, user.villages.length);
             const formattedTarget = scaledTarget.toLocaleString('en-US');
+            let description = quest.description.replace('{target}', formattedTarget);
+            if (quest.targetLabel) {
+                description = description.replace('{target_label}', scaledTarget === 1 ? quest.targetLabel[0] : quest.targetLabel[1]);
+            }
             return {
                 quest: {
                     id: quest.id,
                     title: quest.title,
-                    description: quest.description.replace('{target}', formattedTarget),
+                    description,
                     target: scaledTarget,
                     reward: scaleQuestReward(quest.reward, lowestWarehouse),
                 },

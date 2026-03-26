@@ -824,6 +824,10 @@ export class BossService {
         );
 
       if (updateResult.modifiedCount > 0) {
+        if (clan) {
+          this.clanQuestService.incrementClanProgress(clan.clanName, username, ClanQuestTrackingType.TOTAL_BOSS_KILLS, 1).catch(() => {});
+        }
+
         if (boss.tier === BossTier.MYTHIC) {
           await this.awardMythicRelicToTopClan(boss);
           return;

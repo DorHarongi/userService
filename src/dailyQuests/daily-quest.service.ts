@@ -89,6 +89,54 @@ export class DailyQuestService {
                     dailyQuestProgress: {
                         date: todaysDateString,
                         quests: progress,
+                        pvpWinStreak: user.dailyQuestProgress?.date === todaysDateString
+                            ? (user.dailyQuestProgress.pvpWinStreak ?? 0)
+                            : 0,
+                    },
+                },
+            },
+        );
+    }
+
+    async handlePvpBattleResult(username: string, won: boolean): Promise<void> {
+        const user = (await this.dbAccessorService
+            .getCollection(USERS_COLLECTION)
+            .findOne({ username })) as User;
+        if (!user) return;
+        if (!this.isDailyQuestAvailable(user)) return;
+
+        const todaysDateString = this.getTodaysDateString();
+        const isToday = user.dailyQuestProgress?.date === todaysDateString;
+        const currentStreak = isToday ? (user.dailyQuestProgress?.pvpWinStreak ?? 0) : 0;
+        const newStreak = won ? currentStreak + 1 : 0;
+
+        const quests = this.getTodaysQuests();
+        const streakQuest = quests.find(
+            (q) => q.trackingType === DailyQuestTrackingType.WIN_PVP_STREAK,
+        );
+        if (!streakQuest) {
+            await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+                { username },
+                { $set: { 'dailyQuestProgress.pvpWinStreak': newStreak, 'dailyQuestProgress.date': todaysDateString } },
+            );
+            return;
+        }
+
+        const progress = this.getPlayerDailyProgress(user);
+        const idx = quests.findIndex((q) => q.id === streakQuest.id);
+
+        if (idx >= 0 && progress[idx] && !progress[idx].claimed && won) {
+            progress[idx].progress = Math.max(progress[idx].progress, newStreak);
+        }
+
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username },
+            {
+                $set: {
+                    dailyQuestProgress: {
+                        date: todaysDateString,
+                        quests: progress,
+                        pvpWinStreak: newStreak,
                     },
                 },
             },
@@ -117,6 +165,7 @@ export class DailyQuestService {
         if (idx < 0) return null;
 
         let totalAttackPower = 0;
+        let totalPopulation = 0;
         for (const v of user.villages) {
             const t = v.troops;
             totalAttackPower +=
@@ -127,8 +176,9 @@ export class DailyQuestService {
                 (t.magicians || 0) * magicianAttackingStat +
                 (t.horsemen || 0) * horsemenAttackingStat +
                 (t.catapults || 0) * catapultsAttackingStat;
+            totalPopulation += v.population || 0;
         }
-        const scaledTarget = scaleQuestTarget(quest.target, quest.trackingType, totalAttackPower);
+        const scaledTarget = scaleQuestTarget(quest.target, quest.trackingType, totalAttackPower, totalPopulation, user.villages.length);
 
         const entry = progress[idx];
         if (!entry || entry.claimed || entry.progress < scaledTarget) return null;
@@ -166,6 +216,9 @@ export class DailyQuestService {
                     dailyQuestProgress: {
                         date: todaysDateString,
                         quests: progress,
+                        pvpWinStreak: user.dailyQuestProgress?.date === todaysDateString
+                            ? (user.dailyQuestProgress.pvpWinStreak ?? 0)
+                            : 0,
                     },
                     villages: user.villages,
                 },
