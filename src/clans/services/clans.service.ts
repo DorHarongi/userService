@@ -250,19 +250,22 @@ export class ClansService {
       throw new HttpException('Clan not found', HttpStatus.NOT_FOUND);
     }
 
-    // Get all members' weekly raid damage
     const members = await this.dbAccessorService
       .getCollection(USERS_COLLECTION)
       .find({ username: { $in: clan.members } })
-      .project({ username: 1, weeklyRaidDamage: 1 })
+      .project({ username: 1, weeklyRaidDamage: 1, villages: 1 })
       .toArray();
 
     return members
       .map((m) => ({
         username: m.username,
         weeklyRaidDamage: m.weeklyRaidDamage || 0,
+        totalPopulation: (m.villages || []).reduce(
+          (sum: number, v: any) => sum + (v.population || 0),
+          0,
+        ),
       }))
-      .sort((a, b) => b.weeklyRaidDamage - a.weeklyRaidDamage);
+      .sort((a, b) => b.totalPopulation - a.totalPopulation);
   }
 
   async requestToJoinClan(
