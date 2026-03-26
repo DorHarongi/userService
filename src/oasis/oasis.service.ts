@@ -884,10 +884,49 @@ export class OasisService {
 
         if (isOccupier) {
             const garrison = oasis.garrison!;
+            const contributions = getGarrisonContributions(garrison);
+
+            const totalTroops = getTotalGarrisonTroops(garrison);
+            const troopCount = getTotalTroopCount(totalTroops);
+            const now = new Date();
+            const lastTick = new Date(oasis.lastHarvestTick).getTime();
+            const secondsElapsed = Math.max(0, (now.getTime() - lastTick) / 1000);
+            const harvestPerResource = troopCount > 0
+                ? (troopCount * OASIS_HARVEST_RATE_PER_TROOP_PER_HOUR) / 3600 * secondsElapsed
+                : 0;
+
+            const projectedRemaining = {
+                wood: Math.max(0, oasis.resourcesRemaining.wood - Math.min(harvestPerResource, oasis.resourcesRemaining.wood)),
+                stone: Math.max(0, oasis.resourcesRemaining.stone - Math.min(harvestPerResource, oasis.resourcesRemaining.stone)),
+                crop: Math.max(0, oasis.resourcesRemaining.crop - Math.min(harvestPerResource, oasis.resourcesRemaining.crop)),
+            };
+            const woodHarvested = oasis.resourcesRemaining.wood - projectedRemaining.wood;
+            const stoneHarvested = oasis.resourcesRemaining.stone - projectedRemaining.stone;
+            const cropHarvested = oasis.resourcesRemaining.crop - projectedRemaining.crop;
+
+            const projectedStash = {
+                wood: (garrison.stash.wood || 0) + woodHarvested,
+                stone: (garrison.stash.stone || 0) + stoneHarvested,
+                crop: (garrison.stash.crop || 0) + cropHarvested,
+            };
+
+            const contribTroopCounts = contributions.map(c => getTotalTroopCount(c.troops));
+            const projectedContributions = contributions.map((c, i) => {
+                const ratio = troopCount > 0 ? contribTroopCounts[i] / troopCount : 0;
+                return {
+                    ...c,
+                    stash: {
+                        wood: (c.stash?.wood || 0) + woodHarvested * ratio,
+                        stone: (c.stash?.stone || 0) + stoneHarvested * ratio,
+                        crop: (c.stash?.crop || 0) + cropHarvested * ratio,
+                    },
+                };
+            });
+
             const normalizedGarrison = {
                 username: garrison.username,
-                contributions: getGarrisonContributions(garrison),
-                stash: garrison.stash,
+                contributions: projectedContributions,
+                stash: projectedStash,
                 totalForOccupier: garrison.totalForOccupier,
                 garrisonedAt: garrison.garrisonedAt,
             };
@@ -896,10 +935,10 @@ export class OasisService {
                 x: oasis.x,
                 y: oasis.y,
                 tier: oasis.tier,
-                resourcesRemaining: oasis.resourcesRemaining,
+                resourcesRemaining: projectedRemaining,
                 garrison: normalizedGarrison,
                 spawnedAt: oasis.spawnedAt,
-                lastHarvestTick: oasis.lastHarvestTick,
+                lastHarvestTick: now,
                 villageAtOtherOasis,
             };
         }
