@@ -7,6 +7,7 @@ import { User } from '../models/user.entity';
 import { userFromClientDTO } from '../dtos/userFromClientDTO';
 import * as crypto from 'crypto';
 import { UserDTO } from '../dtos/userDTO';
+import { PublicUserDTO } from '../dtos/publicUserDTO';
 import { UserStatisticDTO } from '../dtos/userStatisticDTO';
 import { Village } from '../models/village.entity';
 import { UserVillageRequestDTO } from '../dtos/userVillageRequestDTO';
@@ -321,17 +322,13 @@ export class UserRepositoryService {
         return new UserDTO(result);
     }
 
-    // Get public profile - limited data for viewing other players
-    async getPublicProfile(username: string): Promise<UserDTO>
+    async getPublicProfile(username: string): Promise<PublicUserDTO>
     {
         let result: User = (await this.dbAccessorService.getCollection(COLLECTION_NAME).findOne({username: username})) as User;
         if(!result)
             throw new HttpException("User doesnt exist", HttpStatus.NOT_FOUND);
         
-        // Return a UserDTO but note: for truly limited data, you'd create a PublicUserDTO
-        // For now, UserDTO already doesn't expose password. The main difference is
-        // we're not returning sensitive game state that could be exploited.
-        return new UserDTO(result);
+        return new PublicUserDTO(result);
     }
 
     async updateIntro(username: string, intro: string): Promise<{ success: boolean }>

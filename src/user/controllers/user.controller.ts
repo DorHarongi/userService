@@ -3,6 +3,7 @@ import { userFromClientDTO } from '../dtos/userFromClientDTO';
 import * as crypto from 'crypto';
 import { UserRepositoryService } from '../services/user-repository.service';
 import { UserDTO } from '../dtos/userDTO';
+import { PublicUserDTO } from '../dtos/publicUserDTO';
 import { UserStatisticDTO } from '../dtos/userStatisticDTO';
 import { UserVillageRequestDTO } from '../dtos/userVillageRequestDTO';
 import { VillageDTO } from '../dtos/villageDTO';
@@ -173,17 +174,15 @@ export class UserController {
     @UseGuards(AuthGuard)
     async getUser(@Request() req: any, @Param('username') username: string): Promise<UserDTO>
     {
-        // Only allow getting own user data with full details
         if (req.user.username !== username) {
-            // For other users, return limited public profile
-            return await this.userRepositorService.getPublicProfile(username);
+            throw new HttpException('Forbidden', HttpStatus.FORBIDDEN);
         }
         return await this.userRepositorService.getUser(username);
     }
 
-    // Public - view player profile (limited data)
     @Get('profile/:username')
-    async getPlayerProfile(@Param('username') username: string): Promise<UserDTO>
+    @UseGuards(AuthGuard)
+    async getPlayerProfile(@Param('username') username: string): Promise<PublicUserDTO>
     {
         return await this.userRepositorService.getPublicProfile(username);
     }
