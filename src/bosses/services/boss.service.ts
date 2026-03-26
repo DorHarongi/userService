@@ -56,6 +56,7 @@ const USERS_COLLECTION = 'users';
 const CLANS_COLLECTION = 'clans';
 const GRIDS_COLLECTION = 'grids';
 const MOVEMENTS_COLLECTION = 'movements';
+const OASES_COLLECTION = 'oases';
 const WORLD_SIZE = 100;
 const PROXIMITY_RANGE = 20; // Bosses spawn within this range of villages
 
@@ -187,11 +188,16 @@ export class BossService {
       return { x: Math.floor(WORLD_SIZE / 2), y: Math.floor(WORLD_SIZE / 2) };
     }
 
-    // Get existing boss locations to avoid spawning too close
-    const existingBosses = (await this.dbAccessorService
-      .getCollection(BOSSES_COLLECTION)
-      .find({ isDefeated: false })
-      .toArray()) as IBoss[];
+    const [existingBosses, existingOases] = await Promise.all([
+      this.dbAccessorService
+        .getCollection(BOSSES_COLLECTION)
+        .find({ isDefeated: false })
+        .toArray() as Promise<IBoss[]>,
+      this.dbAccessorService
+        .getCollection(OASES_COLLECTION)
+        .find({}, { projection: { x: 1, y: 1 } })
+        .toArray(),
+    ]);
 
     // Shuffle villages and try to find a valid spot near one
     const shuffledVillages = villages.sort(() => Math.random() - 0.5);
@@ -216,6 +222,10 @@ export class BossService {
       // Check if another boss is already at this location
       const bossAtLocation = existingBosses.find((b) => b.x === x && b.y === y);
       if (bossAtLocation) continue;
+
+      // Check if an oasis is already at this location
+      const oasisAtLocation = existingOases.find((o: any) => o.x === x && o.y === y);
+      if (oasisAtLocation) continue;
 
       return { x, y };
     }

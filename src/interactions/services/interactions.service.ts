@@ -582,8 +582,10 @@ export class InteractionsService {
       throw new HttpException('User not found', HttpStatus.NOT_FOUND);
     }
 
-    // Validate village name length
-    if (!dto.newVillageName || dto.newVillageName.trim().length === 0) {
+    dto.newVillageName = (dto.newVillageName || '').trim();
+    const INVISIBLE_CHARS = /[\u200B\u200C\u200D\u2060-\u2064\uFEFF\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180E\u2000-\u200F\u202A-\u202E\u2028\u2029\u205F\u2066-\u2069\u3164\uFFA0]/g;
+    dto.newVillageName = dto.newVillageName.replace(INVISIBLE_CHARS, '');
+    if (dto.newVillageName.length === 0) {
       throw new HttpException(
         'Village name cannot be empty',
         HttpStatus.BAD_REQUEST,
@@ -716,7 +718,10 @@ export class InteractionsService {
       throw new HttpException('Village not found', HttpStatus.NOT_FOUND);
     }
 
-    if (!dto.newVillageName || dto.newVillageName.trim().length === 0) {
+    dto.newVillageName = (dto.newVillageName || '').trim();
+    const INVISIBLE_CHARS = /[\u200B\u200C\u200D\u2060-\u2064\uFEFF\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180E\u2000-\u200F\u202A-\u202E\u2028\u2029\u205F\u2066-\u2069\u3164\uFFA0]/g;
+    dto.newVillageName = dto.newVillageName.replace(INVISIBLE_CHARS, '');
+    if (dto.newVillageName.length === 0) {
       throw new HttpException(
         'Village name cannot be empty',
         HttpStatus.BAD_REQUEST,
@@ -733,7 +738,7 @@ export class InteractionsService {
     // Check if name is unique for this user (excluding current village)
     const isDuplicate = user.villages.some(
       (v, i) =>
-        i !== dto.villageIndex && v.villageName === dto.newVillageName.trim(),
+        i !== dto.villageIndex && v.villageName === dto.newVillageName,
     );
     if (isDuplicate) {
       throw new HttpException(
@@ -743,7 +748,7 @@ export class InteractionsService {
     }
 
     const oldName = village.villageName;
-    village.villageName = dto.newVillageName.trim();
+    village.villageName = dto.newVillageName;
 
     // Update user
     await this.dbAccessorService
@@ -755,7 +760,7 @@ export class InteractionsService {
       await this.worldService.updateVillageName(
         village.location.x,
         village.location.y,
-        dto.newVillageName.trim(),
+        dto.newVillageName,
       );
     }
 
@@ -769,7 +774,7 @@ export class InteractionsService {
       {
         $set: {
           'villages.$[].supportSent.$[elem].recipientVillageName':
-            dto.newVillageName.trim(),
+            dto.newVillageName,
         },
       },
       {

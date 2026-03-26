@@ -92,13 +92,24 @@ export class ClansService {
       .getCollection(CLANS_COLLECTION)
       .insertOne(clan);
 
-    // Update user's clan name
+    // Update user's clan name and clear any pending join requests
+    const pendingRequests = user.pendingClanRequests || [];
     await this.dbAccessorService
       .getCollection(USERS_COLLECTION)
       .updateOne(
         { username: createClanDTO.leaderUsername },
-        { $set: { clanName: createClanDTO.clanName } },
+        { $set: { clanName: createClanDTO.clanName, pendingClanRequests: [] } },
       );
+
+    // Remove this user from all clans' pendingRequests arrays
+    if (pendingRequests.length > 0) {
+      await this.dbAccessorService
+        .getCollection(CLANS_COLLECTION)
+        .updateMany(
+          { clanName: { $in: pendingRequests } },
+          { $pull: { pendingRequests: { username: createClanDTO.leaderUsername } } } as any,
+        );
+    }
 
     // Update relic holder clan (if leader had relics when clanless) - does NOT touch transferCooldownUntil
     await this.relicsService.updateHolderClanForUser(
@@ -341,6 +352,16 @@ export class ClansService {
       );
     }
 
+    const pendingRequest = (clan as any).pendingRequests?.find(
+      (r: any) => r.username === handleRequest.requestUsername,
+    );
+    if (!pendingRequest) {
+      throw new HttpException(
+        'Join request not found or already handled',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
     // Remove from pending requests
     await this.dbAccessorService
       .getCollection(CLANS_COLLECTION)
@@ -362,6 +383,18 @@ export class ClansService {
           HttpStatus.BAD_REQUEST,
         );
       }
+
+      // Verify the player doesn't already have a clan (Bug 7 fix)
+      const user = (await this.dbAccessorService
+        .getCollection(USERS_COLLECTION)
+        .findOne({ username: handleRequest.requestUsername })) as User;
+      if (user?.clanName && user.clanName !== '') {
+        throw new HttpException(
+          'This player already has a clan',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
       await this.addMemberToClan(
         handleRequest.clanName,
         handleRequest.requestUsername,

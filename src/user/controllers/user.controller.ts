@@ -62,7 +62,8 @@ export class UserController {
         if (closed) {
             throw new HttpException('Registration is closed for this server', HttpStatus.BAD_REQUEST);
         }
-        const trimmedName = (userFromClient.username || '').trim();
+        const INVISIBLE_CHARS = /[\u200B\u200C\u200D\u2060-\u2064\uFEFF\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180E\u2000-\u200F\u202A-\u202E\u2028\u2029\u205F\u2066-\u2069\u3164\uFFA0]/g;
+        const trimmedName = (userFromClient.username || '').replace(INVISIBLE_CHARS, '').trim();
         if (!trimmedName || trimmedName.length < MIN_USERNAME_LENGTH) {
             throw new HttpException(`Username must be at least ${MIN_USERNAME_LENGTH} characters`, HttpStatus.BAD_REQUEST);
         }
