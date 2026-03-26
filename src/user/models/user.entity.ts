@@ -52,6 +52,7 @@ export class User implements IUser
     dailyQuestProgress?: {
         date: string;
         quests: { questId: string; progress: number; claimed: boolean }[];
+        pvpWinStreak?: number;
     };
     clanQuestRewardClaimedWeek?: number;
     lastLoginDate?: Date;
