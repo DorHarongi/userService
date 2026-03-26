@@ -219,23 +219,12 @@ export class MovementService {
             killedAttackerTroops = this.calculateKilledTroopsByRatio(attackerTroops, 1);
             killedDefenderTroops = this.calculateKilledTroopsByRatio(defenceTroops, attackToDefenceRatio);
             killedSupportTroops = this.calculateKilledTroopsByRatio(supportTroops, attackToDefenceRatio);
-            // Self Defense (defender wins): reduce defender losses by defender's bonus
-            const defenderSelfDefenseBonus = getSkillBonus(defenderSkills, SkillCategory.SELF_DEFENSE);
-            if (defenderSelfDefenseBonus > 0) {
-                const reduce = 1 - defenderSelfDefenseBonus;
-                killedDefenderTroops = this.scaleTroopsAmounts(killedDefenderTroops, reduce);
-                killedSupportTroops = this.scaleTroopsAmounts(killedSupportTroops, reduce);
-            }
         } else {
             attackWon = true;
             killedDefenderTroops = this.calculateKilledTroopsByRatio(defenceTroops, 1);
             killedSupportTroops = this.calculateKilledTroopsByRatio(supportTroops, 1);
 
-            let killedRatio = defenceToAttackRatio;
-
-            // Self Defense skill reduces troop losses for the winner only
-            const selfDefenseBonus = getSkillBonus(attackerSkills, SkillCategory.SELF_DEFENSE);
-            killedRatio = killedRatio * (1 - selfDefenseBonus);
+            const killedRatio = defenceToAttackRatio;
 
             killedAttackerTroops = this.calculateKilledTroopsByRatio(attackerTroops, killedRatio);
         }
@@ -763,19 +752,6 @@ export class MovementService {
         killedTroops.catapults = Math.floor(ratio * troops.catapults);
 
         return killedTroops;
-    }
-
-    /** Scale troop counts by a factor (e.g. for Self Defense loss reduction). */
-    private scaleTroopsAmounts(troops: TroopsAmounts, factor: number): TroopsAmounts {
-        const out = new TroopsAmounts(0, 0, 0, 0, 0, 0, 0);
-        out.spearFighters = Math.floor(troops.spearFighters * factor);
-        out.swordFighters = Math.floor(troops.swordFighters * factor);
-        out.axeFighters = Math.floor(troops.axeFighters * factor);
-        out.archers = Math.floor(troops.archers * factor);
-        out.magicians = Math.floor(troops.magicians * factor);
-        out.horsemen = Math.floor(troops.horsemen * factor);
-        out.catapults = Math.floor(troops.catapults * factor);
-        return out;
     }
 
     private updateRemainingTroopsInVillage(villageTroops: TroopsAmounts, killedTroops: TroopsAmounts): void {

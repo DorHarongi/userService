@@ -668,14 +668,6 @@ export class BossService {
     const bossDamageBack = bossMaxDamageBack[boss.tier];
     let damageRatio = Math.min(0.25, bossDamageBack / (rawDamage + 1));
 
-    const selfDefenseBonus = getSkillBonus(
-      village.skills,
-      SkillCategory.SELF_DEFENSE,
-    );
-    if (selfDefenseBonus > 0) {
-      damageRatio = damageRatio * (1 - selfDefenseBonus);
-    }
-
     const lostTroops = this.calculateKilledTroops(dto, damageRatio);
 
     const deadCount =

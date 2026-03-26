@@ -1272,12 +1272,7 @@ export class OasisService {
         } else {
             attackWon = true;
             killedDefenderTroops = this.calculateKilledTroopsByRatio(defenderTroops, 1);
-            let killedRatio = defenceToAttackRatio;
-            const selfDefenseBonus = getSkillBonus(
-                attackerVillage.skills,
-                SkillCategory.SELF_DEFENSE,
-            );
-            killedRatio = killedRatio * (1 - selfDefenseBonus);
+            const killedRatio = defenceToAttackRatio;
             killedAttackerTroops = this.calculateKilledTroopsByRatio(
                 attackerTroops,
                 killedRatio,
