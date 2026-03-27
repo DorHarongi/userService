@@ -341,6 +341,13 @@ export class MovementService {
             { $set: defender },
         );
 
+        // Sync supportSent on senders when support troops die
+        await this.syncSupportSentAfterCombat(
+            movement.targetUsername,
+            defenderVillage.villageName,
+            killedSupportTroops,
+        );
+
         // Update stats
         const lootTotal = loot.woodAmount + loot.stonesAmount + loot.cropAmount;
 
@@ -808,6 +815,90 @@ export class MovementService {
         troops.magicians = Math.max(0, troops.magicians);
         troops.horsemen = Math.max(0, troops.horsemen);
         troops.catapults = Math.max(0, troops.catapults);
+    }
+
+    private async syncSupportSentAfterCombat(
+        defenderUsername: string,
+        defenderVillageName: string,
+        killedSupportTroops: TroopsAmounts,
+    ): Promise<void> {
+        const totalKilled =
+            killedSupportTroops.spearFighters + killedSupportTroops.swordFighters +
+            killedSupportTroops.axeFighters + killedSupportTroops.archers +
+            killedSupportTroops.magicians + killedSupportTroops.horsemen +
+            killedSupportTroops.catapults;
+        if (totalKilled === 0) return;
+
+        const troopTypes: (keyof TroopsAmounts)[] = [
+            'spearFighters', 'swordFighters', 'axeFighters', 'archers',
+            'magicians', 'horsemen', 'catapults',
+        ];
+
+        const supporters = await this.dbAccessorService.getCollection(USERS_COLLECTION).find({
+            'villages.supportSent': {
+                $elemMatch: {
+                    recipientUsername: defenderUsername,
+                    recipientVillageName: defenderVillageName,
+                },
+            },
+        }).toArray() as User[];
+
+        for (const supporter of supporters) {
+            let changed = false;
+            for (const village of supporter.villages) {
+                if (!village.supportSent) continue;
+                const entry = village.supportSent.find(
+                    s => s.recipientUsername === defenderUsername &&
+                         s.recipientVillageName === defenderVillageName,
+                );
+                if (!entry) continue;
+
+                const totalSentByThis: Record<string, number> = {};
+                const totalSentAll: Record<string, number> = {};
+                for (const t of troopTypes) {
+                    totalSentByThis[t] = entry.troops[t] || 0;
+                    totalSentAll[t] = 0;
+                }
+
+                for (const sup of supporters) {
+                    for (const v of sup.villages) {
+                        const e = v.supportSent?.find(
+                            s => s.recipientUsername === defenderUsername &&
+                                 s.recipientVillageName === defenderVillageName,
+                        );
+                        if (e) {
+                            for (const t of troopTypes) {
+                                totalSentAll[t] += e.troops[t] || 0;
+                            }
+                        }
+                    }
+                }
+
+                for (const t of troopTypes) {
+                    const killed = killedSupportTroops[t] || 0;
+                    if (killed <= 0 || totalSentAll[t] <= 0) continue;
+                    const share = totalSentByThis[t] / totalSentAll[t];
+                    const loss = Math.min(entry.troops[t], Math.round(killed * share));
+                    if (loss > 0) {
+                        entry.troops[t] = Math.max(0, entry.troops[t] - loss);
+                        changed = true;
+                    }
+                }
+
+                const remaining = troopTypes.reduce((sum, t) => sum + (entry.troops[t] || 0), 0);
+                if (remaining === 0) {
+                    village.supportSent = village.supportSent.filter(s => s !== entry);
+                    changed = true;
+                }
+            }
+
+            if (changed) {
+                await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+                    { username: supporter.username },
+                    { $set: { villages: supporter.villages } },
+                );
+            }
+        }
     }
 }
 
