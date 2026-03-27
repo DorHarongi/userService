@@ -114,7 +114,7 @@ export class ServerService {
         let playerCount = 0;
         try {
           const serverDb = this.dbConnectorService.getServerDb(serverId);
-          playerCount = await serverDb.collection(this.USERS_COLLECTION).countDocuments();
+          playerCount = await serverDb.collection(this.USERS_COLLECTION).countDocuments({ isDeleted: { $ne: true } });
         } catch {
           // ignore missing DB
         }
