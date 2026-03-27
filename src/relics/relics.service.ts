@@ -18,6 +18,7 @@ export interface RelicDocument {
   holderClanName: string | null;
   transferCooldownUntil: Date | null;
   obtainedAt: Date | null;
+  originClanName?: string | null;
 }
 
 @Injectable()
@@ -183,17 +184,22 @@ export class RelicsService {
     await this.ensureInitialized();
     const relicDef = RELIC_NAMES.find((r) => r.id === relicId);
     const name = relicDef?.name ?? relicId;
+
+    const existing = await this.collection.findOne({ relicId }) as unknown as RelicDocument | null;
+    const setFields: any = {
+      holderUsername: username,
+      holderVillageName: villageName,
+      holderClanName: clanName,
+      transferCooldownUntil: null,
+      obtainedAt: new Date(),
+    };
+    if (!existing?.originClanName && clanName) {
+      setFields.originClanName = clanName;
+    }
+
     await this.collection.updateOne(
       { relicId },
-      {
-        $set: {
-          holderUsername: username,
-          holderVillageName: villageName,
-          holderClanName: clanName,
-          transferCooldownUntil: null,
-          obtainedAt: new Date(),
-        },
-      },
+      { $set: setFields },
     );
     await this.serverService.checkWinCondition();
     return name;

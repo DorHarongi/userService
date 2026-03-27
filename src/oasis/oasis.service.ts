@@ -74,7 +74,7 @@ export class OasisService {
 
                 const playerCount = await this.dbAccessorService
                     .getCollection(USERS_COLLECTION)
-                    .countDocuments({});
+                    .countDocuments({ isDeleted: { $ne: true } });
                 const maxOases = getMaxOasesOnMap(playerCount);
 
                 const currentOasisCount = await this.dbAccessorService

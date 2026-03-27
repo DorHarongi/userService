@@ -57,6 +57,7 @@ export class User implements IUser
     clanQuestRewardClaimedWeek?: number;
     lastLoginDate?: Date;
     loginCount?: number;
+    isDeleted?: boolean;
 
     constructor(userFromClientDTO: userFromClientDTO, initialLocation: Location = new Location(0, 0))
     {

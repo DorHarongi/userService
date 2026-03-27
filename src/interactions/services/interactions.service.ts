@@ -678,6 +678,18 @@ export class InteractionsService {
     );
 
     if (!reserved) {
+      const gridCell = await this.worldService.getGridAt(dto.x, dto.y);
+      if (gridCell?.taken && gridCell.ownerUsername) {
+        const owner = await this.dbAccessorService
+          .getCollection(USERS_COLLECTION)
+          .findOne({ username: gridCell.ownerUsername }) as any;
+        if (owner?.isDeleted) {
+          throw new HttpException(
+            'This spot is taken by an inactive player',
+            HttpStatus.CONFLICT,
+          );
+        }
+      }
       throw new HttpException(
         'Grid cell is not available',
         HttpStatus.CONFLICT,

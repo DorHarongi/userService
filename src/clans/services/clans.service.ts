@@ -564,8 +564,7 @@ export class ClansService {
     };
   }
 
-  // Withdraw all support troops a user has SENT when they leave the clan
-  private async withdrawAllSupportTroops(username: string): Promise<void> {
+  async withdrawAllSupportTroops(username: string): Promise<void> {
     const user = (await this.dbAccessorService
       .getCollection(USERS_COLLECTION)
       .findOne({ username })) as User;
@@ -615,8 +614,7 @@ export class ClansService {
       .updateOne({ username }, { $set: user });
   }
 
-  // Return all support troops that other players sent TO this user
-  private async returnReceivedSupportTroops(username: string): Promise<void> {
+  async returnReceivedSupportTroops(username: string): Promise<void> {
     const allSenders = await this.dbAccessorService
       .getCollection(USERS_COLLECTION)
       .find({ 'villages.supportSent.recipientUsername': username })

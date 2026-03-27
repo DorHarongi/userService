@@ -26,11 +26,13 @@ export class WorldController {
         
         const ownerUsernames = [...new Set(villages.map(v => v.ownerUsername).filter(Boolean))];
         const users = await this.dbAccessorService.getCollection('users').find({
-            username: { $in: ownerUsernames }
+            username: { $in: ownerUsernames },
+            isDeleted: { $ne: true },
         }).project({ username: 1, clanName: 1, villages: { villageName: 1, location: 1, buildingsLevels: { quartersLevel: 1 } } }).toArray();
         
+        const activeUsernames = new Set(users.map((u: any) => u.username));
         const userClanMap = new Map<string, string>();
-        const villageQuartersMap = new Map<string, number>(); // key: "x,y"
+        const villageQuartersMap = new Map<string, number>();
         users.forEach((u: any) => {
             if (u.clanName) userClanMap.set(u.username, u.clanName);
             for (const v of u.villages || []) {
@@ -42,14 +44,16 @@ export class WorldController {
             }
         });
         
-        const villagesDTO: VillageOnMapDTO[] = villages.map(v => ({
-            x: v.x,
-            y: v.y,
-            ownerUsername: v.ownerUsername || '',
-            villageName: v.villageName || '',
-            clanName: userClanMap.get(v.ownerUsername || '') || undefined,
-            quartersLevel: villageQuartersMap.get(`${v.x},${v.y}`) ?? 1
-        }));
+        const villagesDTO: VillageOnMapDTO[] = villages
+            .filter(v => activeUsernames.has(v.ownerUsername || ''))
+            .map(v => ({
+                x: v.x,
+                y: v.y,
+                ownerUsername: v.ownerUsername || '',
+                villageName: v.villageName || '',
+                clanName: userClanMap.get(v.ownerUsername || '') || undefined,
+                quartersLevel: villageQuartersMap.get(`${v.x},${v.y}`) ?? 1
+            }));
 
         // Get bosses in the window
         const bosses = await this.dbAccessorService.getCollection('bosses').find({
@@ -108,9 +112,11 @@ export class WorldController {
         
         const ownerUsernames = [...new Set(villages.map(v => v.ownerUsername).filter(Boolean))];
         const users = await this.dbAccessorService.getCollection('users').find({
-            username: { $in: ownerUsernames }
+            username: { $in: ownerUsernames },
+            isDeleted: { $ne: true },
         }).project({ username: 1, clanName: 1, villages: { villageName: 1, location: 1, buildingsLevels: { quartersLevel: 1 } } }).toArray();
         
+        const activeUsernames = new Set(users.map((u: any) => u.username));
         const userClanMap = new Map<string, string>();
         const villageQuartersMap = new Map<string, number>();
         users.forEach((u: any) => {
@@ -124,14 +130,16 @@ export class WorldController {
             }
         });
         
-        const villagesDTO: VillageOnMapDTO[] = villages.map(v => ({
-            x: v.x,
-            y: v.y,
-            ownerUsername: v.ownerUsername || '',
-            villageName: v.villageName || '',
-            clanName: userClanMap.get(v.ownerUsername || '') || undefined,
-            quartersLevel: villageQuartersMap.get(`${v.x},${v.y}`) ?? 1
-        }));
+        const villagesDTO: VillageOnMapDTO[] = villages
+            .filter(v => activeUsernames.has(v.ownerUsername || ''))
+            .map(v => ({
+                x: v.x,
+                y: v.y,
+                ownerUsername: v.ownerUsername || '',
+                villageName: v.villageName || '',
+                clanName: userClanMap.get(v.ownerUsername || '') || undefined,
+                quartersLevel: villageQuartersMap.get(`${v.x},${v.y}`) ?? 1
+            }));
 
         // Get all active bosses for minimap
         const bosses = await this.dbAccessorService.getCollection('bosses').find({

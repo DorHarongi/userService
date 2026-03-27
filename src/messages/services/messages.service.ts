@@ -306,7 +306,7 @@ export class MessagesService {
     ): Promise<void> {
         const USERS_COLLECTION = 'users';
         const allUsers = await this.dbAccessorService.getCollection(USERS_COLLECTION)
-            .find({}, { projection: { username: 1 } }).toArray() as unknown as { username: string }[];
+            .find({ isDeleted: { $ne: true } }, { projection: { username: 1 } }).toArray() as unknown as { username: string }[];
         const docs = allUsers.map((u) => {
             const msg = new Message(
                 u.username,

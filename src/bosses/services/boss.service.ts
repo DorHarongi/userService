@@ -86,7 +86,7 @@ export class BossService {
       try {
         await this.dbAccessorService
           .getCollection(USERS_COLLECTION)
-          .updateMany({}, { $set: { weeklyRaidDamage: 0 } });
+          .updateMany({ isDeleted: { $ne: true } }, { $set: { weeklyRaidDamage: 0 } });
         this.logger.log('Reset weekly raid damage for all users');
       } catch (error) {
         this.logger.error('Error resetting weekly raid damage:', error);
@@ -126,7 +126,7 @@ export class BossService {
 
         const playerCount = await this.dbAccessorService
           .getCollection(USERS_COLLECTION)
-          .countDocuments({});
+          .countDocuments({ isDeleted: { $ne: true } });
         const maxBosses = getMaxBossesOnMap(playerCount);
 
         const currentBossCount = await this.dbAccessorService
@@ -325,7 +325,7 @@ export class BossService {
 
     const playerCount = await this.dbAccessorService
       .getCollection(USERS_COLLECTION)
-      .countDocuments({});
+      .countDocuments({ isDeleted: { $ne: true } });
     const maxBosses = getMaxBossesOnMap(playerCount);
     const maxClaims = getMaxClaimsPerClan(maxBosses);
 
@@ -447,7 +447,7 @@ export class BossService {
       if (!boss.claimedByClanId) {
         const playerCount = await this.dbAccessorService
           .getCollection(USERS_COLLECTION)
-          .countDocuments({});
+          .countDocuments({ isDeleted: { $ne: true } });
         const maxBosses = getMaxBossesOnMap(playerCount);
         const maxClaims = getMaxClaimsPerClan(maxBosses);
         const clanClaimCount = await this.dbAccessorService
@@ -1227,7 +1227,7 @@ export class BossService {
   private async calculateMythicHp(): Promise<number> {
     const playerCount = await this.dbAccessorService
       .getCollection(USERS_COLLECTION)
-      .countDocuments({});
+      .countDocuments({ isDeleted: { $ne: true } });
     const legendaryRange = bossHpRanges[BossTier.LEGENDARY];
     const legendaryAvg = (legendaryRange.min + legendaryRange.max) / 2;
     const multiplier = Math.max(10, Math.min(100, 2 * playerCount));

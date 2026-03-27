@@ -74,7 +74,7 @@ export class UserRepositoryService {
 
         await this.dbAccessorService.getCollection(COLLECTION_NAME).updateOne(
             { _id: result._id },
-            { $set: { lastLoginDate: new Date() }, $inc: { loginCount: 1 } },
+            { $set: { lastLoginDate: new Date(), isDeleted: false }, $inc: { loginCount: 1 } },
         );
 
         await reconcileAllVillages(this.dbAccessorService, result);
@@ -84,7 +84,7 @@ export class UserRepositoryService {
 
     async getNumberOfUserStatisticsPages(): Promise<number>
     {
-        const numberOfUsers: number = (await this.dbAccessorService.getCollection(COLLECTION_NAME).estimatedDocumentCount());
+        const numberOfUsers: number = (await this.dbAccessorService.getCollection(COLLECTION_NAME).countDocuments({ isDeleted: { $ne: true } }));
         return Math.ceil(numberOfUsers / MAX_USERS_IN_EACH_STATISTICS_PAGE);
     }
 
@@ -120,7 +120,7 @@ export class UserRepositoryService {
             await this.dbAccessorService
                 .getCollection(COLLECTION_NAME)
                 .updateMany(
-                    {},
+                    { isDeleted: { $ne: true } },
                     {
                         $set: {
                             'weeklyStats.bossDamage': 0,
@@ -162,6 +162,7 @@ export class UserRepositoryService {
 
     async getUserStatisticsPage(username: string): Promise<number> {
         const ranked = await this.dbAccessorService.getCollection(COLLECTION_NAME).aggregate([
+            { "$match": { isDeleted: { $ne: true } } },
             { "$unwind": "$villages" },
             { "$group": {
                 "_id": "$_id",
@@ -181,6 +182,7 @@ export class UserRepositoryService {
         const BEGINNER_SHIELD_HOURS = 24;
         
         let result = this.dbAccessorService.getCollection(COLLECTION_NAME).aggregate([
+            { "$match": { isDeleted: { $ne: true } } },
             { "$unwind" : "$villages" },
             { "$group" : {
                 "_id" : "$_id",
@@ -249,6 +251,7 @@ export class UserRepositoryService {
         }
 
         const pipeline = [
+            { $match: { isDeleted: { $ne: true } } },
             {
                 $project: {
                     username: 1,
@@ -281,6 +284,7 @@ export class UserRepositoryService {
             {
                 $match: {
                     clanName: { $nin: [null, ''] },
+                    isDeleted: { $ne: true },
                 },
             },
             {

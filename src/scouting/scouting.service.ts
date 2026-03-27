@@ -606,7 +606,7 @@ export class ScoutingService {
         await this.serverContextService.forEachServer(async () => {
             const users = await this.dbAccessorService
                 .getCollection(USERS_COLLECTION)
-                .find({})
+                .find({ isDeleted: { $ne: true } })
                 .toArray() as User[];
 
             const activeMissions = await this.dbAccessorService
