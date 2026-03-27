@@ -295,7 +295,7 @@ export class MovementService {
                 attacker.clanName || null,
             );
             if (stolenNames.length > 0) {
-                attacker.totalStats = attacker.totalStats || { lifetimeBossDamage: 0, lifetimeResourcesStolen: 0, totalBattlesWon: 0, successfulSpies: 0, relicsStolen: 0, resourcesSentToClan: 0, mythicBossDamage: 0, supportTroopsSent: 0, oasesConquered: 0 };
+                attacker.totalStats = attacker.totalStats || { lifetimeBossDamage: 0, lifetimeResourcesStolen: 0, totalBattlesWon: 0, successfulSpies: 0, relicsStolen: 0, resourcesSentToClan: 0, mythicBossDamage: 0, supportTroopsSent: 0, oasesConquered: 0, pvpWinStreak: 0 };
                 attacker.totalStats.relicsStolen = (attacker.totalStats.relicsStolen || 0) + stolenNames.length;
             }
             for (const relicName of stolenNames) {
@@ -366,6 +366,7 @@ export class MovementService {
             mythicBossDamage: 0,
             supportTroopsSent: 0,
             oasesConquered: 0,
+            pvpWinStreak: 0,
         };
 
         defender.weeklyStats = defender.weeklyStats || {
@@ -383,6 +384,7 @@ export class MovementService {
             mythicBossDamage: 0,
             supportTroopsSent: 0,
             oasesConquered: 0,
+            pvpWinStreak: 0,
         };
 
         const attackerTroopsKilled =
@@ -397,7 +399,8 @@ export class MovementService {
             attacker.weeklyStats.resourcesStolen += lootTotal;
             attacker.totalStats.lifetimeResourcesStolen += lootTotal;
             attacker.totalStats.totalBattlesWon += 1;
-            unlockAchievements(attacker, ['totalStats.lifetimeResourcesStolen', 'totalStats.totalBattlesWon']);
+            attacker.totalStats.pvpWinStreak = (attacker.totalStats.pvpWinStreak || 0) + 1;
+            unlockAchievements(attacker, ['totalStats.lifetimeResourcesStolen', 'totalStats.totalBattlesWon', 'totalStats.pvpWinStreak']);
 
             // Daily + clan quest progress for attacker win
             const totalAttackerTroopsSent =
@@ -424,6 +427,7 @@ export class MovementService {
             }
         } else {
             this.dailyQuestService.handlePvpBattleResult(attacker.username, false).catch(() => {});
+            attacker.totalStats.pvpWinStreak = 0;
             defender.totalStats.totalBattlesWon += 1;
             unlockAchievements(defender, ['weeklyStats.successfulDefenses', 'totalStats.totalBattlesWon']);
         }

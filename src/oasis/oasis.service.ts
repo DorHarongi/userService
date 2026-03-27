@@ -1504,6 +1504,7 @@ export class OasisService {
             mythicBossDamage: 0,
             supportTroopsSent: 0,
             oasesConquered: 0,
+            pvpWinStreak: 0,
         };
 
         if (attackWon) {

@@ -45,6 +45,7 @@ export class User implements IUser
         mythicBossDamage: number;
         supportTroopsSent: number;
         oasesConquered: number;
+        pvpWinStreak: number;
     };
     selectedTitle?: string;
     unlockedAchievements?: string[];
@@ -87,6 +88,7 @@ export class User implements IUser
             mythicBossDamage: 0,
             supportTroopsSent: 0,
             oasesConquered: 0,
+            pvpWinStreak: 0,
         };
         this.selectedTitle = undefined;
         this.unlockedAchievements = [];

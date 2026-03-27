@@ -268,7 +268,7 @@ export class ScoutingService {
         } else {
             await this.createSpyReport(attackerVillage, defenderVillage, attacker.username, defender.username);
 
-            attacker.totalStats = attacker.totalStats || { lifetimeBossDamage: 0, lifetimeResourcesStolen: 0, totalBattlesWon: 0, successfulSpies: 0, relicsStolen: 0, resourcesSentToClan: 0, mythicBossDamage: 0, supportTroopsSent: 0, oasesConquered: 0 };
+            attacker.totalStats = attacker.totalStats || { lifetimeBossDamage: 0, lifetimeResourcesStolen: 0, totalBattlesWon: 0, successfulSpies: 0, relicsStolen: 0, resourcesSentToClan: 0, mythicBossDamage: 0, supportTroopsSent: 0, oasesConquered: 0, pvpWinStreak: 0 };
             attacker.totalStats.successfulSpies = (attacker.totalStats.successfulSpies || 0) + 1;
             await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
                 { username: attacker.username },
@@ -360,7 +360,7 @@ export class ScoutingService {
         } else {
             await this.createOasisSpyReport(attackerVillage, attacker.username, mission, oasis);
 
-            attacker.totalStats = attacker.totalStats || { lifetimeBossDamage: 0, lifetimeResourcesStolen: 0, totalBattlesWon: 0, successfulSpies: 0, relicsStolen: 0, resourcesSentToClan: 0, mythicBossDamage: 0, supportTroopsSent: 0, oasesConquered: 0 };
+            attacker.totalStats = attacker.totalStats || { lifetimeBossDamage: 0, lifetimeResourcesStolen: 0, totalBattlesWon: 0, successfulSpies: 0, relicsStolen: 0, resourcesSentToClan: 0, mythicBossDamage: 0, supportTroopsSent: 0, oasesConquered: 0, pvpWinStreak: 0 };
             attacker.totalStats.successfulSpies = (attacker.totalStats.successfulSpies || 0) + 1;
             await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
                 { username: attacker.username },
