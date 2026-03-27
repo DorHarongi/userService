@@ -36,3 +36,6 @@ lerna-debug.log*
 
 # Secrets
 mongo-credentials.txt
+
+# Deploy version (managed by CI/CD, not tracked)
+version.json

@@ -1,10 +1,27 @@
 import { Body, Controller, Get, Post, UseGuards, Request } from '@nestjs/common';
 import { ServerService } from './server.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
+import * as fs from 'fs';
+import * as path from 'path';
 
 @Controller('server')
 export class ServerController {
   constructor(private serverService: ServerService) {}
+
+  @Get('version')
+  getVersion() {
+    const candidates = [
+      path.join(process.cwd(), 'version.json'),
+      path.join(process.cwd(), '..', 'version.json'),
+    ];
+    for (const p of candidates) {
+      try {
+        const data = JSON.parse(fs.readFileSync(p, 'utf8'));
+        return { version: data.version ?? 'unknown' };
+      } catch { /* try next */ }
+    }
+    return { version: 'unknown' };
+  }
 
   @Get('status')
   async getStatus() {
