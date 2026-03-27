@@ -6,7 +6,7 @@ import { MessageDTO, SendMessageDTO } from '../dtos/messageDTO';
 
 const MESSAGES_COLLECTION = "messages";
 const MAX_MESSAGES_PER_PAGE = 10;
-const MAX_MESSAGE_LENGTH = 100;
+const MAX_MESSAGE_LENGTH = 150;
 
 @Injectable()
 export class MessagesService {
