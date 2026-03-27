@@ -291,6 +291,16 @@ export class ClansService {
       );
     }
 
+    const hasRequiredEmbassy = user.villages?.some(
+      (v) => v.buildingsLevels.embassyLevel >= embassyMinimumLevelForClanJoin,
+    );
+    if (!hasRequiredEmbassy) {
+      throw new HttpException(
+        `Embassy must be level ${embassyMinimumLevelForClanJoin} or higher to join a clan`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
     // Check if already requested
     if (
       user.pendingClanRequests &&
