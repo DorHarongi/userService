@@ -8,9 +8,7 @@ import { ServerStatusGuard } from '../server/server-status.guard';
 import {
     warehouseStorageByLevel,
     scaleQuestReward,
-    scaleQuestTarget,
 } from 'utils';
-import { computePlayerTotalStrength } from '../user/strength-utils';
 
 const USERS_COLLECTION = 'users';
 
@@ -64,7 +62,7 @@ export class DailyQuestController {
         }
 
         const quests = this.dailyQuestService.getTodaysQuests();
-        const progress = this.dailyQuestService.getPlayerDailyProgress(user);
+        const progress = await this.dailyQuestService.ensureTargetsLocked(user);
 
         const village = user.villages[0];
         const lowestWarehouse = village ? Math.min(
@@ -73,14 +71,8 @@ export class DailyQuestController {
             warehouseStorageByLevel[village.buildingsLevels.cropWarehouseLevel] || 5000,
         ) : 5000;
 
-        const totalAttackPower = await computePlayerTotalStrength(this.dbAccessorService, user);
-        let totalPopulation = 0;
-        for (const v of user.villages) {
-            totalPopulation += v.population || 0;
-        }
-
         const questsWithProgress: DailyQuestWithProgress[] = quests.map((quest, idx) => {
-            const scaledTarget = scaleQuestTarget(quest.target, quest.trackingType, totalAttackPower, totalPopulation, user.villages.length);
+            const scaledTarget = progress[idx]?.target ?? quest.target;
             const formattedTarget = scaledTarget.toLocaleString('en-US');
             let description = quest.description.replace('{target}', formattedTarget);
             if (quest.targetLabel) {

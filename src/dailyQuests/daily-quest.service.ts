@@ -13,6 +13,13 @@ import {
 import { DbAccessorService } from '../database/services/db-accessor.service';
 import { computePlayerTotalStrength } from '../user/strength-utils';
 
+export interface DailyQuestProgressEntry {
+    questId: string;
+    progress: number;
+    claimed: boolean;
+    target?: number;
+}
+
 const USERS_COLLECTION = 'users';
 
 @Injectable()
@@ -32,7 +39,7 @@ export class DailyQuestService {
         return `${year}-${month}-${day}`;
     }
 
-    getPlayerDailyProgress(user: User): { questId: string; progress: number; claimed: boolean }[] {
+    getPlayerDailyProgress(user: User): DailyQuestProgressEntry[] {
         const todaysDateString = this.getTodaysDateString();
         if (user.dailyQuestProgress?.date !== todaysDateString) {
             const quests = this.getTodaysQuests();
@@ -48,6 +55,62 @@ export class DailyQuestService {
                 ? { ...existing, questId: q.id }
                 : { questId: q.id, progress: 0, claimed: false };
         });
+    }
+
+    /**
+     * Ensure today's quest targets are computed and locked for this player.
+     * If targets are already stored, returns them as-is.
+     * If not (first access of the day), computes targets and persists them.
+     */
+    async ensureTargetsLocked(user: User): Promise<DailyQuestProgressEntry[]> {
+        const todaysDateString = this.getTodaysDateString();
+        const quests = this.getTodaysQuests();
+        let progress = this.getPlayerDailyProgress(user);
+
+        const hasTargets = progress.length > 0 && progress.every((e) => e.target !== undefined);
+        if (hasTargets) return progress;
+
+        const totalAttackPower = await computePlayerTotalStrength(this.dbAccessorService, user);
+        let totalPopulation = 0;
+        for (const v of user.villages) {
+            totalPopulation += v.population || 0;
+        }
+
+        progress = progress.map((entry, idx) => ({
+            ...entry,
+            target: scaleQuestTarget(
+                quests[idx].target,
+                quests[idx].trackingType,
+                totalAttackPower,
+                totalPopulation,
+                user.villages.length,
+            ),
+        }));
+
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username: user.username },
+            {
+                $set: {
+                    dailyQuestProgress: {
+                        date: todaysDateString,
+                        quests: progress,
+                        pvpWinStreak: user.dailyQuestProgress?.date === todaysDateString
+                            ? (user.dailyQuestProgress.pvpWinStreak ?? 0)
+                            : 0,
+                    },
+                },
+            },
+        );
+
+        user.dailyQuestProgress = {
+            date: todaysDateString,
+            quests: progress,
+            pvpWinStreak: user.dailyQuestProgress?.date === todaysDateString
+                ? (user.dailyQuestProgress.pvpWinStreak ?? 0)
+                : 0,
+        };
+
+        return progress;
     }
 
     async incrementProgress(
@@ -153,20 +216,16 @@ export class DailyQuestService {
         const quest = quests.find((q) => q.id === questId);
         if (!quest) return null;
 
-        const progress = this.getPlayerDailyProgress(user);
+        const progress = await this.ensureTargetsLocked(user);
         const questIds = quests.map((q) => q.id);
         const idx = questIds.indexOf(questId);
         if (idx < 0) return null;
 
-        const totalAttackPower = await computePlayerTotalStrength(this.dbAccessorService, user);
-        let totalPopulation = 0;
-        for (const v of user.villages) {
-            totalPopulation += v.population || 0;
-        }
-        const scaledTarget = scaleQuestTarget(quest.target, quest.trackingType, totalAttackPower, totalPopulation, user.villages.length);
-
         const entry = progress[idx];
-        if (!entry || entry.claimed || entry.progress < scaledTarget) return null;
+        if (!entry || entry.claimed) return null;
+
+        const scaledTarget = entry.target!;
+        if (entry.progress < scaledTarget) return null;
 
         const village = user.villages[villageIndex];
         if (!village) return null;

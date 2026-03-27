@@ -51,7 +51,7 @@ export class User implements IUser
     theme?: string;
     dailyQuestProgress?: {
         date: string;
-        quests: { questId: string; progress: number; claimed: boolean }[];
+        quests: { questId: string; progress: number; claimed: boolean; target?: number }[];
         pvpWinStreak?: number;
     };
     clanQuestRewardClaimedWeek?: number;
