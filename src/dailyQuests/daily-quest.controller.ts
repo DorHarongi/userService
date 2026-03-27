@@ -9,14 +9,8 @@ import {
     warehouseStorageByLevel,
     scaleQuestReward,
     scaleQuestTarget,
-    spearFighterAttackingStat,
-    swordFighterAttackingStat,
-    axeFighterAttackingStat,
-    archerAttackingStat,
-    magicianAttackingStat,
-    horsemenAttackingStat,
-    catapultsAttackingStat,
 } from 'utils';
+import { computePlayerTotalStrength } from '../user/strength-utils';
 
 const USERS_COLLECTION = 'users';
 
@@ -79,18 +73,9 @@ export class DailyQuestController {
             warehouseStorageByLevel[village.buildingsLevels.cropWarehouseLevel] || 5000,
         ) : 5000;
 
-        let totalAttackPower = 0;
+        const totalAttackPower = await computePlayerTotalStrength(this.dbAccessorService, user);
         let totalPopulation = 0;
         for (const v of user.villages) {
-            const t = v.troops;
-            totalAttackPower +=
-                (t.spearFighters || 0) * spearFighterAttackingStat +
-                (t.swordFighters || 0) * swordFighterAttackingStat +
-                (t.axeFighters || 0) * axeFighterAttackingStat +
-                (t.archers || 0) * archerAttackingStat +
-                (t.magicians || 0) * magicianAttackingStat +
-                (t.horsemen || 0) * horsemenAttackingStat +
-                (t.catapults || 0) * catapultsAttackingStat;
             totalPopulation += v.population || 0;
         }
 

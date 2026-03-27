@@ -9,14 +9,8 @@ import {
     scaleQuestReward,
     scaleClanQuestTarget,
     ClanScalingData,
-    spearFighterAttackingStat,
-    swordFighterAttackingStat,
-    axeFighterAttackingStat,
-    archerAttackingStat,
-    magicianAttackingStat,
-    horsemenAttackingStat,
-    catapultsAttackingStat,
 } from 'utils';
+import { computeClanTotalStrength } from '../user/strength-utils';
 import { DbAccessorService } from '../database/services/db-accessor.service';
 
 const USERS_COLLECTION = 'users';
@@ -67,25 +61,19 @@ export class ClanQuestService {
             return { totalAttackPower: 0, totalPopulation: 0, memberCount: 1 };
         }
 
+        const totalAttackPower = await computeClanTotalStrength(
+            this.dbAccessorService, clan.members,
+        );
+
         const members = await this.dbAccessorService
             .getCollection(USERS_COLLECTION)
             .find({ username: { $in: clan.members } })
-            .toArray() as User[];
+            .project({ villages: 1 })
+            .toArray();
 
-        let totalAttackPower = 0;
         let totalPopulation = 0;
-
         for (const member of members) {
             for (const v of (member.villages || [])) {
-                const t = v.troops || {} as any;
-                totalAttackPower +=
-                    (t.spearFighters || 0) * spearFighterAttackingStat +
-                    (t.swordFighters || 0) * swordFighterAttackingStat +
-                    (t.axeFighters || 0) * axeFighterAttackingStat +
-                    (t.archers || 0) * archerAttackingStat +
-                    (t.magicians || 0) * magicianAttackingStat +
-                    (t.horsemen || 0) * horsemenAttackingStat +
-                    (t.catapults || 0) * catapultsAttackingStat;
                 totalPopulation += v.population || 0;
             }
         }
