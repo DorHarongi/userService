@@ -9,15 +9,9 @@ import {
     scaleQuestReward,
     scaleQuestTarget,
     DailyQuestTrackingType,
-    spearFighterAttackingStat,
-    swordFighterAttackingStat,
-    axeFighterAttackingStat,
-    archerAttackingStat,
-    magicianAttackingStat,
-    horsemenAttackingStat,
-    catapultsAttackingStat,
 } from 'utils';
 import { DbAccessorService } from '../database/services/db-accessor.service';
+import { computePlayerTotalStrength } from '../user/strength-utils';
 
 const USERS_COLLECTION = 'users';
 
@@ -164,18 +158,9 @@ export class DailyQuestService {
         const idx = questIds.indexOf(questId);
         if (idx < 0) return null;
 
-        let totalAttackPower = 0;
+        const totalAttackPower = await computePlayerTotalStrength(this.dbAccessorService, user);
         let totalPopulation = 0;
         for (const v of user.villages) {
-            const t = v.troops;
-            totalAttackPower +=
-                (t.spearFighters || 0) * spearFighterAttackingStat +
-                (t.swordFighters || 0) * swordFighterAttackingStat +
-                (t.axeFighters || 0) * axeFighterAttackingStat +
-                (t.archers || 0) * archerAttackingStat +
-                (t.magicians || 0) * magicianAttackingStat +
-                (t.horsemen || 0) * horsemenAttackingStat +
-                (t.catapults || 0) * catapultsAttackingStat;
             totalPopulation += v.population || 0;
         }
         const scaledTarget = scaleQuestTarget(quest.target, quest.trackingType, totalAttackPower, totalPopulation, user.villages.length);
