@@ -236,7 +236,7 @@ export class ScoutingService {
         }
 
         const wallLevel = defenderVillage.buildingsLevels.wallLevel || 0;
-        const stableLevel = defenderVillage.buildingsLevels.stableLevel || 0;
+        const stableLevel = attackerVillage.buildingsLevels.stableLevel || 0;
         const silentStealthBonus = getSkillBonus(attackerVillage.skills, SkillCategory.SILENT_STEALTH);
 
         const detectionChance = getDetectionChance(wallLevel, stableLevel, silentStealthBonus);
