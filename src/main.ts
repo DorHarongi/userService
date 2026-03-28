@@ -8,15 +8,19 @@ async function bootstrap() {
   const keyPath = path.join(__dirname, '../../certs/privkey.pem');
 
   const httpsOptions =
-    fs.existsSync(certPath) && fs.existsSync(keyPath)
-      ? {
-          cert: fs.readFileSync(certPath),
-          key: fs.readFileSync(keyPath),
-        }
-      : undefined;
+    process.env.NO_SSL === '1'
+      ? undefined
+      : fs.existsSync(certPath) && fs.existsSync(keyPath)
+        ? {
+            cert: fs.readFileSync(certPath),
+            key: fs.readFileSync(keyPath),
+          }
+        : undefined;
 
   const app = await NestFactory.create(AppModule, { httpsOptions });
   app.enableCors();
-  await app.listen(3000);
+  const port = parseInt(process.env.PORT, 10) || 3000;
+  await app.listen(port);
+  console.log(`userService listening on port ${port} (${httpsOptions ? 'HTTPS' : 'HTTP'})`);
 }
 bootstrap();
