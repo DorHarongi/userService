@@ -195,7 +195,15 @@ export class ScoutingService {
                 .find({ arrivalTime: { $lte: now }, status: { $in: ['in_transit', 'returning'] } })
                 .toArray() as SpyMission[];
 
+            const collection = this.dbAccessorService.getCollection(SPY_MISSIONS_COLLECTION);
             for (const mission of missions) {
+                const claimed = await collection.findOneAndUpdate(
+                    { _id: mission._id, status: mission.status },
+                    { $set: { status: 'processing' } },
+                );
+                const claimedDoc = (claimed as any)?.value ?? claimed;
+                if (!claimedDoc) continue;
+
                 try {
                     if (mission.status === 'in_transit') {
                         await this.resolveArrival(mission);
