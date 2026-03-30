@@ -75,17 +75,13 @@ export class UserDTO {
 
     // Calculate energy production multiplier from Adrenaline Surge skill on any village (best one wins)
     private calculateEnergyProductionMultiplier(user: User): number {
-        let bestMultiplier = 1.0;
+        let totalBonus = 0;
 
         for (const village of user.villages) {
             if (!village.skills) continue;
-            const adrenalineBonus = getSkillBonus(village.skills, SkillCategory.ADRENALINE_SURGE);
-            const multiplier = 1 + adrenalineBonus;
-            if (multiplier > bestMultiplier) {
-                bestMultiplier = multiplier;
-            }
+            totalBonus += getSkillBonus(village.skills, SkillCategory.ADRENALINE_SURGE);
         }
 
-        return bestMultiplier;
+        return 1 + totalBonus;
     }
 }
