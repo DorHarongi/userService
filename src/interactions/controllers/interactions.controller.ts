@@ -22,6 +22,19 @@ export class InteractionsController {
         return await this.interactionsService.withdrawSupport(dto);
     }
 
+    @Post('check-resource-space')
+    async checkResourceSpace(
+        @Request() req: any,
+        @Body() body: { recipientUsername: string; recipientVillageName: string; resources: { woodAmount: number; stonesAmount: number; cropAmount: number } },
+    ): Promise<{ hasSpace: boolean }> {
+        return await this.interactionsService.checkResourceSpace(
+            req.user.username,
+            body.recipientUsername,
+            body.recipientVillageName,
+            body.resources,
+        );
+    }
+
     @Post('send-resources')
     async sendResources(@Request() req: any, @Body() dto: SendResourcesDTO): Promise<UserDTO> {
         dto.senderUsername = req.user.username;

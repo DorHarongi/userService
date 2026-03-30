@@ -12,7 +12,7 @@ import { TroopsAmounts } from '../../user/models/troopsAmounts';
 import { ResourcesAmounts } from '../../user/models/resourcesAmounts';
 import { BossService } from '../../bosses/services/boss.service';
 import { OasisService } from '../../oasis/oasis.service';
-import { RELIC_NAMES, RELIC_TRANSFER_COOLDOWN_MS, DailyQuestTrackingType, ClanQuestTrackingType } from 'utils';
+import { RELIC_NAMES, RELIC_TRANSFER_COOLDOWN_MS, DailyQuestTrackingType, ClanQuestTrackingType, embassyMaximumDefenseTroopsByLevels } from 'utils';
 import {
     wallDefenseByLevel,
     spearFighterDefenceStat,
@@ -611,11 +611,23 @@ export class MovementService {
             .findOne({ username: movement.targetUsername }) as User;
 
         if (!recipient) {
+            await this.refundBouncedSupport(movement);
             return;
         }
 
         const recipientVillage = recipient.villages.find(v => v.villageName === movement.targetVillageName);
         if (!recipientVillage) {
+            await this.refundBouncedSupport(movement);
+            return;
+        }
+
+        const embassyLevel = recipientVillage.buildingsLevels.embassyLevel || 0;
+        const embassyCapacity = embassyMaximumDefenseTroopsByLevels[embassyLevel] || 0;
+        const currentSupport = this.countTotalTroops(recipientVillage.clanTroops);
+        const arriving = this.countTotalTroops(movement.troops);
+
+        if (currentSupport + arriving > embassyCapacity) {
+            await this.refundBouncedSupport(movement);
             return;
         }
 
@@ -624,6 +636,52 @@ export class MovementService {
         await this.dbAccessorService
             .getCollection(USERS_COLLECTION)
             .updateOne({ username: recipient.username }, { $set: recipient });
+    }
+
+    private async refundBouncedSupport(movement: Movement): Promise<void> {
+        if (!movement.troops) return;
+
+        const sender = await this.dbAccessorService
+            .getCollection(USERS_COLLECTION)
+            .findOne({ username: movement.senderUsername }) as User;
+        if (!sender) return;
+
+        const senderVillage = sender.villages.find(v => v.villageName === movement.senderVillageName);
+        if (!senderVillage) return;
+
+        this.addTroops(senderVillage.troops, movement.troops);
+
+        const supportIndex = senderVillage.supportSent?.findIndex(
+            s => s.recipientUsername === movement.targetUsername &&
+                 s.recipientVillageName === movement.targetVillageName,
+        );
+        if (supportIndex !== undefined && supportIndex >= 0 && senderVillage.supportSent) {
+            const entry = senderVillage.supportSent[supportIndex];
+            entry.troops.spearFighters = Math.max(0, entry.troops.spearFighters - (movement.troops.spearFighters || 0));
+            entry.troops.swordFighters = Math.max(0, entry.troops.swordFighters - (movement.troops.swordFighters || 0));
+            entry.troops.axeFighters = Math.max(0, entry.troops.axeFighters - (movement.troops.axeFighters || 0));
+            entry.troops.archers = Math.max(0, entry.troops.archers - (movement.troops.archers || 0));
+            entry.troops.magicians = Math.max(0, entry.troops.magicians - (movement.troops.magicians || 0));
+            entry.troops.horsemen = Math.max(0, entry.troops.horsemen - (movement.troops.horsemen || 0));
+            entry.troops.catapults = Math.max(0, entry.troops.catapults - (movement.troops.catapults || 0));
+
+            const remaining = entry.troops.spearFighters + entry.troops.swordFighters +
+                entry.troops.axeFighters + entry.troops.archers + entry.troops.magicians +
+                entry.troops.horsemen + entry.troops.catapults;
+            if (remaining <= 0) {
+                senderVillage.supportSent.splice(supportIndex, 1);
+            }
+        }
+
+        await this.dbAccessorService
+            .getCollection(USERS_COLLECTION)
+            .updateOne({ username: sender.username }, { $set: sender });
+
+        this.messagesService.sendClanNotificationMessage(
+            movement.senderUsername,
+            'Support Troops Returned',
+            `Your support troops could not be delivered to {player:${movement.targetUsername}}'s village ${movement.targetVillageName} because their embassy is full. The troops have been returned to your village.`,
+        ).catch(() => {});
     }
 
     private async resolveResourcesMovement(movement: Movement): Promise<void> {
@@ -817,6 +875,18 @@ export class MovementService {
         to.magicians += amount.magicians;
         to.horsemen += amount.horsemen;
         to.catapults += amount.catapults;
+    }
+
+    private countTotalTroops(troops: TroopsAmounts): number {
+        return (
+            (troops.spearFighters || 0) +
+            (troops.swordFighters || 0) +
+            (troops.axeFighters || 0) +
+            (troops.archers || 0) +
+            (troops.magicians || 0) +
+            (troops.horsemen || 0) +
+            (troops.catapults || 0)
+        );
     }
 
     private clampNonNegative(troops: TroopsAmounts): void {

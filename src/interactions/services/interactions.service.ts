@@ -115,19 +115,46 @@ export class InteractionsService {
     const embassyLevel = recipientVillage.buildingsLevels.embassyLevel || 0;
     const embassyCapacity =
       embassyMaximumDefenseTroopsByLevels[embassyLevel] || 0;
+    const incomingTroops = this.countTotalTroops(dto.troops);
+
+    if (embassyCapacity === 0) {
+      throw new HttpException(
+        `Recipient's embassy is level ${embassyLevel} and therefore cannot hold any support troops.`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
     const currentSupportTroops = this.countTotalTroops(
       recipientVillage.clanTroops,
     );
-    const incomingTroops = this.countTotalTroops(dto.troops);
 
-    if (currentSupportTroops + incomingTroops > embassyCapacity) {
-      const availableSpace = Math.max(
-        0,
-        embassyCapacity - currentSupportTroops,
-      );
+    const inTransitMovements = await this.dbAccessorService
+      .getCollection('movements')
+      .find({
+        type: 'support',
+        targetUsername: dto.recipientUsername,
+        targetVillageName: dto.recipientVillageName,
+        status: 'in_transit',
+      })
+      .toArray();
+
+    let inTransitTroopCount = 0;
+    for (const m of inTransitMovements) {
+      if (m.troops) {
+        inTransitTroopCount += this.countTotalTroops(m.troops as TroopsAmounts);
+      }
+    }
+
+    const totalOccupied = currentSupportTroops + inTransitTroopCount;
+    if (totalOccupied + incomingTroops > embassyCapacity) {
+      const availableSpace = Math.max(0, embassyCapacity - totalOccupied);
+      const inTransitNote =
+        inTransitTroopCount > 0
+          ? ` ${inTransitTroopCount} are in transit.`
+          : '';
       throw new HttpException(
         `Recipient's embassy can only hold ${embassyCapacity} support troops. ` +
-          `Currently has ${currentSupportTroops}, space for ${availableSpace} more.`,
+          `Currently has ${currentSupportTroops}.${inTransitNote} Space for ${availableSpace} more.`,
         HttpStatus.BAD_REQUEST,
       );
     }
@@ -384,6 +411,70 @@ export class InteractionsService {
     return new UserDTO(owner);
   }
 
+  async checkResourceSpace(
+    senderUsername: string,
+    recipientUsername: string,
+    recipientVillageName: string,
+    resources: { woodAmount: number; stonesAmount: number; cropAmount: number },
+  ): Promise<{ hasSpace: boolean }> {
+    const sender = (await this.dbAccessorService
+      .getCollection(USERS_COLLECTION)
+      .findOne({ username: senderUsername })) as User;
+    const recipient = (await this.dbAccessorService
+      .getCollection(USERS_COLLECTION)
+      .findOne({ username: recipientUsername })) as User;
+
+    if (!sender) {
+      throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+    }
+    if (!recipient) {
+      throw new HttpException('Recipient not found', HttpStatus.NOT_FOUND);
+    }
+    if (
+      !sender.clanName ||
+      !recipient.clanName ||
+      sender.clanName !== recipient.clanName
+    ) {
+      throw new HttpException(
+        'You can only send resources to clan members',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const villageName = recipientVillageName?.trim().toLowerCase();
+    const recipientVillage = recipient.villages.find(
+      (v) => v.villageName?.trim().toLowerCase() === villageName,
+    );
+    if (!recipientVillage) {
+      throw new HttpException(
+        'Recipient village not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    const maxWood =
+      warehouseStorageByLevel[
+        recipientVillage.buildingsLevels.woodWarehouseLevel
+      ] || 0;
+    const maxStone =
+      warehouseStorageByLevel[
+        recipientVillage.buildingsLevels.stoneWarehouseLevel
+      ] || 0;
+    const maxCrop =
+      warehouseStorageByLevel[
+        recipientVillage.buildingsLevels.cropWarehouseLevel
+      ] || 0;
+
+    const woodFits =
+      recipientVillage.resourcesAmounts.woodAmount + (resources.woodAmount || 0) <= maxWood;
+    const stoneFits =
+      recipientVillage.resourcesAmounts.stonesAmount + (resources.stonesAmount || 0) <= maxStone;
+    const cropFits =
+      recipientVillage.resourcesAmounts.cropAmount + (resources.cropAmount || 0) <= maxCrop;
+
+    return { hasSpace: woodFits && stoneFits && cropFits };
+  }
+
   async sendResources(dto: SendResourcesDTO): Promise<UserDTO> {
     const sender = (await this.dbAccessorService
       .getCollection(USERS_COLLECTION)
@@ -463,50 +554,17 @@ export class InteractionsService {
       senderVillage.resourcesAmounts.cropAmount,
     );
 
-    // Calculate recipient's available space
-    const maxWood =
-      warehouseStorageByLevel[
-        recipientVillage.buildingsLevels.woodWarehouseLevel
-      ];
-    const maxStone =
-      warehouseStorageByLevel[
-        recipientVillage.buildingsLevels.stoneWarehouseLevel
-      ];
-    const maxCrop =
-      warehouseStorageByLevel[
-        recipientVillage.buildingsLevels.cropWarehouseLevel
-      ];
-
-    const woodSpace = Math.max(
-      0,
-      maxWood - recipientVillage.resourcesAmounts.woodAmount,
-    );
-    const stoneSpace = Math.max(
-      0,
-      maxStone - recipientVillage.resourcesAmounts.stonesAmount,
-    );
-    const cropSpace = Math.max(
-      0,
-      maxCrop - recipientVillage.resourcesAmounts.cropAmount,
-    );
-
-    // Calculate actual transfer amounts (min of what sender wants to send and recipient can receive)
-    const actualWood = Math.min(woodToSend, woodSpace);
-    const actualStone = Math.min(stoneToSend, stoneSpace);
-    const actualCrop = Math.min(cropToSend, cropSpace);
-
-    // If nothing can be transferred at all, reject
-    if (actualWood === 0 && actualStone === 0 && actualCrop === 0) {
+    if (woodToSend === 0 && stoneToSend === 0 && cropToSend === 0) {
       throw new HttpException(
-        'Recipient has no storage space available for any resources',
+        'You must select at least some resources to send',
         HttpStatus.BAD_REQUEST,
       );
     }
 
-    // Transfer resources from sender now (recipient receives on arrival)
-    senderVillage.resourcesAmounts.woodAmount -= actualWood;
-    senderVillage.resourcesAmounts.stonesAmount -= actualStone;
-    senderVillage.resourcesAmounts.cropAmount -= actualCrop;
+    // Transfer resources from sender (recipient receives on arrival, capped to warehouse)
+    senderVillage.resourcesAmounts.woodAmount -= woodToSend;
+    senderVillage.resourcesAmounts.stonesAmount -= stoneToSend;
+    senderVillage.resourcesAmounts.cropAmount -= cropToSend;
 
     await this.dbAccessorService
       .getCollection(USERS_COLLECTION)
@@ -531,16 +589,16 @@ export class InteractionsService {
       targetUsername: dto.recipientUsername,
       targetVillageName: recipientVillage.villageName,
       resources: {
-        woodAmount: actualWood,
-        stonesAmount: actualStone,
-        cropAmount: actualCrop,
+        woodAmount: woodToSend,
+        stonesAmount: stoneToSend,
+        cropAmount: cropToSend,
       },
       departureTime,
       arrivalTime,
       status: 'in_transit',
     });
 
-    const totalResourcesSent = actualWood + actualStone + actualCrop;
+    const totalResourcesSent = woodToSend + stoneToSend + cropToSend;
     await this.dbAccessorService.getCollection('users').updateOne(
       { username: dto.senderUsername },
       { $inc: { 'totalStats.resourcesSentToClan': totalResourcesSent } },
@@ -551,11 +609,10 @@ export class InteractionsService {
       this.clanQuestService.incrementClanProgress(sender.clanName, dto.senderUsername, ClanQuestTrackingType.TOTAL_RESOURCE_SHIPMENTS, 1).catch(() => {});
     }
 
-    // Send messages to both parties with ACTUAL amounts transferred
     const resourcesData = {
-      wood: actualWood,
-      stone: actualStone,
-      crop: actualCrop,
+      wood: woodToSend,
+      stone: stoneToSend,
+      crop: cropToSend,
     };
 
     // Only sender message now; recipient message is sent when resources arrive (in MovementService.resolveResourcesMovement)
