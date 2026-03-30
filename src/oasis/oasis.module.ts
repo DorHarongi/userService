@@ -4,6 +4,7 @@ import { AuthModule } from '../auth/auth.module';
 import { ServerModule } from '../server/server.module';
 import { ReportsModule } from '../reports/reports.module';
 import { MessagesModule } from '../messages/messages.module';
+import { ScoutingModule } from '../scouting/scouting.module';
 import { OasisController } from './oasis.controller';
 import { OasisService } from './oasis.service';
 
@@ -14,6 +15,7 @@ import { OasisService } from './oasis.service';
         ServerModule,
         ReportsModule,
         MessagesModule,
+        ScoutingModule,
     ],
     controllers: [OasisController],
     providers: [OasisService],

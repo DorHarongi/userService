@@ -17,5 +17,7 @@ export class SpyMission {
     oasisX?: number;
     oasisY?: number;
     oasisName?: string;
+    spyCount?: number;
+    survivedCount?: number;
 }
 

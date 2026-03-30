@@ -160,6 +160,7 @@ export class MovementService {
             departureTime: m.departureTime,
             arrivalTime: m.arrivalTime,
             status: 'in_transit',
+            spyCount: m.spyCount || 1,
         }));
 
         return [...movements, ...spyAsMovements];

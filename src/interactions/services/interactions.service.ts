@@ -98,6 +98,10 @@ export class InteractionsService {
       );
     }
 
+    if ((dto.troops as any).spies > 0) {
+      throw new HttpException('Spies cannot be sent as support', HttpStatus.BAD_REQUEST);
+    }
+
     // Validate sender has enough troops
     if (!this.hasSufficientTroops(senderVillage.troops, dto.troops)) {
       throw new HttpException('Insufficient troops', HttpStatus.BAD_REQUEST);
@@ -263,6 +267,10 @@ export class InteractionsService {
   }
 
   async withdrawSupport(dto: WithdrawSupportDTO): Promise<UserDTO> {
+    if ((dto.troops as any).spies > 0) {
+      throw new HttpException('Spies cannot be withdrawn as support', HttpStatus.BAD_REQUEST);
+    }
+
     const owner = (await this.dbAccessorService
       .getCollection(USERS_COLLECTION)
       .findOne({ username: dto.ownerUsername })) as User;

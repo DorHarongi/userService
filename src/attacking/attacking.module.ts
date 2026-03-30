@@ -8,6 +8,7 @@ import { ServerModule } from '../server/server.module';
 import { MessagesModule } from '../messages/messages.module';
 import { BossesModule } from '../bosses/bosses.module';
 import { OasisModule } from '../oasis/oasis.module';
+import { ScoutingModule } from '../scouting/scouting.module';
 import { AttackController } from './attack/attack.controller';
 import { AttackingService } from './services/attacking/attacking.service';
 import { MovementService } from './services/movement.service';
@@ -15,7 +16,7 @@ import { MovementService } from './services/movement.service';
 @Module({
   controllers: [AttackController],
   providers: [AttackingService, MovementService],
-  imports: [DatabaseModule, ReportsModule, AuthModule, RelicsModule, AnnouncementsModule, ServerModule, MessagesModule, forwardRef(() => BossesModule), OasisModule],
+  imports: [DatabaseModule, ReportsModule, AuthModule, RelicsModule, AnnouncementsModule, ServerModule, MessagesModule, forwardRef(() => BossesModule), OasisModule, ScoutingModule],
   exports: [MovementService],
 })
 export class AttackingModule {}

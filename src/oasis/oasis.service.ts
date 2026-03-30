@@ -36,6 +36,7 @@ import { DbAccessorService } from '../database/services/db-accessor.service';
 import { ServerContextService } from '../database/services/server-context.service';
 import { ReportsService } from '../reports/services/reports/reports.service';
 import { MessagesService } from '../messages/services/messages.service';
+import { ScoutingService } from '../scouting/scouting.service';
 import { User } from '../user/models/user.entity';
 import { TroopsAmounts } from '../user/models/troopsAmounts';
 import { ResourcesAmounts } from '../user/models/resourcesAmounts';
@@ -64,6 +65,7 @@ export class OasisService {
         private messagesService: MessagesService,
         private dailyQuestService: DailyQuestService,
         private clanQuestService: ClanQuestService,
+        private scoutingService: ScoutingService,
     ) {}
 
     @Cron('0 */30 * * * *')
@@ -404,8 +406,29 @@ export class OasisService {
             magicians?: number;
             horsemen?: number;
             catapults?: number;
+            spies?: number;
         },
     ): Promise<{ travelTimeMs: number; isAttack: boolean; user?: any }> {
+        const spyCount = troops.spies || 0;
+        const hasCombatTroops = (troops.spearFighters || 0) + (troops.swordFighters || 0) +
+            (troops.axeFighters || 0) + (troops.archers || 0) + (troops.magicians || 0) +
+            (troops.horsemen || 0) + (troops.catapults || 0) > 0;
+
+        if (spyCount > 0 && hasCombatTroops) {
+            throw new HttpException(
+                'Cannot send both spies and combat troops in the same action',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+
+        if (spyCount > 0 && !hasCombatTroops) {
+            await this.scoutingService.scoutOasisMulti(username, villageName, oasisId, spyCount);
+            const updatedUser = await this.dbAccessorService
+                .getCollection(USERS_COLLECTION)
+                .findOne({ username });
+            return { travelTimeMs: 0, isAttack: false, user: updatedUser };
+        }
+
         const user = (await this.dbAccessorService
             .getCollection(USERS_COLLECTION)
             .findOne({ username })) as User;

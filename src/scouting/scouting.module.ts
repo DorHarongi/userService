@@ -15,6 +15,7 @@ import { ScoutingController } from './scouting.controller';
     ],
     providers: [ScoutingService],
     controllers: [ScoutingController],
+    exports: [ScoutingService],
 })
 export class ScoutingModule {}
 

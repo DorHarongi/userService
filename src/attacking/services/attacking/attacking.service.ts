@@ -25,6 +25,7 @@ import {
 } from 'utils';
 import { DbAccessorService } from '../../../database/services/db-accessor.service';
 import { ReportsService } from '../../../reports/services/reports/reports.service';
+import { ScoutingService } from '../../../scouting/scouting.service';
 import { UserDTO } from '../../../user/dtos/userDTO';
 import { ResourcesAmounts } from '../../../user/models/resourcesAmounts';
 import { TroopsAmounts } from '../../../user/models/troopsAmounts';
@@ -42,6 +43,7 @@ export class AttackingService {
   constructor(
     private dbAccessorService: DbAccessorService,
     private reportsService: ReportsService,
+    private scoutingService: ScoutingService,
   ) {}
 
   private isUnderBeginnerShield(user: User): boolean {
@@ -146,10 +148,31 @@ export class AttackingService {
       );
 
     // Check troops exist and are valid FIRST (before accessing properties)
-    if (
-      !attackDTO.attackingTroops ||
-      !this.hasTroopsToAttack(attackDTO.attackingTroops)
-    )
+    const spyCount = attackDTO.attackingTroops?.spies || 0;
+    const hasCombatTroops = attackDTO.attackingTroops && this.hasTroopsToAttack(attackDTO.attackingTroops);
+
+    if (spyCount > 0 && hasCombatTroops) {
+      throw new HttpException(
+        'Cannot send both spies and combat troops in the same action',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    if (spyCount > 0 && !hasCombatTroops) {
+      await this.scoutingService.scoutVillageMulti(
+        attackDTO.attackerName,
+        attackerVillage.villageName,
+        attackDTO.defenderName,
+        defenderVillage.villageName,
+        spyCount,
+      );
+      const updatedAttacker = (await this.dbAccessorService
+        .getCollection(USER_COLLECTIONS)
+        .findOne({ username: attackDTO.attackerName })) as User;
+      return new UserDTO(updatedAttacker);
+    }
+
+    if (!attackDTO.attackingTroops || !hasCombatTroops)
       throw new HttpException(
         'You must select at least one troop to attack',
         HttpStatus.BAD_REQUEST,
