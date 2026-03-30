@@ -1,7 +1,8 @@
-import { Controller, Get, Post, OnModuleInit, Logger } from '@nestjs/common';
+import { Controller, Get, Post, Res, OnModuleInit, Logger } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { AppService } from './app.service';
+import { DbConnectorService } from './database/services/db-connector.service';
 
 @Controller()
 export class AppController implements OnModuleInit {
@@ -10,6 +11,7 @@ export class AppController implements OnModuleInit {
   constructor(
     private readonly appService: AppService,
     private readonly schedulerRegistry: SchedulerRegistry,
+    private readonly dbConnector: DbConnectorService,
   ) {}
 
   onModuleInit() {
@@ -32,8 +34,15 @@ export class AppController implements OnModuleInit {
 
   @Get('health')
   @SkipThrottle()
-  healthCheck() {
-    return { status: 'ok', timestamp: Date.now() };
+  async healthCheck(@Res() res) {
+    try {
+      const db = this.dbConnector.getServerDb(1);
+      await db.admin().ping();
+      return res.status(200).json({ status: 'ok', timestamp: Date.now() });
+    } catch (err) {
+      this.logger.error('Health check failed: DB unreachable', err?.message);
+      return res.status(503).json({ status: 'error', timestamp: Date.now(), reason: 'db_unreachable' });
+    }
   }
 
   @Post('crons/enable')
