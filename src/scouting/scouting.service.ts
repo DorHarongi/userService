@@ -836,6 +836,18 @@ export class ScoutingService {
                             break;
                         }
                     }
+
+                    if (village.aliveSpies + onMission >= maxSpies && village.spyDeathTimestamps.length > 0) {
+                        const readyCount = village.spyDeathTimestamps.filter(
+                            (ts: Date) => new Date(ts.getTime() + (12 * 60 * 60 * 1000)) <= now
+                        ).length;
+                        if (readyCount > 0) {
+                            village.spyDeathTimestamps = village.spyDeathTimestamps.filter(
+                                (ts: Date) => new Date(ts.getTime() + (12 * 60 * 60 * 1000)) > now
+                            );
+                            updated = true;
+                        }
+                    }
                 }
 
                 if (updated) {
