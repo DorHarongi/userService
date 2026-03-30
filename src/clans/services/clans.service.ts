@@ -471,10 +471,12 @@ export class ClansService {
     await this.returnReceivedSupportTroops(leaveClanDTO.username);
 
     if (clan.leaderUsername === leaveClanDTO.username) {
-      // If leader leaves, either transfer leadership or dissolve clan
       if (clan.members.length > 1) {
-        // Transfer to next member
-        const newLeader = clan.members.find((m) => m !== leaveClanDTO.username);
+        const newLeader = leaveClanDTO.newLeaderUsername
+          && clan.members.includes(leaveClanDTO.newLeaderUsername)
+          && leaveClanDTO.newLeaderUsername !== leaveClanDTO.username
+            ? leaveClanDTO.newLeaderUsername
+            : clan.members.find((m) => m !== leaveClanDTO.username);
         await this.dbAccessorService
           .getCollection(CLANS_COLLECTION)
           .updateOne({ clanName: leaveClanDTO.clanName }, {

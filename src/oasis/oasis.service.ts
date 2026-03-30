@@ -379,6 +379,14 @@ export class OasisService {
             }
         }
 
+        const totalStash = (garrison.stash.wood || 0) + (garrison.stash.stone || 0) + (garrison.stash.crop || 0);
+        if (totalStash > 0) {
+            this.dailyQuestService.incrementProgress(garrison.username, DailyQuestTrackingType.RETREAT_OASIS_WITH_RESOURCES, totalStash).catch(() => {});
+            if (user.clanName) {
+                this.clanQuestService.incrementClanProgress(user.clanName, garrison.username, ClanQuestTrackingType.TOTAL_OASIS_RESOURCES_HARVESTED, totalStash).catch(() => {});
+            }
+        }
+
         await this.dbAccessorService.getCollection(OASES_COLLECTION).deleteOne(
             { _id: oasis._id },
         );
@@ -1022,7 +1030,10 @@ export class OasisService {
             .getCollection(OASES_COLLECTION)
             .findOne({ _id: new ObjectId(movement.oasisId) })) as Oasis | null;
 
-        if (!oasis) return;
+        if (!oasis) {
+            await this.refundTroopsToVillage(movement.senderUsername, movement.senderVillageName, movement.troops);
+            return;
+        }
 
         if (oasis.garrison && oasis.garrison.username !== movement.senderUsername) {
             await this.resolveOasisCombat(movement, oasis, 'oasis_garrison');
@@ -1310,6 +1321,10 @@ export class OasisService {
         );
         attackReport.attackerVillageX = attackerVillage.location.x;
         attackReport.attackerVillageY = attackerVillage.location.y;
+        attackReport.oasisId = oasis._id?.toHexString();
+        attackReport.oasisName = oasisTierConfigs[oasis.tier]?.name || 'Oasis';
+        attackReport.oasisX = oasis.x;
+        attackReport.oasisY = oasis.y;
         await this.reportsService.saveAttackReport(attackReport);
 
         const survivingAttackers = new TroopsAmounts(
@@ -1521,6 +1536,40 @@ export class OasisService {
                     unlockedAchievements: (attackerUser as any).unlockedAchievements,
                 },
             },
+        );
+    }
+
+    private async refundTroopsToVillage(
+        username: string,
+        villageName: string,
+        troops: any,
+    ): Promise<void> {
+        const user = (await this.dbAccessorService
+            .getCollection(USERS_COLLECTION)
+            .findOne({ username })) as User;
+        if (!user) return;
+
+        const village = user.villages.find((v) => v.villageName === villageName);
+        if (!village) return;
+
+        village.troops.spearFighters = (village.troops.spearFighters || 0) + (troops.spearFighters || 0);
+        village.troops.swordFighters = (village.troops.swordFighters || 0) + (troops.swordFighters || 0);
+        village.troops.axeFighters = (village.troops.axeFighters || 0) + (troops.axeFighters || 0);
+        village.troops.archers = (village.troops.archers || 0) + (troops.archers || 0);
+        village.troops.magicians = (village.troops.magicians || 0) + (troops.magicians || 0);
+        village.troops.horsemen = (village.troops.horsemen || 0) + (troops.horsemen || 0);
+        village.troops.catapults = (village.troops.catapults || 0) + (troops.catapults || 0);
+
+        const refundedCount =
+            (troops.spearFighters || 0) + (troops.swordFighters || 0) +
+            (troops.axeFighters || 0) + (troops.archers || 0) +
+            (troops.magicians || 0) + (troops.horsemen || 0) +
+            (troops.catapults || 0);
+        village.troopsInTransit = Math.max(0, (village.troopsInTransit || 0) - refundedCount);
+
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username },
+            { $set: { villages: user.villages } },
         );
     }
 

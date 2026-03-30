@@ -992,7 +992,6 @@ export class BossService {
   ): Promise<{ wood: number; stone: number; crop: number }> {
     const rewardAmount = bossRewardAmounts[tier];
     const bossName = bossNames[tier];
-    // Generate a unique reward ID for this boss defeat - shared across all clan members
     const rewardId = new ObjectId().toHexString();
 
     const pendingReward = {

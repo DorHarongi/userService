@@ -49,7 +49,7 @@ export class ServerService {
     );
     await this.announcementsService.createAnnouncement(
       'server_ended',
-      `🏆 Clan **${winningClanName}** has collected all 5 Divine Relics and won the game!`,
+      `🏆 Clan {clan:${winningClanName}} has collected all 5 Divine Relics and won the game!`,
       { winningClanName },
     );
   }
@@ -96,7 +96,7 @@ export class ServerService {
     );
     await this.announcementsService.createAnnouncement(
       'server_ended',
-      `Player **${winningPlayerName}** has single-handedly collected all 5 Divine Relics and won the game!`,
+      `🏆 {player:${winningPlayerName}} has single-handedly collected all 5 Divine Relics and won the game!`,
       { winningPlayerName },
     );
   }

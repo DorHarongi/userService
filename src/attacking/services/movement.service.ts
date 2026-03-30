@@ -100,6 +100,7 @@ export class MovementService {
                 const claimedDoc = (claimed as any)?.value ?? claimed;
                 if (!claimedDoc) continue;
 
+                let resolved = false;
                 try {
                     if (movement.type === 'attack') {
                         await this.resolveAttackMovement(movement);
@@ -120,13 +121,14 @@ export class MovementService {
                     } else if (movement.type === 'relic_transfer') {
                         await this.resolveRelicTransferMovement(movement);
                     }
+                    resolved = true;
                 } catch (error) {
                     this.logger.error(`Error processing movement ${movement._id}: ${error?.message || error}`);
                 }
 
                 await collection.updateOne(
                     { _id: movement._id },
-                    { $set: { status: 'completed' } },
+                    { $set: { status: resolved ? 'completed' : 'failed' } },
                 );
             }
         });
@@ -709,9 +711,15 @@ export class MovementService {
 
         await this.relicsService.checkWinAfterChange();
 
+        const targetVillage = targetUser.villages?.find(
+            (v) => v.villageName === movement.targetVillageName,
+        );
+        const villageRef = targetVillage
+            ? `{village:${movement.targetVillageName}|${targetVillage.location.x}|${targetVillage.location.y}}`
+            : movement.targetVillageName;
         await this.messagesService.sendGlobalInboxMessage(
             'A Divine Relic has been moved!',
-            `The ${relicName} has been transferred to {player:${movement.targetUsername}} in ${movement.targetVillageName}.`,
+            `The ${relicName} has been transferred to {player:${movement.targetUsername}} in ${villageRef}.`,
         );
     }
 

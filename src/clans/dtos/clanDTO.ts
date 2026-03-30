@@ -62,6 +62,7 @@ export interface HandleJoinRequestDTO {
 export interface LeaveClanDTO {
     clanName: string;
     username: string;
+    newLeaderUsername?: string;
 }
 
 export interface KickMemberDTO {
