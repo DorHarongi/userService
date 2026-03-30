@@ -15,16 +15,14 @@ export class AppController implements OnModuleInit {
   ) {}
 
   onModuleInit() {
-    if (process.env.NO_CRONS === '1') {
-      setTimeout(() => {
-        const jobs = this.schedulerRegistry.getCronJobs();
-        jobs.forEach((job, name) => {
-          job.stop();
-          this.logger.log(`Cron "${name}" stopped (NO_CRONS=1)`);
-        });
-        this.logger.warn(`All ${jobs.size} cron jobs paused (NO_CRONS=1)`);
-      }, 2000);
-    }
+    setTimeout(() => {
+      const jobs = this.schedulerRegistry.getCronJobs();
+      jobs.forEach((job, name) => {
+        job.stop();
+        this.logger.log(`Cron "${name}" stopped (startup: crons disabled by default)`);
+      });
+      this.logger.warn(`All ${jobs.size} cron jobs paused — waiting for /crons/enable`);
+    }, 2000);
   }
 
   @Get()
