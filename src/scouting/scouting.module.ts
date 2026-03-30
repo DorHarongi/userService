@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { ScheduleModule } from '@nestjs/schedule';
 import { AuthModule } from '../auth/auth.module';
 import { DatabaseModule } from '../database/database.module';
 import { ReportsModule } from '../reports/reports.module';
@@ -12,7 +11,6 @@ import { ScoutingController } from './scouting.controller';
         DatabaseModule,
         AuthModule,
         ReportsModule,
-        ScheduleModule.forRoot(),
         ServerModule,
     ],
     providers: [ScoutingService],
