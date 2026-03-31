@@ -1,7 +1,9 @@
 /**
- * Spawn a mythic boss at a random empty location.
- * Run with: npx ts-node src/scripts/spawn-mythic-boss.ts [x] [y]
+ * Spawn a mythic boss at a random empty location with announcements.
+ * Run with: npx ts-node src/scripts/spawn-mythic-boss.ts [x] [y] [hp] [server]
  * If x,y omitted, picks a random empty cell.
+ * If hp omitted, uses the fallback random range from bossHpRanges.
+ * If server omitted, spawns on ALL servers. Use server number (e.g. "2") to target one.
  */
 
 import { MongoClient } from 'mongodb';
@@ -12,6 +14,9 @@ const MONGODB_URI = 'mongodb://localhost:27017';
 const BOSSES_COLLECTION = 'bosses';
 const GRID_COLLECTION = 'grids';
 const RELICS_COLLECTION = 'relics';
+const USERS_COLLECTION = 'users';
+const ANNOUNCEMENTS_COLLECTION = 'announcements';
+const MESSAGES_COLLECTION = 'messages';
 const WORLD_SIZE = 100;
 
 async function getServerDbNames(client: MongoClient): Promise<string[]> {
@@ -50,9 +55,21 @@ async function run() {
   const args = process.argv.slice(2);
   const xArg = args[0] ? parseInt(args[0], 10) : undefined;
   const yArg = args[1] ? parseInt(args[1], 10) : undefined;
+  const hpArg = args[2] ? parseInt(args[2], 10) : undefined;
+  const serverArg = args[3] || undefined;
 
   const client = await MongoClient.connect(MONGODB_URI);
-  const dbNames = await getServerDbNames(client);
+  let dbNames = await getServerDbNames(client);
+
+  if (serverArg) {
+    const target = `pasiflora_server_${serverArg}`;
+    dbNames = dbNames.filter((n) => n === target);
+    if (dbNames.length === 0) {
+      console.error(`Server DB "${target}" not found. Available: ${(await getServerDbNames(client)).join(', ')}`);
+      await client.close();
+      process.exit(1);
+    }
+  }
 
   for (const dbName of dbNames) {
     const db = client.db(dbName);
@@ -92,8 +109,13 @@ async function run() {
       y = cell.y;
     }
 
-    const hpRange = bossHpRanges[BossTier.MYTHIC];
-    const hp = Math.floor(Math.random() * (hpRange.max - hpRange.min + 1)) + hpRange.min;
+    let hp: number;
+    if (hpArg !== undefined && !isNaN(hpArg) && hpArg > 0) {
+      hp = hpArg;
+    } else {
+      const hpRange = bossHpRanges[BossTier.MYTHIC];
+      hp = Math.floor(Math.random() * (hpRange.max - hpRange.min + 1)) + hpRange.min;
+    }
     const name = bossNames[BossTier.MYTHIC];
 
     const allRelics = await relicsCollection.find({}).toArray();
@@ -114,8 +136,37 @@ async function run() {
       relicId,
     };
 
-    await bossesCollection.insertOne(doc);
-    console.log(`[${dbName}] Mythic boss spawned at (${x}, ${y}) with relic "${relicId}"`);
+    const result = await bossesCollection.insertOne(doc);
+    const bossId = result.insertedId.toString();
+    console.log(`[${dbName}] Mythic boss spawned at (${x}, ${y}) with ${hp.toLocaleString()} HP, relic "${relicId}"`);
+
+    // Announcement banner
+    await db.collection(ANNOUNCEMENTS_COLLECTION).insertOne({
+      type: 'mythic_spawn',
+      content: `⚡ A Mythic Boss has appeared at (${x}, ${y})!`,
+      metadata: { x, y },
+      date: new Date(),
+    });
+
+    // Global inbox message to all active players
+    const allUsers = await db.collection(USERS_COLLECTION)
+      .find({ isDeleted: { $ne: true } }, { projection: { username: 1 } })
+      .toArray() as { username: string }[];
+
+    const inboxDocs = allUsers.map((u) => ({
+      recipientUsername: u.username,
+      type: 'system_message',
+      subject: `⚡ A Mythic Boss has appeared!`,
+      content: `A terrifying {boss:${name}|${x}|${y}|${bossId}} has emerged!\nAll clans, ready yourselves for battle — you will need to give everything you have got to bring it down.\n\nHint:\nEach Ancient Titan guards a unique Divine Relic.\nThe clan that deals the most damage claims the relic once the titan falls.\nRelics can be stolen by defeating the village where the relic is being kept — so keep it safe and guard it well.\nOnly entrust a relic to the clan member you trust most; a disloyal holder could leave and take it with them.\n\nThe first clan to collect all 5 Divine Relics will achieve ultimate victory.`,
+      date: new Date(),
+      read: false,
+      actionable: false,
+    }));
+
+    if (inboxDocs.length > 0) {
+      await db.collection(MESSAGES_COLLECTION).insertMany(inboxDocs);
+      console.log(`[${dbName}] Sent announcement + inbox message to ${inboxDocs.length} players`);
+    }
   }
 
   await client.close();
