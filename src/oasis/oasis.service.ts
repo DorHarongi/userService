@@ -208,7 +208,7 @@ export class OasisService {
                 const now = new Date();
 
                 for (const oasis of oases) {
-                    if (!oasis.garrison) continue;
+                    if (!oasis.garrison || Array.isArray(oasis.garrison) || !oasis.garrison.username) continue;
 
                     const garrison = oasis.garrison;
                     const totalTroops = getTotalGarrisonTroops(garrison);
@@ -1058,12 +1058,14 @@ export class OasisService {
             return;
         }
 
-        if (oasis.garrison && oasis.garrison.username !== movement.senderUsername) {
+        const hasValidGarrison = oasis.garrison && !Array.isArray(oasis.garrison) && !!oasis.garrison.username;
+
+        if (hasValidGarrison && oasis.garrison.username !== movement.senderUsername) {
             await this.resolveOasisCombat(movement, oasis, 'oasis_garrison');
             return;
         }
 
-        if (oasis.garrison && oasis.garrison.username === movement.senderUsername) {
+        if (hasValidGarrison && oasis.garrison.username === movement.senderUsername) {
             const existingContribs = getGarrisonContributions(oasis.garrison);
             const incomingTroops = {
                 spearFighters: movement.troops.spearFighters || 0,

@@ -123,7 +123,12 @@ export class MovementService {
                     }
                     resolved = true;
                 } catch (error) {
-                    this.logger.error(`Error processing movement ${movement._id}: ${error?.message || error}`);
+                    this.logger.error(`Error processing movement ${movement._id} (type=${movement.type}): ${error?.message || error}`);
+                    try {
+                        await this.refundTroopsOnFailedMovement(movement);
+                    } catch (refundError) {
+                        this.logger.error(`Error refunding troops for movement ${movement._id}: ${(refundError as any)?.message || refundError}`);
+                    }
                 }
 
                 await collection.updateOne(
@@ -132,6 +137,43 @@ export class MovementService {
                 );
             }
         });
+    }
+
+    private async refundTroopsOnFailedMovement(movement: Movement): Promise<void> {
+        const troopTypes = ['attack', 'boss_attack', 'oasis_garrison', 'oasis_attack', 'support'];
+        if (!troopTypes.includes(movement.type)) return;
+
+        const troops = movement.troops;
+        if (!troops) return;
+
+        const username = movement.senderUsername;
+        const villageName = movement.senderVillageName;
+        if (!username || !villageName) return;
+
+        const troopCount =
+            (troops.spearFighters || 0) + (troops.swordFighters || 0) +
+            (troops.axeFighters || 0) + (troops.archers || 0) +
+            (troops.magicians || 0) + (troops.horsemen || 0) +
+            (troops.catapults || 0);
+
+        if (troopCount <= 0) return;
+
+        await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+            { username, 'villages.villageName': villageName },
+            {
+                $inc: {
+                    'villages.$.troops.spearFighters': troops.spearFighters || 0,
+                    'villages.$.troops.swordFighters': troops.swordFighters || 0,
+                    'villages.$.troops.axeFighters': troops.axeFighters || 0,
+                    'villages.$.troops.archers': troops.archers || 0,
+                    'villages.$.troops.magicians': troops.magicians || 0,
+                    'villages.$.troops.horsemen': troops.horsemen || 0,
+                    'villages.$.troops.catapults': troops.catapults || 0,
+                    'villages.$.troopsInTransit': -troopCount,
+                },
+            },
+        );
+        this.logger.warn(`Refunded ${troopCount} troops to ${username}/${villageName} for failed movement ${movement._id}`);
     }
 
     async getUserMovements(username: string): Promise<any[]> {
