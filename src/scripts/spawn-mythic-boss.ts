@@ -151,7 +151,7 @@ async function run() {
     // Global inbox message to all active players
     const allUsers = await db.collection(USERS_COLLECTION)
       .find({ isDeleted: { $ne: true } }, { projection: { username: 1 } })
-      .toArray() as { username: string }[];
+      .toArray() as unknown as { username: string }[];
 
     const inboxDocs = allUsers.map((u) => ({
       recipientUsername: u.username,
