@@ -119,10 +119,23 @@ export class BossService {
   }
 
   @Cron('0 */30 * * * *') // Every 30 minutes
-  async trySpawnBoss(): Promise<void> {
+  async cleanupBosses(): Promise<void> {
     await this.serverContextService.forEachServer(async () => {
       try {
         await this.cleanupExpiredBosses();
+      } catch (error) {
+        this.logger.error('Error in boss cleanup cron:', error);
+      }
+    });
+  }
+
+  @Cron('* * * * *') // Every minute, 3.5% chance per tick (~28.6 min avg)
+  async trySpawnBoss(): Promise<void> {
+    await this.serverContextService.forEachServer(async () => {
+      try {
+        if (Math.random() > 0.035) {
+          return;
+        }
 
         const playerCount = await this.dbAccessorService
           .getCollection(USERS_COLLECTION)
@@ -134,14 +147,6 @@ export class BossService {
           .countDocuments({ isDefeated: false, tier: { $ne: BossTier.MYTHIC } });
 
         if (currentBossCount >= maxBosses) {
-          this.logger.log(
-            `Boss cap reached (${currentBossCount}/${maxBosses}), skipping spawn`,
-          );
-          return;
-        }
-
-        if (Math.random() > 0.7) {
-          this.logger.log('Spawn chance missed this interval');
           return;
         }
 
