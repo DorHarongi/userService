@@ -22,8 +22,8 @@ export class ReportsService {
       return {
         $or: [
           { attackerName: username },
-          { defenderName: username, reportType: { $ne: 'spy' } },
-          { defenderName: username, reportType: 'spy', attackerWon: false },
+          { defenderName: username, reportType: { $nin: ['spy', 'oasis_spy'] } },
+          { defenderName: username, reportType: { $in: ['spy', 'oasis_spy'] }, attackerWon: false },
         ],
       };
     }
@@ -71,8 +71,8 @@ export class ReportsService {
         defenderName: username,
         readByDefender: false,
         $or: [
-          { reportType: { $ne: 'spy' } },
-          { reportType: 'spy', attackerWon: false },
+          { reportType: { $nin: ['spy', 'oasis_spy'] } },
+          { reportType: { $in: ['spy', 'oasis_spy'] }, attackerWon: false },
         ],
       });
       
