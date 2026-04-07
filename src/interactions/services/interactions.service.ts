@@ -467,6 +467,39 @@ export class InteractionsService {
       );
     }
 
+    // Cooldown per sender-receiver pair (1 hour)
+    const cooldowns = sender.resourceTransferCooldowns || {};
+    const lastSentTo = cooldowns[recipientUsername];
+    if (lastSentTo) {
+      const elapsed = Date.now() - new Date(lastSentTo).getTime();
+      const remaining = TRANSFER_COOLDOWN_MS - elapsed;
+      if (remaining > 0) {
+        throw new HttpException(
+          `You recently sent resources to this player. You can send again in ${formatCountdown(remaining)}.`,
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+    }
+
+    // Daily transfer receive limit (per recipient)
+    const todayUTC = new Date().toISOString().slice(0, 10);
+    const recipientDate = recipient.dailyResourceTransfersReceivedDate || '';
+    const recipientCount = recipientDate === todayUTC
+      ? (recipient.dailyResourceTransfersReceived || 0)
+      : 0;
+
+    if (recipientCount >= DAILY_TRANSFER_RECEIVE_LIMIT) {
+      const now = new Date();
+      const midnight = new Date(now);
+      midnight.setUTCDate(midnight.getUTCDate() + 1);
+      midnight.setUTCHours(0, 0, 0, 0);
+      const msUntilReset = midnight.getTime() - now.getTime();
+      throw new HttpException(
+        `This player has reached their daily resource transfer limit (${DAILY_TRANSFER_RECEIVE_LIMIT}/${DAILY_TRANSFER_RECEIVE_LIMIT}). Resets in ${formatCountdown(msUntilReset)}.`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
     const villageName = recipientVillageName?.trim().toLowerCase();
     const recipientVillage = recipient.villages.find(
       (v) => v.villageName?.trim().toLowerCase() === villageName,
