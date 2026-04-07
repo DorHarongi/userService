@@ -45,6 +45,24 @@ import {
 
 const USERS_COLLECTION = 'users';
 const CENTER_BUILDING_LEVEL_FOR_NEW_VILLAGE = 10;
+const DAILY_TRANSFER_RECEIVE_LIMIT = 7;
+const TRANSFER_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
+
+function formatCountdown(ms: number): string {
+  const totalMinutes = Math.max(1, Math.ceil(ms / 60000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours === 0) {
+    return minutes === 1 ? '1 minute' : `${minutes} minutes`;
+  }
+  if (minutes === 0) {
+    return hours === 1 ? '1 hour' : `${hours} hours`;
+  }
+  const hourStr = hours === 1 ? '1 hour' : `${hours} hours`;
+  const minStr = minutes === 1 ? '1 minute' : `${minutes} minutes`;
+  return `${hourStr} ${minStr}`;
+}
 
 @Injectable()
 export class InteractionsService {
@@ -507,6 +525,39 @@ export class InteractionsService {
       );
     }
 
+    // Cooldown per sender-receiver pair (1 hour)
+    const cooldowns = sender.resourceTransferCooldowns || {};
+    const lastSentTo = cooldowns[dto.recipientUsername];
+    if (lastSentTo) {
+      const elapsed = Date.now() - new Date(lastSentTo).getTime();
+      const remaining = TRANSFER_COOLDOWN_MS - elapsed;
+      if (remaining > 0) {
+        throw new HttpException(
+          `You recently sent resources to this player. You can send again in ${formatCountdown(remaining)}.`,
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+    }
+
+    // Daily transfer receive limit (per recipient)
+    const todayUTC = new Date().toISOString().slice(0, 10);
+    const recipientDate = recipient.dailyResourceTransfersReceivedDate || '';
+    const recipientCount = recipientDate === todayUTC
+      ? (recipient.dailyResourceTransfersReceived || 0)
+      : 0;
+
+    if (recipientCount >= DAILY_TRANSFER_RECEIVE_LIMIT) {
+      const now = new Date();
+      const midnight = new Date(now);
+      midnight.setUTCDate(midnight.getUTCDate() + 1);
+      midnight.setUTCHours(0, 0, 0, 0);
+      const msUntilReset = midnight.getTime() - now.getTime();
+      throw new HttpException(
+        `This player has reached their daily resource transfer limit (${DAILY_TRANSFER_RECEIVE_LIMIT}/${DAILY_TRANSFER_RECEIVE_LIMIT}). Resets in ${formatCountdown(msUntilReset)}.`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
     const senderVillage = sender.villages[dto.senderVillageIndex];
     if (!senderVillage) {
       throw new HttpException('Sender village not found', HttpStatus.NOT_FOUND);
@@ -609,8 +660,24 @@ export class InteractionsService {
     const totalResourcesSent = woodToSend + stoneToSend + cropToSend;
     await this.dbAccessorService.getCollection('users').updateOne(
       { username: dto.senderUsername },
-      { $inc: { 'totalStats.resourcesSentToClan': totalResourcesSent } },
+      {
+        $inc: { 'totalStats.resourcesSentToClan': totalResourcesSent },
+        $set: { [`resourceTransferCooldowns.${dto.recipientUsername}`]: new Date() },
+      },
     );
+
+    // Update recipient's daily transfer counter (lazy reset if date changed)
+    if (recipientDate !== todayUTC) {
+      await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+        { username: dto.recipientUsername },
+        { $set: { dailyResourceTransfersReceived: 1, dailyResourceTransfersReceivedDate: todayUTC } },
+      );
+    } else {
+      await this.dbAccessorService.getCollection(USERS_COLLECTION).updateOne(
+        { username: dto.recipientUsername },
+        { $inc: { dailyResourceTransfersReceived: 1 } },
+      );
+    }
 
     this.dailyQuestService.incrementProgress(dto.senderUsername, DailyQuestTrackingType.SEND_RESOURCES_TO_CLAN, 1).catch(() => {});
     if (sender.clanName) {

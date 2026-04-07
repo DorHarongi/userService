@@ -56,6 +56,9 @@ export class User implements IUser
         pvpWinStreak?: number;
     };
     clanQuestRewardClaimedWeek?: number;
+    dailyResourceTransfersReceived?: number;
+    dailyResourceTransfersReceivedDate?: string; // YYYY-MM-DD UTC
+    resourceTransferCooldowns?: Record<string, Date>; // senderUsername → last transfer time
     lastLoginDate?: Date;
     loginCount?: number;
     isDeleted?: boolean;
