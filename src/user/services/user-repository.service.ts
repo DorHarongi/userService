@@ -79,7 +79,8 @@ export class UserRepositoryService {
 
         await reconcileAllVillages(this.dbAccessorService, result);
 
-        return new UserDTO(result);
+        const allRelics = await this.dbAccessorService.getCollection('relics').find({}).toArray();
+        return new UserDTO(result, allRelics as any[]);
     }
 
     async getNumberOfUserStatisticsPages(): Promise<number>
@@ -311,7 +312,10 @@ export class UserRepositoryService {
         if(!userVillage)
             throw new HttpException("User village doesnt exist", HttpStatus.NOT_FOUND)
 
-        return new VillageDTO(userVillage); 
+        const relicDocs = await this.dbAccessorService.getCollection('relics')
+            .find({ holderUsername: user.username, holderVillageName: userVillage.villageName }).toArray();
+        const relicIds = relicDocs.map((r: any) => r.relicId as string);
+        return new VillageDTO(userVillage, relicIds); 
     }
 
     // used by client every 10 seconds and after re-opening the game tab.
@@ -323,7 +327,8 @@ export class UserRepositoryService {
 
         await reconcileAllVillages(this.dbAccessorService, result);
 
-        return new UserDTO(result);
+        const allRelics = await this.dbAccessorService.getCollection('relics').find({}).toArray();
+        return new UserDTO(result, allRelics as any[]);
     }
 
     async getPublicProfile(username: string): Promise<PublicUserDTO>

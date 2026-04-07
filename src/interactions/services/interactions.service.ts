@@ -17,14 +17,16 @@ import {
   embassyMaximumDefenseTroopsByLevels,
   getArmySpeed,
   getResetCost,
-  getSkillBonus,
   getSkillPointsByAcademyLevel,
   getUsedSkillPoints,
   warehouseStorageByLevel,
+  getEffectiveSpeedBonus,
+  getRelicSpeedBonus,
+  DailyQuestTrackingType,
+  ClanQuestTrackingType,
 } from 'utils';
 import { BossService } from '../../bosses/services/boss.service';
 import { DbAccessorService } from '../../database/services/db-accessor.service';
-import { DailyQuestTrackingType, ClanQuestTrackingType } from 'utils';
 import { DailyQuestService } from '../../dailyQuests/daily-quest.service';
 import { ClanQuestService } from '../../clanQuests/clan-quest.service';
 import { MessagesService } from '../../messages/services/messages.service';
@@ -34,6 +36,7 @@ import { TroopsAmounts } from '../../user/models/troopsAmounts';
 import { User } from '../../user/models/user.entity';
 import { Village } from '../../user/models/village.entity';
 import { WorldService } from '../../world/services/world.service';
+import { getVillageRelicIds } from '../../relics/relic-bonus.helper';
 import {
   CreateVillageDTO,
   LearnSkillDTO,
@@ -215,14 +218,15 @@ export class InteractionsService {
       recipientVillage.location.y,
     );
     const armySpeed = getArmySpeed(dto.troops as any);
-    const quickStepBonus = getSkillBonus(
-      senderVillage.skills,
-      SkillCategory.QUICK_STEP,
+    const senderRelicIds = await getVillageRelicIds(
+      this.dbAccessorService,
+      dto.senderUsername,
+      senderVillage.villageName,
     );
     const travelTimeMs = calculateTravelTimeMs(
       distance,
       armySpeed,
-      quickStepBonus,
+      getEffectiveSpeedBonus(senderVillage.skills, senderRelicIds),
     );
     const departureTime = new Date();
     const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
@@ -374,14 +378,15 @@ export class InteractionsService {
       recipientVillage.location.y,
     );
     const armySpeed = getArmySpeed(dto.troops as any);
-    const quickStepReturn = getSkillBonus(
-      ownerVillage.skills,
-      SkillCategory.QUICK_STEP,
+    const ownerRelicIds = await getVillageRelicIds(
+      this.dbAccessorService,
+      dto.ownerUsername,
+      ownerVillage.villageName,
     );
     const travelTimeMs = calculateTravelTimeMs(
       distance,
       armySpeed,
-      quickStepReturn,
+      getEffectiveSpeedBonus(ownerVillage.skills, ownerRelicIds),
     );
     const departureTime = new Date();
     const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
@@ -670,7 +675,13 @@ export class InteractionsService {
       recipientVillage.location.y,
     );
     const speed = MERCHANT_SPEED;
-    const travelTimeMs = calculateTravelTimeMs(distance, speed, 0);
+    const merchantRelicIds = await getVillageRelicIds(
+      this.dbAccessorService,
+      dto.senderUsername,
+      senderVillage.villageName,
+    );
+    const relicSpeedBonus = getRelicSpeedBonus(merchantRelicIds);
+    const travelTimeMs = calculateTravelTimeMs(distance, speed, relicSpeedBonus);
     const departureTime = new Date();
     const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
 

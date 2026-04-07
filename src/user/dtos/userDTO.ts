@@ -1,6 +1,7 @@
 import { User, PendingBossReward } from "../models/user.entity";
 import { VillageDTO } from "./villageDTO";
 import { getSkillBonus, SkillCategory } from 'utils';
+import { RelicDocument } from '../../relics/relics.service';
 
 const BEGINNER_SHIELD_HOURS = 24;
 
@@ -41,7 +42,7 @@ export class UserDTO {
     };
     clanQuestRewardClaimedWeek?: number;
 
-    constructor(user: User) {
+    constructor(user: User, allRelics: RelicDocument[] = []) {
         this.username = user.username;
         this.joinDate = user.joinDate;
         this.clanName = user.clanName;
@@ -61,7 +62,10 @@ export class UserDTO {
         this.clanQuestRewardClaimedWeek = user.clanQuestRewardClaimedWeek;
         this.villages = [];
         for (const village of user.villages) {
-            this.villages.push(new VillageDTO(village));
+            const villageRelicIds = allRelics
+                .filter(r => r.holderUsername === user.username && r.holderVillageName === village.villageName)
+                .map(r => r.relicId);
+            this.villages.push(new VillageDTO(village, villageRelicIds));
         }
     }
 
@@ -73,7 +77,7 @@ export class UserDTO {
         return Math.max(0, BEGINNER_SHIELD_HOURS - hoursSinceJoin);
     }
 
-    // Calculate energy production multiplier from Adrenaline Surge skill on any village (best one wins)
+    // Calculate energy production multiplier from Adrenaline Surge skill (stacks across all villages)
     private calculateEnergyProductionMultiplier(user: User): number {
         let totalBonus = 0;
 

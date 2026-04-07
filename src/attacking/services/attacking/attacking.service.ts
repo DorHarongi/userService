@@ -9,19 +9,18 @@ import {
   catapultsAttackingStat,
   catapultsDefenceStat,
   getArmySpeed,
-  getSkillBonus,
   horsemenAttackingStat,
   horsemenDefenceStat,
   lootingAbilityOfTroops,
   magicianAttackingStat,
   magicianDefenceStat,
-  SkillCategory,
   spearFighterAttackingStat,
   spearFighterDefenceStat,
   swordFighterAttackingStat,
   swordFighterDefenceStat,
   wallDefenseByLevel,
   warehouseStorageByLevel,
+  getEffectiveSpeedBonus,
 } from 'utils';
 import { DbAccessorService } from '../../../database/services/db-accessor.service';
 import { ReportsService } from '../../../reports/services/reports/reports.service';
@@ -32,6 +31,7 @@ import { TroopsAmounts } from '../../../user/models/troopsAmounts';
 import { User } from '../../../user/models/user.entity';
 import { Village } from '../../../user/models/village.entity';
 import { AttackDTO } from '../../dtos/attackDTO';
+import { getVillageRelicIds } from '../../../relics/relic-bonus.helper';
 
 const MOVEMENTS_COLLECTION = 'movements';
 
@@ -266,14 +266,15 @@ export class AttackingService {
       defenderVillage.location.y,
     );
     const armySpeed = getArmySpeed(attackDTO.attackingTroops as any);
-    const quickStepBonus = getSkillBonus(
-      attackerVillage.skills,
-      SkillCategory.QUICK_STEP,
+    const attackerRelicIds = await getVillageRelicIds(
+      this.dbAccessorService,
+      attackDTO.attackerName,
+      attackerVillage.villageName,
     );
     const travelTimeMs = calculateTravelTimeMs(
       distance,
       armySpeed,
-      quickStepBonus,
+      getEffectiveSpeedBonus(attackerVillage.skills, attackerRelicIds),
     );
     const departureTime = new Date();
     const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);

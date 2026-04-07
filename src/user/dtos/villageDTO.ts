@@ -9,8 +9,7 @@ import {
     singleWorkerProductionSpeedPerSecond,
     factoriesProductionSpeedByLevel,
     Skills,
-    getSkillBonus,
-    SkillCategory,
+    getEffectiveProductionMultiplier,
 } from 'utils';
 
 export class VillageDTO {
@@ -31,8 +30,9 @@ export class VillageDTO {
     troopsInTransit: number;
     aliveSpies: number;
     spyDeathTimestamps: Date[];
+    heldRelicIds: string[];
 
-    constructor(village: Village) {
+    constructor(village: Village, heldRelicIds: string[] = []) {
         this.villageName = village.villageName;
         this.resourcesAmounts = village.resourcesAmounts;
         this.buildingsLevels = village.buildingsLevels;
@@ -47,29 +47,21 @@ export class VillageDTO {
         this.troopsInTransit = village.troopsInTransit || 0;
         this.aliveSpies = village.aliveSpies;
         this.spyDeathTimestamps = village.spyDeathTimestamps || [];
+        this.heldRelicIds = heldRelicIds;
 
-        // Calculate base production rates
-        let baseWoodProduction =
+        const baseWoodProduction =
             factoriesProductionSpeedByLevel[village.buildingsLevels.woodFactoryLevel] +
             village.resourcesWorkers.woodWorkers * singleWorkerProductionSpeedPerSecond;
-        let baseStoneProduction =
+        const baseStoneProduction =
             factoriesProductionSpeedByLevel[village.buildingsLevels.stoneMineLevel] +
             village.resourcesWorkers.stoneWorkers * singleWorkerProductionSpeedPerSecond;
-        let baseCropProduction =
+        const baseCropProduction =
             factoriesProductionSpeedByLevel[village.buildingsLevels.cropFarmLevel] +
             village.resourcesWorkers.cropWorkers * singleWorkerProductionSpeedPerSecond;
 
-        // Apply Gold Rush skill bonus to production
-        const goldRushBonus = getSkillBonus(village.skills, SkillCategory.GOLD_RUSH);
-        if (goldRushBonus > 0) {
-            const multiplier = 1 + goldRushBonus;
-            baseWoodProduction *= multiplier;
-            baseStoneProduction *= multiplier;
-            baseCropProduction *= multiplier;
-        }
-
-        this.woodProductionPerSecond = baseWoodProduction;
-        this.stoneProductionPerSecond = baseStoneProduction;
-        this.cropProductionPerSecond = baseCropProduction;
+        const productionMultiplier = getEffectiveProductionMultiplier(village.skills, heldRelicIds);
+        this.woodProductionPerSecond = baseWoodProduction * productionMultiplier;
+        this.stoneProductionPerSecond = baseStoneProduction * productionMultiplier;
+        this.cropProductionPerSecond = baseCropProduction * productionMultiplier;
     }
 }

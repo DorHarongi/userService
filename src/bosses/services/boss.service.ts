@@ -17,16 +17,16 @@ import {
   catapultsAttackingStat,
   getArmySpeed,
   getDistanceDamageMultiplier,
-  getSkillBonus,
+  getEffectiveSpeedBonus,
   horsemenAttackingStat,
   magicianAttackingStat,
   getMaxBossesOnMap,
   getMaxClaimsPerClan,
   MYTHIC_BOSS_DAILY_SPAWN_CHANCE,
   RELIC_NAMES,
-  SkillCategory,
   spearFighterAttackingStat,
   swordFighterAttackingStat,
+  getEffectiveAttackMultiplier,
   warehouseStorageByLevel,
   DailyQuestTrackingType,
   ClanQuestTrackingType,
@@ -113,7 +113,7 @@ export class BossService {
       );
       await this.messagesService.sendGlobalInboxMessage(
         `⚡ A Mythic Boss has appeared!`,
-        `A terrifying {boss:${mythicBoss.name}|${location.x}|${location.y}|${mythicBoss.id}} has emerged!\nAll clans, ready yourselves for battle — you will need to give everything you have got to bring it down.\n\nHint:\nEach Ancient Titan guards a unique Divine Relic.\nThe clan that deals the most damage claims the relic once the titan falls.\nRelics can be stolen by defeating the village where the relic is being kept — so keep it safe and guard it well.\nOnly entrust a relic to the clan member you trust most; a disloyal holder could leave and take it with them.\n\nThe first clan to collect all 5 Divine Relics will achieve ultimate victory.`,
+        `A terrifying {boss:${mythicBoss.name}|${location.x}|${location.y}|${mythicBoss.id}} has emerged!\nAll clans, ready yourselves for battle — you will need to give everything you have got to bring it down.\n\nHint:\nEach Ancient Titan guards a unique Divine Relic.\nThe clan that deals the most damage claims the relic once the titan falls.\nEach relic bestows a unique bonus to the village that holds it.\nRelics can be stolen by defeating the village where the relic is being kept — so keep it safe and guard it well.\nOnly entrust a relic to the clan member you trust most; a disloyal holder could leave and take it with them.\n\nThe first clan to collect all 5 Divine Relics will achieve ultimate victory.`,
       );
     });
   }
@@ -536,14 +536,14 @@ export class BossService {
       boss.y,
     );
     const armySpeed = getArmySpeed(dto.troops as any);
-    const quickStepBonus = getSkillBonus(
-      village.skills,
-      SkillCategory.QUICK_STEP,
+    const attackerRelicIds = await this.relicsService.getRelicIdsHeldByVillage(
+      username,
+      village.villageName,
     );
     const travelTimeMs = calculateTravelTimeMs(
       distance,
       armySpeed,
-      quickStepBonus,
+      getEffectiveSpeedBonus(village.skills, attackerRelicIds),
     );
     const departureTime = new Date();
     const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
@@ -644,11 +644,8 @@ export class BossService {
     const distanceMultiplier = getDistanceDamageMultiplier(distance);
 
     const distanceBonus = distanceMultiplier - 1;
-    const sharperBladesBonus = getSkillBonus(
-      village.skills,
-      SkillCategory.SHARPER_BLADES,
-    );
-    const damageMultiplier = 1 + distanceBonus + sharperBladesBonus;
+    const attackerRelicIds = await this.relicsService.getRelicIdsHeldByVillage(username, village.villageName);
+    const damageMultiplier = getEffectiveAttackMultiplier(village.skills, attackerRelicIds) + distanceBonus;
 
     const actualDamage = Math.floor(rawDamage * damageMultiplier);
 
@@ -965,11 +962,14 @@ export class BossService {
 
     const distance = calculateDistance(villageX, villageY, bossX, bossY);
     const armySpeed = getArmySpeed(troops as any);
-    const quickStepBonus = getSkillBonus(skills, SkillCategory.QUICK_STEP);
+    const attackerRelicIds = await this.relicsService.getRelicIdsHeldByVillage(
+      username,
+      villageName,
+    );
     const travelTimeMs = calculateTravelTimeMs(
       distance,
       armySpeed,
-      quickStepBonus,
+      getEffectiveSpeedBonus(skills, attackerRelicIds),
     );
     const departureTime = new Date();
     const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);

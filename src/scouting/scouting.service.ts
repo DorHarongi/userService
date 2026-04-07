@@ -20,10 +20,14 @@ import {
     warehouseStorageByLevel,
     oasisTierConfigs,
     OasisTier,
+    getEffectiveSpeedBonus,
+    getEffectiveSpyDetectionBonus,
+    DailyQuestTrackingType,
+    ClanQuestTrackingType,
 } from 'utils';
+import { getVillageRelicIds } from '../relics/relic-bonus.helper';
 import { AttackReport } from '../reports/models/attackReport.entity';
 import { Oasis, getTotalGarrisonTroops } from '../oasis/models/oasis.entity';
-import { DailyQuestTrackingType, ClanQuestTrackingType } from 'utils';
 import { DailyQuestService } from '../dailyQuests/daily-quest.service';
 import { ClanQuestService } from '../clanQuests/clan-quest.service';
 
@@ -91,8 +95,16 @@ export class ScoutingService {
             defenderVillage.location.y,
         );
 
-        const quickStepBonus = getSkillBonus(attackerVillage.skills, SkillCategory.QUICK_STEP);
-        const travelTimeMs = calculateTravelTimeMs(distance, SPY_SPEED, quickStepBonus);
+        const attackerRelicIds = await getVillageRelicIds(
+            this.dbAccessorService,
+            attackerUsername,
+            attackerVillageName,
+        );
+        const travelTimeMs = calculateTravelTimeMs(
+            distance,
+            SPY_SPEED,
+            getEffectiveSpeedBonus(attackerVillage.skills, attackerRelicIds),
+        );
 
         const departureTime = new Date();
         const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
@@ -163,8 +175,16 @@ export class ScoutingService {
             attackerVillage.location.x, attackerVillage.location.y,
             defenderVillage.location.x, defenderVillage.location.y,
         );
-        const quickStepBonus = getSkillBonus(attackerVillage.skills, SkillCategory.QUICK_STEP);
-        const travelTimeMs = calculateTravelTimeMs(distance, SPY_SPEED, quickStepBonus);
+        const attackerRelicIds = await getVillageRelicIds(
+            this.dbAccessorService,
+            attackerUsername,
+            attackerVillageName,
+        );
+        const travelTimeMs = calculateTravelTimeMs(
+            distance,
+            SPY_SPEED,
+            getEffectiveSpeedBonus(attackerVillage.skills, attackerRelicIds),
+        );
 
         const departureTime = new Date();
         const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
@@ -226,8 +246,16 @@ export class ScoutingService {
             attackerVillage.location.x, attackerVillage.location.y,
             oasis.x, oasis.y,
         );
-        const quickStepBonus = getSkillBonus(attackerVillage.skills, SkillCategory.QUICK_STEP);
-        const travelTimeMs = calculateTravelTimeMs(distance, SPY_SPEED, quickStepBonus);
+        const attackerRelicIds = await getVillageRelicIds(
+            this.dbAccessorService,
+            attackerUsername,
+            attackerVillageName,
+        );
+        const travelTimeMs = calculateTravelTimeMs(
+            distance,
+            SPY_SPEED,
+            getEffectiveSpeedBonus(attackerVillage.skills, attackerRelicIds),
+        );
 
         const departureTime = new Date();
         const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
@@ -296,8 +324,16 @@ export class ScoutingService {
             oasis.y,
         );
 
-        const quickStepBonus = getSkillBonus(attackerVillage.skills, SkillCategory.QUICK_STEP);
-        const travelTimeMs = calculateTravelTimeMs(distance, SPY_SPEED, quickStepBonus);
+        const attackerRelicIds = await getVillageRelicIds(
+            this.dbAccessorService,
+            attackerUsername,
+            attackerVillageName,
+        );
+        const travelTimeMs = calculateTravelTimeMs(
+            distance,
+            SPY_SPEED,
+            getEffectiveSpeedBonus(attackerVillage.skills, attackerRelicIds),
+        );
 
         const departureTime = new Date();
         const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
@@ -387,7 +423,8 @@ export class ScoutingService {
         const wallLevel = defenderVillage.buildingsLevels.wallLevel || 0;
         const stableLevel = attackerVillage.buildingsLevels.stableLevel || 0;
         const silentStealthBonus = getSkillBonus(attackerVillage.skills, SkillCategory.SILENT_STEALTH);
-        const detectionChance = getDetectionChance(wallLevel, stableLevel, silentStealthBonus);
+        const defenderRelicIds = await getVillageRelicIds(this.dbAccessorService, mission.defenderUsername, defenderVillage.villageName);
+        const detectionChance = getDetectionChance(wallLevel, stableLevel, silentStealthBonus, getEffectiveSpyDetectionBonus(defenderRelicIds));
 
         const totalSpies = mission.spyCount || 1;
         let caughtCount = 0;
@@ -442,8 +479,16 @@ export class ScoutingService {
                 attackerVillage.location.x, attackerVillage.location.y,
                 defenderVillage.location.x, defenderVillage.location.y,
             );
-            const quickStepBonus = getSkillBonus(attackerVillage.skills, SkillCategory.QUICK_STEP);
-            const travelTimeMs = calculateTravelTimeMs(distance, SPY_SPEED, quickStepBonus);
+            const attackerRelicIds = await getVillageRelicIds(
+                this.dbAccessorService,
+                attacker.username,
+                attackerVillage.villageName,
+            );
+            const travelTimeMs = calculateTravelTimeMs(
+                distance,
+                SPY_SPEED,
+                getEffectiveSpeedBonus(attackerVillage.skills, attackerRelicIds),
+            );
             const departureTime = new Date();
             const returnArrival = new Date(departureTime.getTime() + travelTimeMs);
 
@@ -492,8 +537,14 @@ export class ScoutingService {
         let caughtCount = 0;
 
         if (isOccupied) {
+            const garrison = oasis.garrison!;
             const silentStealthBonus = getSkillBonus(attackerVillage.skills, SkillCategory.SILENT_STEALTH);
-            const detectionChance = Math.max(5, 25 - silentStealthBonus);
+            let relicDetection = 0;
+            if (garrison?.username && garrison?.villageName) {
+                const oasisDefenderRelicIds = await getVillageRelicIds(this.dbAccessorService, garrison.username, garrison.villageName);
+                relicDetection = getEffectiveSpyDetectionBonus(oasisDefenderRelicIds);
+            }
+            const detectionChance = Math.max(5, 25 - silentStealthBonus + relicDetection);
             for (let i = 0; i < totalSpies; i++) {
                 if (Math.random() * 100 < detectionChance) caughtCount++;
             }
@@ -545,8 +596,16 @@ export class ScoutingService {
                 attackerVillage.location.x, attackerVillage.location.y,
                 oasis.x, oasis.y,
             );
-            const quickStepBonus = getSkillBonus(attackerVillage.skills, SkillCategory.QUICK_STEP);
-            const travelTimeMs = calculateTravelTimeMs(distance, SPY_SPEED, quickStepBonus);
+            const attackerRelicIds = await getVillageRelicIds(
+                this.dbAccessorService,
+                attacker.username,
+                attackerVillage.villageName,
+            );
+            const travelTimeMs = calculateTravelTimeMs(
+                distance,
+                SPY_SPEED,
+                getEffectiveSpeedBonus(attackerVillage.skills, attackerRelicIds),
+            );
             const departureTime = new Date();
             const returnArrival = new Date(departureTime.getTime() + travelTimeMs);
 

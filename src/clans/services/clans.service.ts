@@ -6,11 +6,14 @@ import {
   calculateDistance,
   getArmySpeed,
   calculateTravelTimeMs,
+  EMPTY_SKILLS,
+  getEffectiveSpeedBonus,
 } from 'utils';
 import { AnnouncementsService } from '../../announcements/announcements.service';
 import { DbAccessorService } from '../../database/services/db-accessor.service';
 import { MessagesService } from '../../messages/services/messages.service';
 import { RelicsService } from '../../relics/relics.service';
+import { getVillageRelicIds } from '../../relics/relic-bonus.helper';
 import { User } from '../../user/models/user.entity';
 import {
   ClanDTO,
@@ -545,13 +548,13 @@ export class ClansService {
     clanTroops.catapults = Math.max(0, (clanTroops.catapults || 0) - (troops.catapults || 0));
   }
 
-  private createReturnMovement(
+  private async createReturnMovement(
     senderVillage: any,
     recipientVillage: any,
     ownerUsername: string,
     ownerVillageName: string,
     troops: any,
-  ): any {
+  ): Promise<any> {
     const distance = calculateDistance(
       senderVillage.location.x,
       senderVillage.location.y,
@@ -559,7 +562,19 @@ export class ClansService {
       recipientVillage.location.y,
     );
     const armySpeed = getArmySpeed(troops as any);
-    const travelTimeMs = calculateTravelTimeMs(distance, armySpeed, 0);
+    const ownerRelicIds = await getVillageRelicIds(
+      this.dbAccessorService,
+      ownerUsername,
+      ownerVillageName,
+    );
+    const travelTimeMs = calculateTravelTimeMs(
+      distance,
+      armySpeed,
+      getEffectiveSpeedBonus(
+        recipientVillage?.skills ?? EMPTY_SKILLS,
+        ownerRelicIds,
+      ),
+    );
     const departureTime = new Date();
     const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
 
@@ -606,7 +621,7 @@ export class ClansService {
           );
 
         // Create return movement (troops travel back at slowest unit speed)
-        const movement = this.createReturnMovement(
+        const movement = await this.createReturnMovement(
           recipientVillage,
           village,
           username,
@@ -661,13 +676,15 @@ export class ClansService {
 
           this.subtractClanTroops(recipientVillage.clanTroops, support.troops);
 
-          movementsToInsert.push(this.createReturnMovement(
-            recipientVillage,
-            senderVillage,
-            sender.username,
-            senderVillage.villageName,
-            { ...support.troops },
-          ));
+          movementsToInsert.push(
+            await this.createReturnMovement(
+              recipientVillage,
+              senderVillage,
+              sender.username,
+              senderVillage.villageName,
+              { ...support.troops },
+            ),
+          );
         }
 
         senderVillage.supportSent = senderVillage.supportSent.filter(

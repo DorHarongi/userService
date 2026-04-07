@@ -12,8 +12,12 @@ import { TroopsAmounts } from '../../user/models/troopsAmounts';
 import { ResourcesAmounts } from '../../user/models/resourcesAmounts';
 import { BossService } from '../../bosses/services/boss.service';
 import { OasisService } from '../../oasis/oasis.service';
-import { RELIC_NAMES, RELIC_TRANSFER_COOLDOWN_MS, DailyQuestTrackingType, ClanQuestTrackingType, embassyMaximumDefenseTroopsByLevels } from 'utils';
 import {
+    RELIC_NAMES,
+    RELIC_TRANSFER_COOLDOWN_MS,
+    DailyQuestTrackingType,
+    ClanQuestTrackingType,
+    embassyMaximumDefenseTroopsByLevels,
     wallDefenseByLevel,
     spearFighterDefenceStat,
     swordFighterDefenceStat,
@@ -36,7 +40,11 @@ import {
     calculateTravelTimeMs,
     getSkillBonus,
     SkillCategory,
+    getEffectiveAttackMultiplier,
+    getEffectiveDefenseMultiplier,
+    getEffectiveSpeedBonus,
 } from 'utils';
+import { getVillageRelicIds } from '../../relics/relic-bonus.helper';
 import { AttackReport } from '../../reports/models/attackReport.entity';
 import { RelicsService } from '../../relics/relics.service';
 import { AnnouncementsService } from '../../announcements/announcements.service';
@@ -238,17 +246,14 @@ export class MovementService {
 
         const baseAttackingPower = this.calculateAttackingPower(attackerTroops);
 
-        // Sharper Blades skill: increases attacking power
         const attackerSkills = attackerVillage.skills;
-        const sharperBladesBonus = getSkillBonus(attackerSkills, SkillCategory.SHARPER_BLADES);
-        const attackingPower = Math.floor(baseAttackingPower * (1 + sharperBladesBonus));
+        const attackerRelicIds = await getVillageRelicIds(this.dbAccessorService, movement.senderUsername, attackerVillage.villageName);
+        const attackingPower = Math.floor(baseAttackingPower * getEffectiveAttackMultiplier(attackerSkills, attackerRelicIds));
 
         const baseVillageDefence = this.calculateVillageDefence(defenceTroops, supportTroops, wallLevel);
 
-        // Heroic Shield skill: increases total defence when defending
-        const defenderSkills = defenderVillage.skills;
-        const heroicShieldBonus = getSkillBonus(defenderSkills, SkillCategory.HEROIC_SHIELD);
-        const villageDefence = Math.floor(baseVillageDefence * (1 + heroicShieldBonus));
+        const defenderRelicIds = await getVillageRelicIds(this.dbAccessorService, movement.targetUsername, defenderVillage.villageName);
+        const villageDefence = Math.floor(baseVillageDefence * getEffectiveDefenseMultiplier(defenderVillage.skills, defenderRelicIds));
 
         const attackToDefenceRatio = attackingPower / (villageDefence || 1);
         const defenceToAttackRatio = villageDefence / (attackingPower || 1);
@@ -279,7 +284,7 @@ export class MovementService {
             loot = this.calculateLoot(attackerTroops, defenderVillage.resourcesAmounts);
 
             const filthyThiefBonus = getSkillBonus(attackerSkills, SkillCategory.FILTHY_THIEF);
-            const ironVaultBonus = getSkillBonus(defenderSkills, SkillCategory.IRON_VAULT);
+            const ironVaultBonus = getSkillBonus(defenderVillage.skills, SkillCategory.IRON_VAULT);
             const lootModifier = Math.max(0, 1 + filthyThiefBonus - ironVaultBonus);
             if (lootModifier !== 1) {
                 loot = new ResourcesAmounts(
@@ -513,8 +518,16 @@ export class MovementService {
                 defenderVillage.location.y,
             );
             const armySpeed = getArmySpeed(survivingAttackers as any);
-            const quickStepBonus = getSkillBonus(attackerVillage.skills, SkillCategory.QUICK_STEP);
-            const travelTimeMs = calculateTravelTimeMs(distance, armySpeed, quickStepBonus);
+            const returnRelicIds = await getVillageRelicIds(
+                this.dbAccessorService,
+                attacker.username,
+                attackerVillage.villageName,
+            );
+            const travelTimeMs = calculateTravelTimeMs(
+                distance,
+                armySpeed,
+                getEffectiveSpeedBonus(attackerVillage.skills, returnRelicIds),
+            );
             const departureTime = new Date();
             const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
 

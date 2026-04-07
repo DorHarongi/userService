@@ -14,8 +14,6 @@ import {
     calculateDistance,
     getArmySpeed,
     calculateTravelTimeMs,
-    getSkillBonus,
-    SkillCategory,
     warehouseStorageByLevel,
     spearFighterAttackingStat,
     swordFighterAttackingStat,
@@ -31,6 +29,12 @@ import {
     magicianDefenceStat,
     horsemenDefenceStat,
     catapultsDefenceStat,
+    getEffectiveAttackMultiplier,
+    getEffectiveDefenseMultiplier,
+    getEffectiveSpeedBonus,
+    EMPTY_SKILLS,
+    DailyQuestTrackingType,
+    ClanQuestTrackingType,
 } from 'utils';
 import { DbAccessorService } from '../database/services/db-accessor.service';
 import { ServerContextService } from '../database/services/server-context.service';
@@ -41,10 +45,10 @@ import { User } from '../user/models/user.entity';
 import { TroopsAmounts } from '../user/models/troopsAmounts';
 import { ResourcesAmounts } from '../user/models/resourcesAmounts';
 import { AttackReport } from '../reports/models/attackReport.entity';
-import { DailyQuestTrackingType, ClanQuestTrackingType } from 'utils';
 import { DailyQuestService } from '../dailyQuests/daily-quest.service';
 import { ClanQuestService } from '../clanQuests/clan-quest.service';
 import { unlockAchievements } from '../user/services/achievement-utils';
+import { getVillageRelicIds } from '../relics/relic-bonus.helper';
 import { Oasis, OasisGarrison, OasisGarrisonContribution, getGarrisonContributions, getTotalGarrisonTroops, getTotalTroopCount } from './models/oasis.entity';
 
 const OASES_COLLECTION = 'oases';
@@ -341,8 +345,16 @@ export class OasisService {
 
             const distance = calculateDistance(village.location.x, village.location.y, oasis.x, oasis.y);
             const armySpeed = getArmySpeed(troops as any);
-            const quickStepBonus = getSkillBonus(village.skills, SkillCategory.QUICK_STEP);
-            const travelTimeMs = calculateTravelTimeMs(distance, armySpeed, quickStepBonus);
+            const villageRelicIds = await getVillageRelicIds(
+                this.dbAccessorService,
+                garrison.username,
+                contrib.villageName,
+            );
+            const travelTimeMs = calculateTravelTimeMs(
+                distance,
+                armySpeed,
+                getEffectiveSpeedBonus(village.skills, villageRelicIds),
+            );
             const departureTime = new Date();
             const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
 
@@ -575,8 +587,16 @@ export class OasisService {
             oasis.y,
         );
         const armySpeed = getArmySpeed(troopsObj as any);
-        const quickStepBonus = getSkillBonus(village.skills, SkillCategory.QUICK_STEP);
-        const travelTimeMs = calculateTravelTimeMs(distance, armySpeed, quickStepBonus);
+        const villageRelicIds = await getVillageRelicIds(
+            this.dbAccessorService,
+            username,
+            villageName,
+        );
+        const travelTimeMs = calculateTravelTimeMs(
+            distance,
+            armySpeed,
+            getEffectiveSpeedBonus(village.skills, villageRelicIds),
+        );
         const departureTime = new Date();
         const arrivalTime = new Date(departureTime.getTime() + travelTimeMs);
 
@@ -655,8 +675,16 @@ export class OasisService {
 
             const distance = calculateDistance(village.location.x, village.location.y, oasis.x, oasis.y);
             const armySpeed = getArmySpeed(troops as any);
-            const quickStepBonus = getSkillBonus(village.skills, SkillCategory.QUICK_STEP);
-            const travelTimeMs = calculateTravelTimeMs(distance, armySpeed, quickStepBonus);
+            const villageRelicIds = await getVillageRelicIds(
+                this.dbAccessorService,
+                username,
+                contrib.villageName,
+            );
+            const travelTimeMs = calculateTravelTimeMs(
+                distance,
+                armySpeed,
+                getEffectiveSpeedBonus(village.skills, villageRelicIds),
+            );
             if (travelTimeMs > maxTravelTimeMs) maxTravelTimeMs = travelTimeMs;
 
             const departureTime = new Date();
@@ -796,8 +824,16 @@ export class OasisService {
 
             const distance = calculateDistance(village.location.x, village.location.y, oasis.x, oasis.y);
             const armySpeed = getArmySpeed(troops as any);
-            const quickStepBonus = getSkillBonus(village.skills, SkillCategory.QUICK_STEP);
-            const travelTimeMs = calculateTravelTimeMs(distance, armySpeed, quickStepBonus);
+            const villageRelicIds = await getVillageRelicIds(
+                this.dbAccessorService,
+                username,
+                contrib.villageName,
+            );
+            const travelTimeMs = calculateTravelTimeMs(
+                distance,
+                armySpeed,
+                getEffectiveSpeedBonus(village.skills, villageRelicIds),
+            );
             if (travelTimeMs > maxTravelTimeMs) maxTravelTimeMs = travelTimeMs;
 
             const departureTime = new Date();
@@ -1280,15 +1316,13 @@ export class OasisService {
         if (!attackerVillage) return;
 
         const attackingPower = this.calculateAttackingPower(attackerTroops);
-        const sharperBladesBonus = getSkillBonus(
-            attackerVillage.skills,
-            SkillCategory.SHARPER_BLADES,
-        );
-        const totalAttackingPower = Math.floor(attackingPower * (1 + sharperBladesBonus));
+        const attackerRelicIds = await getVillageRelicIds(this.dbAccessorService, movement.senderUsername, attackerVillage.villageName);
+        const totalAttackingPower = Math.floor(attackingPower * getEffectiveAttackMultiplier(attackerVillage.skills, attackerRelicIds));
 
-        const defenderDefence = this.calculateGarrisonDefenceWithVillageBonuses(
+        const defenderDefence = await this.calculateGarrisonDefenceWithVillageBonuses(
             defenderContributions,
             defenderUser,
+            garrison.username,
         );
 
         const attackToDefenceRatio = totalAttackingPower / (defenderDefence || 1);
@@ -1757,11 +1791,13 @@ export class OasisService {
         );
     }
 
-    private calculateGarrisonDefenceWithVillageBonuses(
+    private async calculateGarrisonDefenceWithVillageBonuses(
         contributions: OasisGarrisonContribution[],
         defenderUser: User | null,
-    ): number {
-        return contributions.reduce((sum, contribution) => {
+        defenderUsername: string,
+    ): Promise<number> {
+        let sum = 0;
+        for (const contribution of contributions) {
             const troops = new TroopsAmounts(
                 contribution.troops.spearFighters || 0,
                 contribution.troops.swordFighters || 0,
@@ -1775,11 +1811,19 @@ export class OasisService {
             const village = defenderUser?.villages.find(
                 (v) => v.villageName === contribution.villageName,
             );
-            const heroicShieldBonus = village
-                ? getSkillBonus(village.skills, SkillCategory.HEROIC_SHIELD)
-                : 0;
-            return sum + Math.floor(baseDefence * (1 + heroicShieldBonus));
-        }, 0);
+            let contribRelicIds: string[] = [];
+            if (defenderUsername && contribution.villageName) {
+                contribRelicIds = await getVillageRelicIds(
+                    this.dbAccessorService,
+                    defenderUsername,
+                    contribution.villageName,
+                );
+            }
+            const skills = village?.skills ?? EMPTY_SKILLS;
+            const defMultiplier = getEffectiveDefenseMultiplier(skills, contribRelicIds);
+            sum += Math.floor(baseDefence * defMultiplier);
+        }
+        return sum;
     }
 
     private calculateKilledTroopsByRatio(
