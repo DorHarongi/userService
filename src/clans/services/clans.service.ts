@@ -928,6 +928,9 @@ export class ClansService {
         .getCollection(RELICS_COLLECTION)
         .updateMany({ holderClanName: oldClanName }, { $set: { holderClanName: newClanName } }),
       this.dbAccessorService
+        .getCollection(RELICS_COLLECTION)
+        .updateMany({ originClanName: oldClanName }, { $set: { originClanName: newClanName } }),
+      this.dbAccessorService
         .getCollection('chatMessages')
         .updateMany({ clanName: oldClanName }, { $set: { clanName: newClanName } }),
       this.dbAccessorService
@@ -936,6 +939,12 @@ export class ClansService {
       this.dbAccessorService
         .getCollection('bosses')
         .updateMany({ claimedByClanName: oldClanName }, { $set: { claimedByClanName: newClanName } }),
+      this.dbAccessorService
+        .getCollection('messages')
+        .updateMany(
+          { 'metadata.clanName': oldClanName },
+          { $set: { 'metadata.clanName': newClanName } },
+        ),
     ]);
 
     return { success: true };
