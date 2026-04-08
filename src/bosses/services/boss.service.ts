@@ -858,7 +858,8 @@ export class BossService {
 
   /**
    * Awards the mythic boss relic to the clan leader's first village of the clan
-   * that dealt the most total damage.
+   * that dealt the most total damage. Skips clans with no active (non-deleted)
+   * members, falling through to the next clan in damage order.
    */
   private async awardMythicRelicToTopClan(boss: IBoss): Promise<void> {
     const relicId = (boss as any).relicId;
@@ -880,32 +881,54 @@ export class BossService {
     for (const d of damageDocs) {
       byClan[d.clanName] = (byClan[d.clanName] ?? 0) + d.damage;
     }
-    const topClanEntry = Object.entries(byClan).sort((a, b) => b[1] - a[1])[0];
-    if (!topClanEntry) return;
+    const rankedClans = Object.entries(byClan).sort((a, b) => b[1] - a[1]);
 
-    const [topClanName] = topClanEntry;
-    const clan = (await this.dbAccessorService
-      .getCollection(CLANS_COLLECTION)
-      .findOne({ clanName: topClanName })) as IClan;
-    if (!clan) return;
+    for (const [candidateClanName] of rankedClans) {
+      if (!candidateClanName) continue;
 
-    const leader = (await this.dbAccessorService
-      .getCollection(USERS_COLLECTION)
-      .findOne({ username: clan.leaderUsername })) as User;
-    if (!leader || !leader.villages || leader.villages.length === 0) return;
+      const clan = (await this.dbAccessorService
+        .getCollection(CLANS_COLLECTION)
+        .findOne({ clanName: candidateClanName })) as IClan;
+      if (!clan) continue;
 
-    const firstVillage = leader.villages[0];
-    const relicName = await this.relicsService.assignRelicToClan(
-      relicId,
-      topClanName,
-      clan.leaderUsername,
-      firstVillage.villageName,
-    );
+      const hasActiveMembers = await this.dbAccessorService
+        .getCollection(USERS_COLLECTION)
+        .findOne({ username: { $in: clan.members }, isDeleted: { $ne: true } });
+      if (!hasActiveMembers) continue;
 
-    await this.messagesService.sendGlobalInboxMessage(
-      `The Mythic Beast has fallen!`,
-      `The world trembles — {clan:${topClanName}} has slain the ${boss.name} and claimed the ${relicName}. Their power grows beyond measure.`,
-    );
+      const leader = (await this.dbAccessorService
+        .getCollection(USERS_COLLECTION)
+        .findOne({ username: clan.leaderUsername })) as User;
+      if (!leader || leader.isDeleted || !leader.villages || leader.villages.length === 0) {
+        const anyActiveMember = hasActiveMembers as User;
+        if (!anyActiveMember.villages || anyActiveMember.villages.length === 0) continue;
+
+        const relicName = await this.relicsService.assignRelicToClan(
+          relicId,
+          candidateClanName,
+          anyActiveMember.username,
+          anyActiveMember.villages[0].villageName,
+        );
+        await this.messagesService.sendGlobalInboxMessage(
+          `The Mythic Beast has fallen!`,
+          `The world trembles — {clan:${candidateClanName}} has slain the ${boss.name} and claimed the ${relicName}. Their power grows beyond measure.`,
+        );
+        return;
+      }
+
+      const firstVillage = leader.villages[0];
+      const relicName = await this.relicsService.assignRelicToClan(
+        relicId,
+        candidateClanName,
+        clan.leaderUsername,
+        firstVillage.villageName,
+      );
+      await this.messagesService.sendGlobalInboxMessage(
+        `The Mythic Beast has fallen!`,
+        `The world trembles — {clan:${candidateClanName}} has slain the ${boss.name} and claimed the ${relicName}. Their power grows beyond measure.`,
+      );
+      return;
+    }
   }
 
   private async returnTroopsToVillage(
@@ -1210,7 +1233,36 @@ export class BossService {
         (byClan[clan].players[r.attackerUsername] || 0) + r.actualDamage;
     }
 
+    const clanNames = Object.keys(byClan).filter(c => c !== 'No Clan');
+    const activeClans = new Set<string>();
+    if (clanNames.length > 0) {
+      const clansWithActiveMembers = await this.dbAccessorService
+        .getCollection(CLANS_COLLECTION)
+        .aggregate([
+          { $match: { clanName: { $in: clanNames } } },
+          {
+            $lookup: {
+              from: USERS_COLLECTION,
+              localField: 'members',
+              foreignField: 'username',
+              as: 'memberUsers',
+            },
+          },
+          {
+            $match: {
+              'memberUsers': { $elemMatch: { isDeleted: { $ne: true } } },
+            },
+          },
+          { $project: { clanName: 1 } },
+        ])
+        .toArray();
+      for (const c of clansWithActiveMembers) {
+        activeClans.add((c as any).clanName);
+      }
+    }
+
     return Object.entries(byClan)
+      .filter(([clanName]) => clanName === 'No Clan' || activeClans.has(clanName))
       .map(([clanName, data]) => ({
         clanName,
         totalDamage: data.totalDamage,

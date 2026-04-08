@@ -724,6 +724,11 @@ export class ScoutingService {
         report.attackerVillageY = attackerVillage.location.y;
         report.defenderVillageX = defenderVillage.location.x;
         report.defenderVillageY = defenderVillage.location.y;
+        report.defenderResources = {
+            wood: defenderResources.woodAmount,
+            stone: defenderResources.stonesAmount,
+            crop: defenderResources.cropAmount,
+        };
         if (spySentCount > 1) {
             report.spySentCount = spySentCount;
             report.spyCaughtCount = spyCaughtCount;

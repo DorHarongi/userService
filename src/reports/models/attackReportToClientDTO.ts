@@ -57,6 +57,8 @@ export class AttackReportToClientDTO {
     spySentCount?: number;
     spyCaughtCount?: number;
 
+    defenderResources?: { wood: number; stone: number; crop: number };
+
     constructor(attackReport: AttackReport, viewingUsername?: string) {
         this.id = attackReport._id?.toString() || '';
         this.attackerName = attackReport.attackerName;
@@ -112,5 +114,6 @@ export class AttackReportToClientDTO {
         this.oasisResources = attackReport.oasisResources;
         this.spySentCount = attackReport.spySentCount;
         this.spyCaughtCount = attackReport.spyCaughtCount;
+        this.defenderResources = attackReport.defenderResources;
     }
 }

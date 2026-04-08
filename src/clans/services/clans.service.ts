@@ -134,10 +134,32 @@ export class ClansService {
   }
 
   async getNumberOfClanStatisticsPages(): Promise<number> {
-    const numberOfClans: number = await this.dbAccessorService
+    const result = await this.dbAccessorService
       .getCollection(CLANS_COLLECTION)
-      .estimatedDocumentCount();
-    return Math.ceil(numberOfClans / MAX_CLANS_IN_EACH_STATISTICS_PAGE);
+      .aggregate([
+        {
+          $lookup: {
+            from: USERS_COLLECTION,
+            localField: 'members',
+            foreignField: 'username',
+            as: 'memberUsers',
+          },
+        },
+        {
+          $addFields: {
+            activeMemberCount: {
+              $size: {
+                $filter: { input: '$memberUsers', as: 'u', cond: { $ne: ['$$u.isDeleted', true] } },
+              },
+            },
+          },
+        },
+        { $match: { activeMemberCount: { $gt: 0 } } },
+        { $count: 'total' },
+      ])
+      .toArray();
+    const total = result[0]?.total || 0;
+    return Math.ceil(total / MAX_CLANS_IN_EACH_STATISTICS_PAGE);
   }
 
   async getClanStatisticsPage(clanName: string): Promise<number> {
@@ -154,10 +176,18 @@ export class ClansService {
         },
         {
           $addFields: {
+            activeMemberUsers: {
+              $filter: { input: '$memberUsers', as: 'u', cond: { $ne: ['$$u.isDeleted', true] } },
+            },
+          },
+        },
+        { $match: { $expr: { $gt: [{ $size: '$activeMemberUsers' }, 0] } } },
+        {
+          $addFields: {
             totalPopulation: {
               $sum: {
                 $map: {
-                  input: '$memberUsers',
+                  input: '$activeMemberUsers',
                   as: 'user',
                   in: { $sum: { $map: { input: '$$user.villages', as: 'village', in: '$$village.population' } } },
                 },
@@ -176,7 +206,6 @@ export class ClansService {
   }
 
   async getClanStatistics(page: number): Promise<ClanStatisticDTO[]> {
-    // Aggregate clan statistics with total population from members
     const result = await this.dbAccessorService
       .getCollection(CLANS_COLLECTION)
       .aggregate([
@@ -190,10 +219,18 @@ export class ClansService {
         },
         {
           $addFields: {
+            activeMemberUsers: {
+              $filter: { input: '$memberUsers', as: 'u', cond: { $ne: ['$$u.isDeleted', true] } },
+            },
+          },
+        },
+        { $match: { $expr: { $gt: [{ $size: '$activeMemberUsers' }, 0] } } },
+        {
+          $addFields: {
             totalPopulation: {
               $sum: {
                 $map: {
-                  input: '$memberUsers',
+                  input: '$activeMemberUsers',
                   as: 'user',
                   in: {
                     $sum: {
@@ -228,7 +265,7 @@ export class ClansService {
             clanName: 1,
             description: 1,
             leaderUsername: 1,
-            memberCount: { $size: '$members' },
+            memberCount: { $size: '$activeMemberUsers' },
             totalPopulation: 1,
             isOpen: 1,
             totalBossesKilled: { $ifNull: ['$totalBossesKilled', 0] },

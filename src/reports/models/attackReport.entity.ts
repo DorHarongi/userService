@@ -63,6 +63,8 @@ export class AttackReport implements IAttackReport {
     spySentCount?: number;
     spyCaughtCount?: number;
 
+    defenderResources?: { wood: number; stone: number; crop: number };
+
     constructor(
         attackerName: string,
         attackerVillageName: string,
