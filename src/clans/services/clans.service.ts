@@ -916,6 +916,28 @@ export class ClansService {
         { $set: { 'pendingClanRequests.$': newClanName } },
       );
 
+    // Propagate rename to all denormalized clanName references
+    await Promise.all([
+      this.dbAccessorService
+        .getCollection('mythicBossDamage')
+        .updateMany({ clanName: oldClanName }, { $set: { clanName: newClanName } }),
+      this.dbAccessorService
+        .getCollection('raidReports')
+        .updateMany({ attackerClanName: oldClanName }, { $set: { attackerClanName: newClanName } }),
+      this.dbAccessorService
+        .getCollection(RELICS_COLLECTION)
+        .updateMany({ holderClanName: oldClanName }, { $set: { holderClanName: newClanName } }),
+      this.dbAccessorService
+        .getCollection('chatMessages')
+        .updateMany({ clanName: oldClanName }, { $set: { clanName: newClanName } }),
+      this.dbAccessorService
+        .getCollection('clanQuestProgress')
+        .updateMany({ clanName: oldClanName }, { $set: { clanName: newClanName } }),
+      this.dbAccessorService
+        .getCollection('bosses')
+        .updateMany({ claimedByClanName: oldClanName }, { $set: { claimedByClanName: newClanName } }),
+    ]);
+
     return { success: true };
   }
 
