@@ -72,6 +72,7 @@ export interface Movement {
     oasisName?: string;
     oasisX?: number;
     oasisY?: number;
+    originVillageName?: string;
 }
 
 @Injectable()
@@ -538,6 +539,7 @@ export class MovementService {
                 senderVillageName: attackerVillage.villageName,
                 targetUsername: attacker.username,
                 targetVillageName: attackerVillage.villageName,
+                originVillageName: defenderVillage.villageName,
                 troops: survivingAttackers,
                 resources: loot,
                 departureTime,

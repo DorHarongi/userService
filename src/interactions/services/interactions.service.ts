@@ -397,6 +397,7 @@ export class InteractionsService {
       senderVillageName: ownerVillage.villageName,
       targetUsername: dto.ownerUsername,
       targetVillageName: ownerVillage.villageName,
+      originVillageName: dto.recipientVillageName,
       troops: dto.troops,
       departureTime,
       arrivalTime,
