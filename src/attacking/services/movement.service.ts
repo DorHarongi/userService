@@ -211,6 +211,7 @@ export class MovementService {
             arrivalTime: m.arrivalTime,
             status: 'in_transit',
             spyCount: m.spyCount || 1,
+            isOasis: m.targetType === 'oasis',
         }));
 
         return [...movements, ...spyAsMovements];
